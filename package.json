@@ -1,4 +1,4 @@
-# Fix App.jsx to use npm firebase instead of CDN
+
 cat > /mnt/user-data/outputs/App.jsx << 'ENDOFFILE'
 import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
