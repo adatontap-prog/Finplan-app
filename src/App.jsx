@@ -1,4 +1,3 @@
-cat > /mnt/user-data/outputs/App.jsx << 'EOF'
 import { useState, useEffect } from "react";
 import { initializeApp } from "firebase/app";
 import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy } from "firebase/firestore";
