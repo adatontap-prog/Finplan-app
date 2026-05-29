@@ -11,6 +11,11 @@ const firebaseConfig = {
   appId: "1:528693206812:web:8bce8d7bfa0d604ae7e4d9",
 };
 
+const EMAILJS_SERVICE_ID = "service_mwasugh";
+const EMAILJS_TEMPLATE_ID = "template_oq3ro9o";
+const EMAILJS_PUBLIC_KEY = "JgSEIph8MbKy6IXbK";
+const REPORT_EMAIL = "dwistapratama@gmail.com";
+
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
@@ -41,6 +46,71 @@ function parseAmount(str) {
   return parseInt(String(str).replace(/\D/g, "")) || 0;
 }
 
+async function sendEmailReport(transactions) {
+  const today = new Date();
+  const dateStr = today.toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const todayStr = today.toISOString().split("T")[0];
+
+  const todayTxns = transactions.filter(t => t.date === todayStr);
+
+  if (todayTxns.length === 0) {
+    return { success: false, message: "Tidak ada transaksi hari ini" };
+  }
+
+  const userSummary = {};
+  USERS.forEach(u => { userSummary[u] = { income: 0, expense: 0, items: [] }; });
+
+  todayTxns.forEach(t => {
+    if (!userSummary[t.user]) userSummary[t.user] = { income: 0, expense: 0, items: [] };
+    if (t.type === "income") userSummary[t.user].income += t.amount;
+    else userSummary[t.user].expense += t.amount;
+    const cat = CATEGORIES.find(c => c.id === t.category);
+    userSummary[t.user].items.push(`  ${cat?.icon} ${cat?.label}: ${t.type === "income" ? "+" : "-"}${formatRupiah(t.amount)}${t.note ? ` (${t.note})` : ""}`);
+  });
+
+  let report = `📅 ${dateStr}\n`;
+  report += `${"=".repeat(40)}\n\n`;
+
+  let totalIncome = 0;
+  let totalExpense = 0;
+
+  Object.entries(userSummary).forEach(([user, data]) => {
+    if (data.items.length === 0) return;
+    report += `👤 ${user}\n`;
+    report += data.items.join("\n") + "\n";
+    report += `  Saldo: ${formatRupiah(data.income - data.expense)}\n\n`;
+    totalIncome += data.income;
+    totalExpense += data.expense;
+  });
+
+  report += `${"=".repeat(40)}\n`;
+  report += `📊 RINGKASAN KELUARGA\n`;
+  report += `↑ Total Pemasukan: ${formatRupiah(totalIncome)}\n`;
+  report += `↓ Total Pengeluaran: ${formatRupiah(totalExpense)}\n`;
+  report += `💰 Saldo Bersih: ${formatRupiah(totalIncome - totalExpense)}\n`;
+
+  try {
+    const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        service_id: EMAILJS_SERVICE_ID,
+        template_id: EMAILJS_TEMPLATE_ID,
+        user_id: EMAILJS_PUBLIC_KEY,
+        template_params: {
+          to_email: REPORT_EMAIL,
+          date: dateStr,
+          report: report,
+        },
+      }),
+    });
+    if (response.ok) return { success: true };
+    else return { success: false, message: "Gagal mengirim email" };
+  } catch (e) {
+    return { success: false, message: "Error: " + e.message };
+  }
+}
+
 export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -52,6 +122,8 @@ export default function App() {
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterUser, setFilterUser] = useState("semua");
   const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [emailStatus, setEmailStatus] = useState("");
 
   useEffect(() => {
     if (!currentUser) { setShowUserSelect(true); setLoading(false); return; }
@@ -63,6 +135,21 @@ export default function App() {
     });
     return () => unsub();
   }, [currentUser]);
+
+  // Auto send email at 9 PM every day
+  useEffect(() => {
+    const checkAndSend = () => {
+      const now = new Date();
+      const lastSent = localStorage.getItem("finplan_last_report");
+      const todayStr = now.toISOString().split("T")[0];
+      if (now.getHours() >= 21 && lastSent !== todayStr && transactions.length > 0) {
+        localStorage.setItem("finplan_last_report", todayStr);
+        sendEmailReport(transactions);
+      }
+    };
+    const interval = setInterval(checkAndSend, 60000);
+    return () => clearInterval(interval);
+  }, [transactions]);
 
   function selectUser(name) {
     setCurrentUser(name);
@@ -104,6 +191,19 @@ export default function App() {
 
   async function deleteTransaction(id) {
     await deleteDoc(doc(db, "transactions", id));
+  }
+
+  async function handleSendReport() {
+    setSending(true);
+    setEmailStatus("");
+    const result = await sendEmailReport(transactions);
+    setSending(false);
+    if (result.success) {
+      setEmailStatus("✅ Laporan berhasil dikirim!");
+    } else {
+      setEmailStatus("❌ " + result.message);
+    }
+    setTimeout(() => setEmailStatus(""), 4000);
   }
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
@@ -149,7 +249,7 @@ export default function App() {
           <button onClick={() => setShowUserSelect(true)} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>Ganti</button>
         </div>
 
-        <div style={{ padding: "12px 20px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "8px 20px", display: "flex", gap: "6px", overflowX: "auto" }}>
           {MONTHS.map((m, i) => (
             <button key={i} onClick={() => setFilterMonth(i)} style={{
               padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
@@ -160,7 +260,7 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ padding: "0 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
           {["semua", ...usersWithData].map(u => (
             <button key={u} onClick={() => setFilterUser(u)} style={{
               padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer",
@@ -171,20 +271,30 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ padding: "0 20px 20px" }}>
+        <div style={{ padding: "0 20px 16px" }}>
           <div style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", borderRadius: "20px", padding: "22px", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
             <div style={{ fontSize: "11px", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px", textTransform: "uppercase" }}>Saldo {filterUser === "semua" ? "Keluarga" : filterUser}</div>
             <div style={{ fontSize: "30px", fontWeight: 900, color: "#fff", marginBottom: "18px" }}>{balance < 0 ? "-" : ""}{formatRupiah(Math.abs(balance))}</div>
-            <div style={{ display: "flex", gap: "24px" }}>
-              <div>
-                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↑ Pemasukan</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+              <div style={{ display: "flex", gap: "24px" }}>
+                <div>
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↑ Pemasukan</div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div>
+                </div>
+                <div>
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↓ Pengeluaran</div>
+                  <div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div>
+                </div>
               </div>
-              <div>
-                <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↓ Pengeluaran</div>
-                <div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div>
-              </div>
+              <button onClick={handleSendReport} disabled={sending} style={{
+                background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)",
+                color: "#fff", borderRadius: "10px", padding: "8px 12px", fontSize: "11px",
+                cursor: "pointer", fontWeight: 700, whiteSpace: "nowrap",
+              }}>{sending ? "📤..." : "📧 Kirim"}</button>
             </div>
+            {emailStatus && (
+              <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>
+            )}
           </div>
         </div>
 
