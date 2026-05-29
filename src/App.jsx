@@ -30,7 +30,7 @@ const CATEGORIES = [
 ];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
-const USERS = ["Ayah","Ibu","Anak 1","Anak 2","Anak 3","Anak 4","Anak 5","Anak 6","Lainnya"];
+const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
 
 function formatRupiah(num) {
   if (!num && num !== 0) return "Rp 0";
@@ -121,7 +121,7 @@ export default function App() {
       <div style={{ width: "100%", maxWidth: "380px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{ fontSize: "48px", marginBottom: "12px" }}>💰</div>
-          <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff" }}>FinPlan Keluarga</div>
+          <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff" }}>FinPlan ADP</div>
           <div style={{ fontSize: "13px", color: "#555", marginTop: "6px" }}>Siapa yang sedang login?</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -143,7 +143,7 @@ export default function App() {
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan Keluarga</div>
+            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP</div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! 👋</div>
           </div>
           <button onClick={() => setShowUserSelect(true)} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>Ganti</button>
