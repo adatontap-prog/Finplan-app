@@ -86,6 +86,9 @@ export default function App() {
     expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount;
   });
 
+  const usersWithData = [...new Set(transactions.map(t => t.user))];
+  const barMax = Math.max(...Object.values(expenseByCategory), 1);
+
   async function addTransaction() {
     const amt = parseAmount(form.amount);
     if (!amt || !form.date) return;
@@ -105,8 +108,6 @@ export default function App() {
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
-  const barMax = Math.max(...Object.values(expenseByCategory), 1);
-  const usersWithData = [...new Set(transactions.map(t => t.user))];
 
   const tabStyle = (key) => ({
     flex: 1, padding: "9px 4px", border: "none", cursor: "pointer",
@@ -121,7 +122,7 @@ export default function App() {
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
           <div style={{ fontSize: "48px", marginBottom: "12px" }}>💰</div>
           <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff" }}>FinPlan Keluarga</div>
-          <div style={{ fontSize: "13px", color: "#888", marginTop: "6px" }}>Siapa yang sedang login?</div>
+          <div style={{ fontSize: "13px", color: "#555", marginTop: "6px" }}>Siapa yang sedang login?</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {USERS.map(u => (
@@ -140,15 +141,15 @@ export default function App() {
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
       <div style={{ maxWidth: "430px", margin: "0 auto", minHeight: "100vh", position: "relative" }}>
 
-        <div style={{ padding: "24px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase" }}>💰 FinPlan Keluarga</div>
-            <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff", marginTop: "4px" }}>Halo, {currentUser}! 👋</div>
+            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan Keluarga</div>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! 👋</div>
           </div>
           <button onClick={() => setShowUserSelect(true)} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>Ganti</button>
         </div>
 
-        <div style={{ padding: "12px 20px 4px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "12px 20px", display: "flex", gap: "6px", overflowX: "auto" }}>
           {MONTHS.map((m, i) => (
             <button key={i} onClick={() => setFilterMonth(i)} style={{
               padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
@@ -159,7 +160,7 @@ export default function App() {
           ))}
         </div>
 
-        <div style={{ padding: "8px 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "0 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
           {["semua", ...usersWithData].map(u => (
             <button key={u} onClick={() => setFilterUser(u)} style={{
               padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer",
@@ -196,7 +197,7 @@ export default function App() {
         {activeTab === "dashboard" && (
           <div style={{ padding: "0 20px" }}>
             {loading ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#555" }}>Memuat data...</div>
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div>Memuat data...</div></div>
             ) : Object.keys(expenseByCategory).length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>📂</div>
@@ -222,7 +223,7 @@ export default function App() {
         {activeTab === "history" && (
           <div style={{ padding: "0 20px" }}>
             {loading ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#555" }}>Memuat data...</div>
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div>Memuat data...</div></div>
             ) : monthTxns.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>🗒️</div>
@@ -262,12 +263,12 @@ export default function App() {
                 <div style={{ fontSize: "14px" }}>Belum ada data</div>
               </div>
             ) : usersWithData.map(user => {
-              const ut = monthTxns.filter(t => t.user === user);
+              const ut = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === filterMonth && d.getFullYear() === year && t.user === user; });
               const ui = ut.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
               const ue = ut.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
               return (
                 <div key={user} style={{ padding: "16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
                     <div style={{ fontSize: "15px", fontWeight: 800 }}>{user}</div>
                     <div style={{ fontSize: "13px", fontWeight: 700, color: ui - ue >= 0 ? "#34d399" : "#f87171" }}>{formatRupiah(ui - ue)}</div>
                   </div>
@@ -301,7 +302,7 @@ export default function App() {
             <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah Transaksi · {currentUser}</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah · {currentUser}</div>
               </div>
               <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "4px", marginBottom: "16px" }}>
                 {[["expense","Pengeluaran"],["income","Pemasukan"]].map(([val,label]) => (
@@ -313,7 +314,7 @@ export default function App() {
                 ))}
               </div>
               <div style={{ marginBottom: "14px" }}>
-                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", letterSpacing: "1px", textTransform: "uppercase" }}>Kategori</div>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Kategori</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                   {(form.type === "expense" ? EXPENSE_CATS : INCOME_CATS).map(cat => (
                     <button key={cat.id} onClick={() => setForm(f => ({...f, category: cat.id}))} style={{
@@ -327,7 +328,7 @@ export default function App() {
                 </div>
               </div>
               <div style={{ marginBottom: "12px" }}>
-                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", letterSpacing: "1px", textTransform: "uppercase" }}>Jumlah</div>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah</div>
                 <input placeholder="Rp 0" value={amountDisplay} inputMode="numeric"
                   onChange={e => { const raw = e.target.value.replace(/\D/g,""); setAmountDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setForm(f => ({...f, amount: raw})); }}
                   style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "18px", fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
@@ -342,15 +343,13 @@ export default function App() {
                 width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer",
                 background: form.amount ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)",
                 color: form.amount ? "#fff" : "#444", fontSize: "15px", fontWeight: 800,
-                boxShadow: form.amount ? "0 8px 24px rgba(99,102,241,0.35)" : "none",
               }}>Simpan Transaksi</button>
             </div>
           </div>
         )}
+
       </div>
-      <style>{`* { margin: 0; padding: 0; box-sizing: border-box; } ::-webkit-scrollbar { display: none; }`}</style>
+      <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
 }
-EOF
-echo "Done"
