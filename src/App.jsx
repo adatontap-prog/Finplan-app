@@ -98,16 +98,41 @@ function parseAmount(str) {
 
 async function fetchMarketPrices() {
   try {
-    const fxRes = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
+    // USD/IDR dari frankfurter.app (gratis, reliable)
+    const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
     const fxData = await fxRes.json();
-    const usdIdr = fxData.rates.IDR || 16000;
-    const goldRes = await fetch("https://api.exchangerate-api.com/v4/latest/XAU");
+    const usdIdr = fxData.rates?.IDR || 16200;
+
+    // Harga emas USD per troy oz dari metals-api alternatif
+    // Gunakan goldprice.org open API
+    const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
     const goldData = await goldRes.json();
-    const goldPerGramIdr = (1 / goldData.rates.IDR) * usdIdr * 31.1035;
-    const antamPerGram = goldPerGramIdr > 0 ? goldPerGramIdr : 1050000;
-    return { usdIdr: Math.round(usdIdr), goldPerGram: Math.round(antamPerGram), jewelryPerGram: Math.round(antamPerGram * 0.75 * 0.80), lastUpdated: new Date().toLocaleTimeString("id-ID") };
+    // goldData.items[0].xauPrice = harga emas per troy oz dalam USD
+    const goldUsdPerOz = goldData?.items?.[0]?.xauPrice || 3300;
+    const goldUsdPerGram = goldUsdPerOz / 31.1035;
+    const goldIdrPerGram = Math.round(goldUsdPerGram * usdIdr);
+
+    // Antam biasanya ~5-8% premium di atas spot
+    const antamPerGram = Math.round(goldIdrPerGram * 1.06);
+    // Perhiasan 18K resale ~75% kadar × 80% buyback
+    const jewelryPerGram = Math.round(goldIdrPerGram * 0.75 * 0.80);
+
+    return {
+      usdIdr: Math.round(usdIdr),
+      goldPerGram: antamPerGram,
+      jewelryPerGram,
+      goldSpot: goldIdrPerGram,
+      lastUpdated: new Date().toLocaleTimeString("id-ID"),
+    };
   } catch {
-    return { usdIdr: 16200, goldPerGram: 1050000, jewelryPerGram: 630000, lastUpdated: "offline" };
+    // Fallback ke harga estimasi terkini
+    return {
+      usdIdr: 16200,
+      goldPerGram: 1680000,
+      jewelryPerGram: 1010000,
+      goldSpot: 1585000,
+      lastUpdated: "gagal memuat — tekan Refresh",
+    };
   }
 }
 
@@ -474,6 +499,7 @@ export default function App() {
               : marketPrices ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>💵 USD/IDR</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatFull(marketPrices.usdIdr)}</span></div>
+                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>⚡ Spot Emas /gram</span><span style={{ fontSize: "13px", fontWeight: 700, color: "#888" }}>{formatRupiah(marketPrices.goldSpot)}</span></div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>🥇 LM Antam /gram</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(marketPrices.goldPerGram)}</span></div>
                   <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>💍 Perhiasan 18K /gram</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(marketPrices.jewelryPerGram)}</span></div>
                   <div style={{ fontSize: "10px", color: "#444", textAlign: "right" }}>Update: {marketPrices.lastUpdated}</div>
@@ -619,4 +645,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                         }
+}
