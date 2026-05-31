@@ -38,29 +38,33 @@ const CATEGORIES = [
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
 const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
 
-// Semua target sudah memperhitungkan inflasi 10%/tahun dari base 2026
+// Target sudah memperhitungkan inflasi 10%/tahun dari base 2026
 const SAVINGS_GOALS = [
-  // AROON — SD 1 mulai Juli 2026
-  { id: "aroon_smp", label: "SMP Aroon", icon: "📚", category: "aroon", level: "SMP", targetAmount: 141724880, yearsLeft: 6, color: "#6366f1", desc: "Mulai 2032 · inflasi 10%/thn" },
-  { id: "aroon_sma", label: "SMA Aroon", icon: "📖", category: "aroon", level: "SMA", targetAmount: 282953722, yearsLeft: 9, color: "#8b5cf6", desc: "Mulai 2035 · inflasi 10%/thn" },
-  { id: "aroon_kuliah", label: "Kuliah Aroon", icon: "🎓", category: "aroon", level: "Kuliah", targetAmount: 2353821282, yearsLeft: 12, color: "#a78bfa", desc: "Mulai 2038 · Eropa/Aussie" },
-  // ARUNIKA — Nursery 2 mulai Juli 2026
-  { id: "arunika_kg", label: "Kindergarten Arunika", icon: "🎨", category: "arunika", level: "Kindergarten", targetAmount: 44000000, yearsLeft: 1, color: "#ec4899", desc: "Mulai 2027 · inflasi 10%/thn" },
-  { id: "arunika_sd", label: "SD Arunika", icon: "📚", category: "arunika", level: "SD", targetAmount: 66550000, yearsLeft: 3, color: "#f472b6", desc: "Mulai 2029 · inflasi 10%/thn" },
-  { id: "arunika_smp", label: "SMP Arunika", icon: "📖", category: "arunika", level: "SMP", targetAmount: 188635815, yearsLeft: 9, color: "#f9a8d4", desc: "Mulai 2035 · inflasi 10%/thn" },
-  { id: "arunika_sma", label: "SMA Arunika", icon: "📝", category: "arunika", level: "SMA", targetAmount: 376611405, yearsLeft: 12, color: "#fce7f3", desc: "Mulai 2038 · inflasi 10%/thn" },
-  { id: "arunika_kuliah", label: "Kuliah Arunika", icon: "🎓", category: "arunika", level: "Kuliah", targetAmount: 3132936127, yearsLeft: 15, color: "#fbcfe8", desc: "Mulai 2041 · Eropa/Aussie" },
+  // AROON — SD 1 mulai Juli 2026 (masih butuh biaya SD 1-6, lalu SMP, SMA, Kuliah)
+  { id: "aroon_sd", label: "SD Aroon (kelas 1-6)", icon: "📚", category: "aroon", level: "SD", targetAmount: 61724880, yearsLeft: 1, color: "#6366f1", desc: "SD kelas 1-6 · 2026-2032" },
+  { id: "aroon_smp", label: "SMP Aroon", icon: "📖", category: "aroon", level: "SMP", targetAmount: 63776196, yearsLeft: 6, color: "#8b5cf6", desc: "Mulai 2032 · 3 tahun" },
+  { id: "aroon_sma", label: "SMA Aroon", icon: "📝", category: "aroon", level: "SMA", targetAmount: 127329175, yearsLeft: 9, color: "#a78bfa", desc: "Mulai 2035 · 3 tahun" },
+  { id: "aroon_kuliah", label: "Kuliah Aroon", icon: "🎓", category: "aroon", level: "Kuliah", targetAmount: 2353821282, yearsLeft: 12, color: "#c4b5fd", desc: "Mulai 2038 · Eropa/Aussie" },
+  // ARUNIKA — Nursery 2 Juli 2026
+  { id: "arunika_kg1", label: "Kindergarten 1 Arunika", icon: "🎨", category: "arunika", level: "KG1", targetAmount: 7700000, yearsLeft: 1, color: "#ec4899", desc: "Mulai 2027" },
+  { id: "arunika_kg2", label: "Kindergarten 2 Arunika", icon: "🎨", category: "arunika", level: "KG2", targetAmount: 8470000, yearsLeft: 2, color: "#f472b6", desc: "Mulai 2028" },
+  { id: "arunika_sd", label: "SD Arunika", icon: "📚", category: "arunika", level: "SD", targetAmount: 63888000, yearsLeft: 3, color: "#f9a8d4", desc: "Mulai 2029 · kelas 1-6" },
+  { id: "arunika_smp", label: "SMP Arunika", icon: "📖", category: "arunika", level: "SMP", targetAmount: 84886116, yearsLeft: 9, color: "#fbcfe8", desc: "Mulai 2035 · 3 tahun" },
+  { id: "arunika_sma", label: "SMA Arunika", icon: "📝", category: "arunika", level: "SMA", targetAmount: 169475132, yearsLeft: 12, color: "#fce7f3", desc: "Mulai 2038 · 3 tahun" },
+  { id: "arunika_kuliah", label: "Kuliah Arunika", icon: "🎓", category: "arunika", level: "Kuliah", targetAmount: 3132936127, yearsLeft: 15, color: "#fdf2f8", desc: "Mulai 2041 · Eropa/Aussie" },
   // ARKAJA — Nursery 1 mulai Juli 2027
-  { id: "arkaja_nursery", label: "Nursery Arkaja", icon: "🧸", category: "arkaja", level: "Nursery", targetAmount: 33000000, yearsLeft: 1, color: "#10b981", desc: "Mulai 2027 · inflasi 10%/thn" },
-  { id: "arkaja_kg", label: "Kindergarten Arkaja", icon: "🎨", category: "arkaja", level: "Kindergarten", targetAmount: 48400000, yearsLeft: 2, color: "#34d399", desc: "Mulai 2028 · inflasi 10%/thn" },
-  { id: "arkaja_sd", label: "SD Arkaja", icon: "📚", category: "arkaja", level: "SD", targetAmount: 73205000, yearsLeft: 4, color: "#6ee7b7", desc: "Mulai 2030 · inflasi 10%/thn" },
-  { id: "arkaja_smp", label: "SMP Arkaja", icon: "📖", category: "arkaja", level: "SMP", targetAmount: 207499396, yearsLeft: 10, color: "#a7f3d0", desc: "Mulai 2036 · inflasi 10%/thn" },
-  { id: "arkaja_sma", label: "SMA Arkaja", icon: "📝", category: "arkaja", level: "SMA", targetAmount: 414272545, yearsLeft: 13, color: "#d1fae5", desc: "Mulai 2039 · inflasi 10%/thn" },
-  { id: "arkaja_kuliah", label: "Kuliah Arkaja", icon: "🎓", category: "arkaja", level: "Kuliah", targetAmount: 3446229739, yearsLeft: 16, color: "#ecfdf5", desc: "Mulai 2042 · Eropa/Aussie" },
+  { id: "arkaja_nursery1", label: "Nursery 1 Arkaja", icon: "🧸", category: "arkaja", level: "Nursery1", targetAmount: 5500000, yearsLeft: 1, color: "#10b981", desc: "Mulai Juli 2027" },
+  { id: "arkaja_nursery2", label: "Nursery 2 Arkaja", icon: "🧸", category: "arkaja", level: "Nursery2", targetAmount: 6050000, yearsLeft: 2, color: "#34d399", desc: "Mulai 2028" },
+  { id: "arkaja_kg1", label: "Kindergarten 1 Arkaja", icon: "🎨", category: "arkaja", level: "KG1", targetAmount: 9317000, yearsLeft: 3, color: "#6ee7b7", desc: "Mulai 2029" },
+  { id: "arkaja_kg2", label: "Kindergarten 2 Arkaja", icon: "🎨", category: "arkaja", level: "KG2", targetAmount: 10248700, yearsLeft: 4, color: "#a7f3d0", desc: "Mulai 2030" },
+  { id: "arkaja_sd", label: "SD Arkaja", icon: "📚", category: "arkaja", level: "SD", targetAmount: 77304480, yearsLeft: 5, color: "#d1fae5", desc: "Mulai 2031 · kelas 1-6" },
+  { id: "arkaja_smp", label: "SMP Arkaja", icon: "📖", category: "arkaja", level: "SMP", targetAmount: 102712201, yearsLeft: 11, color: "#a7f3d0", desc: "Mulai 2037 · 3 tahun" },
+  { id: "arkaja_sma", label: "SMA Arkaja", icon: "📝", category: "arkaja", level: "SMA", targetAmount: 205064910, yearsLeft: 14, color: "#6ee7b7", desc: "Mulai 2040 · 3 tahun" },
+  { id: "arkaja_kuliah", label: "Kuliah Arkaja", icon: "🎓", category: "arkaja", level: "Kuliah", targetAmount: 3790852713, yearsLeft: 17, color: "#34d399", desc: "Mulai 2043 · Eropa/Aussie" },
   // MASA DEPAN
   { id: "emergency", label: "Dana Darurat", icon: "🛡️", category: "future", targetAmount: 60000000, yearsLeft: 2, color: "#f59e0b", desc: "Target 6x pengeluaran bulanan" },
   { id: "future", label: "Masa Depan", icon: "🏠", category: "future", targetAmount: 500000000, yearsLeft: 10, color: "#fbbf24", desc: "Aset & masa depan keluarga" },
-  // PENSIUN (Bape ~37 thn, pensiun usia 60 = 23 thn lagi)
+  // PENSIUN
   { id: "pension", label: "Dana Pensiun", icon: "👴", category: "pension", targetAmount: 3000000000, yearsLeft: 23, color: "#14b8a6", desc: "Target usia 60 tahun (2049)" },
   // KESEHATAN
   { id: "health", label: "Dana Kesehatan", icon: "🏥", category: "health", targetAmount: 150000000, yearsLeft: 5, color: "#ef4444", desc: "Cadangan di luar BPJS" },
@@ -615,4 +619,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-}
+                         }
