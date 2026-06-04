@@ -38,35 +38,41 @@ const CATEGORIES = [
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
 const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
 
-// Target sudah memperhitungkan inflasi 10%/tahun dari base 2026
+const ASSET_TYPES = [
+  { id: "idr", label: "Rupiah (IDR)", icon: "💵", unit: "IDR", dynamic: false },
+  { id: "usd", label: "Dollar USD", icon: "🇺🇸", unit: "USD", dynamic: true },
+  { id: "lm", label: "LM Antam", icon: "🥇", unit: "gram", dynamic: true },
+  { id: "jewelry", label: "Perhiasan 18K", icon: "💍", unit: "gram", dynamic: true },
+  { id: "stock_id", label: "Saham IDX", icon: "📈", unit: "lot", dynamic: true, manual: true },
+  { id: "stock_us", label: "Saham US", icon: "🌐", unit: "lembar", dynamic: true },
+  { id: "crypto", label: "Crypto", icon: "₿", unit: "unit", dynamic: true },
+  { id: "reksadana", label: "Reksa Dana", icon: "📁", unit: "unit", dynamic: true, manual: true },
+  { id: "obligasi", label: "Obligasi/Sukuk", icon: "📜", unit: "IDR", dynamic: false },
+  { id: "etf", label: "ETF", icon: "🗂️", unit: "lot", dynamic: true },
+];
+
 const SAVINGS_GOALS = [
-  // AROON — SD 1 mulai Juli 2026 (masih butuh biaya SD 1-6, lalu SMP, SMA, Kuliah)
-  { id: "aroon_sd", label: "SD Aroon (kelas 1-6)", icon: "📚", category: "aroon", level: "SD", targetAmount: 61724880, yearsLeft: 1, color: "#6366f1", desc: "SD kelas 1-6 · 2026-2032" },
-  { id: "aroon_smp", label: "SMP Aroon", icon: "📖", category: "aroon", level: "SMP", targetAmount: 63776196, yearsLeft: 6, color: "#8b5cf6", desc: "Mulai 2032 · 3 tahun" },
-  { id: "aroon_sma", label: "SMA Aroon", icon: "📝", category: "aroon", level: "SMA", targetAmount: 127329175, yearsLeft: 9, color: "#a78bfa", desc: "Mulai 2035 · 3 tahun" },
-  { id: "aroon_kuliah", label: "Kuliah Aroon", icon: "🎓", category: "aroon", level: "Kuliah", targetAmount: 2353821282, yearsLeft: 12, color: "#c4b5fd", desc: "Mulai 2038 · Eropa/Aussie" },
-  // ARUNIKA — Nursery 2 Juli 2026
-  { id: "arunika_kg1", label: "Kindergarten 1 Arunika", icon: "🎨", category: "arunika", level: "KG1", targetAmount: 7700000, yearsLeft: 1, color: "#ec4899", desc: "Mulai 2027" },
-  { id: "arunika_kg2", label: "Kindergarten 2 Arunika", icon: "🎨", category: "arunika", level: "KG2", targetAmount: 8470000, yearsLeft: 2, color: "#f472b6", desc: "Mulai 2028" },
-  { id: "arunika_sd", label: "SD Arunika", icon: "📚", category: "arunika", level: "SD", targetAmount: 63888000, yearsLeft: 3, color: "#f9a8d4", desc: "Mulai 2029 · kelas 1-6" },
-  { id: "arunika_smp", label: "SMP Arunika", icon: "📖", category: "arunika", level: "SMP", targetAmount: 84886116, yearsLeft: 9, color: "#fbcfe8", desc: "Mulai 2035 · 3 tahun" },
-  { id: "arunika_sma", label: "SMA Arunika", icon: "📝", category: "arunika", level: "SMA", targetAmount: 169475132, yearsLeft: 12, color: "#fce7f3", desc: "Mulai 2038 · 3 tahun" },
-  { id: "arunika_kuliah", label: "Kuliah Arunika", icon: "🎓", category: "arunika", level: "Kuliah", targetAmount: 3132936127, yearsLeft: 15, color: "#fdf2f8", desc: "Mulai 2041 · Eropa/Aussie" },
-  // ARKAJA — Nursery 1 mulai Juli 2027
-  { id: "arkaja_nursery1", label: "Nursery 1 Arkaja", icon: "🧸", category: "arkaja", level: "Nursery1", targetAmount: 5500000, yearsLeft: 1, color: "#10b981", desc: "Mulai Juli 2027" },
-  { id: "arkaja_nursery2", label: "Nursery 2 Arkaja", icon: "🧸", category: "arkaja", level: "Nursery2", targetAmount: 6050000, yearsLeft: 2, color: "#34d399", desc: "Mulai 2028" },
-  { id: "arkaja_kg1", label: "Kindergarten 1 Arkaja", icon: "🎨", category: "arkaja", level: "KG1", targetAmount: 9317000, yearsLeft: 3, color: "#6ee7b7", desc: "Mulai 2029" },
-  { id: "arkaja_kg2", label: "Kindergarten 2 Arkaja", icon: "🎨", category: "arkaja", level: "KG2", targetAmount: 10248700, yearsLeft: 4, color: "#a7f3d0", desc: "Mulai 2030" },
-  { id: "arkaja_sd", label: "SD Arkaja", icon: "📚", category: "arkaja", level: "SD", targetAmount: 77304480, yearsLeft: 5, color: "#d1fae5", desc: "Mulai 2031 · kelas 1-6" },
-  { id: "arkaja_smp", label: "SMP Arkaja", icon: "📖", category: "arkaja", level: "SMP", targetAmount: 102712201, yearsLeft: 11, color: "#a7f3d0", desc: "Mulai 2037 · 3 tahun" },
-  { id: "arkaja_sma", label: "SMA Arkaja", icon: "📝", category: "arkaja", level: "SMA", targetAmount: 205064910, yearsLeft: 14, color: "#6ee7b7", desc: "Mulai 2040 · 3 tahun" },
-  { id: "arkaja_kuliah", label: "Kuliah Arkaja", icon: "🎓", category: "arkaja", level: "Kuliah", targetAmount: 3790852713, yearsLeft: 17, color: "#34d399", desc: "Mulai 2043 · Eropa/Aussie" },
-  // MASA DEPAN
+  { id: "aroon_sd", label: "SD Aroon (kelas 1-6)", icon: "📚", category: "aroon", targetAmount: 61724880, yearsLeft: 1, color: "#6366f1", desc: "SD kelas 1-6 · 2026-2032" },
+  { id: "aroon_smp", label: "SMP Aroon", icon: "📖", category: "aroon", targetAmount: 63776196, yearsLeft: 6, color: "#8b5cf6", desc: "Mulai 2032 · 3 tahun" },
+  { id: "aroon_sma", label: "SMA Aroon", icon: "📝", category: "aroon", targetAmount: 127329175, yearsLeft: 9, color: "#a78bfa", desc: "Mulai 2035 · 3 tahun" },
+  { id: "aroon_kuliah", label: "Kuliah Aroon", icon: "🎓", category: "aroon", targetAmount: 2353821282, yearsLeft: 12, color: "#c4b5fd", desc: "Mulai 2038 · Eropa/Aussie" },
+  { id: "arunika_kg1", label: "Kindergarten 1 Arunika", icon: "🎨", category: "arunika", targetAmount: 7700000, yearsLeft: 1, color: "#ec4899", desc: "Mulai 2027" },
+  { id: "arunika_kg2", label: "Kindergarten 2 Arunika", icon: "🎨", category: "arunika", targetAmount: 8470000, yearsLeft: 2, color: "#f472b6", desc: "Mulai 2028" },
+  { id: "arunika_sd", label: "SD Arunika", icon: "📚", category: "arunika", targetAmount: 63888000, yearsLeft: 3, color: "#f9a8d4", desc: "Mulai 2029 · kelas 1-6" },
+  { id: "arunika_smp", label: "SMP Arunika", icon: "📖", category: "arunika", targetAmount: 84886116, yearsLeft: 9, color: "#fbcfe8", desc: "Mulai 2035 · 3 tahun" },
+  { id: "arunika_sma", label: "SMA Arunika", icon: "📝", category: "arunika", targetAmount: 169475132, yearsLeft: 12, color: "#fce7f3", desc: "Mulai 2038 · 3 tahun" },
+  { id: "arunika_kuliah", label: "Kuliah Arunika", icon: "🎓", category: "arunika", targetAmount: 3132936127, yearsLeft: 15, color: "#fbcfe8", desc: "Mulai 2041 · Eropa/Aussie" },
+  { id: "arkaja_nursery1", label: "Nursery 1 Arkaja", icon: "🧸", category: "arkaja", targetAmount: 5500000, yearsLeft: 1, color: "#10b981", desc: "Mulai Juli 2027" },
+  { id: "arkaja_nursery2", label: "Nursery 2 Arkaja", icon: "🧸", category: "arkaja", targetAmount: 6050000, yearsLeft: 2, color: "#34d399", desc: "Mulai 2028" },
+  { id: "arkaja_kg1", label: "Kindergarten 1 Arkaja", icon: "🎨", category: "arkaja", targetAmount: 9317000, yearsLeft: 3, color: "#6ee7b7", desc: "Mulai 2029" },
+  { id: "arkaja_kg2", label: "Kindergarten 2 Arkaja", icon: "🎨", category: "arkaja", targetAmount: 10248700, yearsLeft: 4, color: "#a7f3d0", desc: "Mulai 2030" },
+  { id: "arkaja_sd", label: "SD Arkaja", icon: "📚", category: "arkaja", targetAmount: 77304480, yearsLeft: 5, color: "#d1fae5", desc: "Mulai 2031 · kelas 1-6" },
+  { id: "arkaja_smp", label: "SMP Arkaja", icon: "📖", category: "arkaja", targetAmount: 102712201, yearsLeft: 11, color: "#a7f3d0", desc: "Mulai 2037 · 3 tahun" },
+  { id: "arkaja_sma", label: "SMA Arkaja", icon: "📝", category: "arkaja", targetAmount: 205064910, yearsLeft: 14, color: "#6ee7b7", desc: "Mulai 2040 · 3 tahun" },
+  { id: "arkaja_kuliah", label: "Kuliah Arkaja", icon: "🎓", category: "arkaja", targetAmount: 3790852713, yearsLeft: 17, color: "#34d399", desc: "Mulai 2043 · Eropa/Aussie" },
   { id: "emergency", label: "Dana Darurat", icon: "🛡️", category: "future", targetAmount: 60000000, yearsLeft: 2, color: "#f59e0b", desc: "Target 6x pengeluaran bulanan" },
   { id: "future", label: "Masa Depan", icon: "🏠", category: "future", targetAmount: 500000000, yearsLeft: 10, color: "#fbbf24", desc: "Aset & masa depan keluarga" },
-  // PENSIUN
   { id: "pension", label: "Dana Pensiun", icon: "👴", category: "pension", targetAmount: 3000000000, yearsLeft: 23, color: "#14b8a6", desc: "Target usia 60 tahun (2049)" },
-  // KESEHATAN
   { id: "health", label: "Dana Kesehatan", icon: "🏥", category: "health", targetAmount: 150000000, yearsLeft: 5, color: "#ef4444", desc: "Cadangan di luar BPJS" },
   { id: "insurance", label: "Asuransi Jiwa", icon: "💊", category: "health", targetAmount: 60000000, yearsLeft: 3, color: "#f87171", desc: "Premi asuransi jiwa keluarga" },
 ];
@@ -84,7 +90,7 @@ function formatRupiah(num) {
   if (!num && num !== 0) return "Rp 0";
   if (num >= 1000000000) return "Rp " + (num / 1000000000).toFixed(2) + " M";
   if (num >= 1000000) return "Rp " + (num / 1000000).toFixed(1) + " Jt";
-  return "Rp " + Number(num).toLocaleString("id-ID");
+  return "Rp " + Number(Math.round(num)).toLocaleString("id-ID");
 }
 
 function formatFull(num) {
@@ -96,43 +102,43 @@ function parseAmount(str) {
   return parseInt(String(str).replace(/\D/g, "")) || 0;
 }
 
+function parseDecimal(str) {
+  return parseFloat(String(str).replace(/[^0-9.]/g, "")) || 0;
+}
+
+// Calculate current value of an asset holding based on market prices
+function calcAssetValue(holding, prices) {
+  if (!holding || !prices) return holding?.idrValue || 0;
+  switch (holding.assetType) {
+    case "idr": return holding.idrValue || 0;
+    case "usd": return (holding.qty || 0) * (prices.usdIdr || 16200);
+    case "lm": return (holding.qty || 0) * (prices.goldPerGram || 1680000);
+    case "jewelry": return (holding.qty || 0) * (prices.jewelryPerGram || 1010000);
+    case "obligasi": return holding.idrValue || 0;
+    case "stock_id": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0) * 100;
+    case "stock_us": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0) * (prices.usdIdr || 16200);
+    case "crypto": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
+    case "reksadana": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
+    case "etf": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
+    default: return holding.idrValue || 0;
+  }
+}
+
 async function fetchMarketPrices() {
   try {
-    // USD/IDR dari frankfurter.app (gratis, reliable)
     const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
     const fxData = await fxRes.json();
     const usdIdr = fxData.rates?.IDR || 16200;
-
-    // Harga emas USD per troy oz dari metals-api alternatif
-    // Gunakan goldprice.org open API
     const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
     const goldData = await goldRes.json();
-    // goldData.items[0].xauPrice = harga emas per troy oz dalam USD
     const goldUsdPerOz = goldData?.items?.[0]?.xauPrice || 3300;
     const goldUsdPerGram = goldUsdPerOz / 31.1035;
     const goldIdrPerGram = Math.round(goldUsdPerGram * usdIdr);
-
-    // Antam biasanya ~5-8% premium di atas spot
     const antamPerGram = Math.round(goldIdrPerGram * 1.06);
-    // Perhiasan 18K resale ~75% kadar × 80% buyback
     const jewelryPerGram = Math.round(goldIdrPerGram * 0.75 * 0.80);
-
-    return {
-      usdIdr: Math.round(usdIdr),
-      goldPerGram: antamPerGram,
-      jewelryPerGram,
-      goldSpot: goldIdrPerGram,
-      lastUpdated: new Date().toLocaleTimeString("id-ID"),
-    };
+    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot: goldIdrPerGram, lastUpdated: new Date().toLocaleTimeString("id-ID") };
   } catch {
-    // Fallback ke harga estimasi terkini
-    return {
-      usdIdr: 16200,
-      goldPerGram: 1680000,
-      jewelryPerGram: 1010000,
-      goldSpot: 1585000,
-      lastUpdated: "gagal memuat — tekan Refresh",
-    };
+    return { usdIdr: 16200, goldPerGram: 1680000, jewelryPerGram: 1010000, goldSpot: 1585000, lastUpdated: "gagal — tekan Refresh" };
   }
 }
 
@@ -160,11 +166,11 @@ async function sendEmailReport(transactions) {
   });
   report += `${"=".repeat(40)}\n📊 RINGKASAN KELUARGA\n↑ Pemasukan: ${formatFull(totalIncome)}\n↓ Pengeluaran: ${formatFull(totalExpense)}\n💰 Saldo: ${formatFull(totalIncome - totalExpense)}`;
   try {
-    const response = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ID, user_id: EMAILJS_PUBLIC_KEY, template_params: { to_email: REPORT_EMAIL, date: dateStr, report } }),
     });
-    return response.ok ? { success: true } : { success: false, message: "Gagal mengirim" };
+    return res.ok ? { success: true } : { success: false, message: "Gagal mengirim" };
   } catch (e) { return { success: false, message: e.message }; }
 }
 
@@ -172,6 +178,7 @@ export default function App() {
   const [transactions, setTransactions] = useState([]);
   const [investments, setInvestments] = useState([]);
   const [savingsData, setSavingsData] = useState({});
+  const [savingsHoldings, setSavingsHoldings] = useState({});
   const [marketPrices, setMarketPrices] = useState(null);
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -179,11 +186,14 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
+  const [showAssetConvert, setShowAssetConvert] = useState(null);
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("finplan_user") || "");
   const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] });
   const [invForm, setInvForm] = useState({ type: "usd", amount: "", buyPrice: "", note: "", buyDate: new Date().toISOString().split("T")[0] });
   const [savingsInput, setSavingsInput] = useState("");
+  const [savingsInputDisplay, setSavingsInputDisplay] = useState("");
+  const [assetForm, setAssetForm] = useState({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
   const [amountDisplay, setAmountDisplay] = useState("");
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterUser, setFilterUser] = useState("semua");
@@ -196,10 +206,12 @@ export default function App() {
     const unsub1 = onSnapshot(query(collection(db, "transactions"), orderBy("createdAt", "desc")), snap => { setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
     const unsub2 = onSnapshot(query(collection(db, "investments"), orderBy("createdAt", "desc")), snap => { setInvestments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsub3 = onSnapshot(doc(db, "savings", "goals"), snap => { if (snap.exists()) setSavingsData(snap.data()); });
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub4 = onSnapshot(doc(db, "savings", "holdings"), snap => { if (snap.exists()) setSavingsHoldings(snap.data()); });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
+  useEffect(() => { if (activeTab === "savings" && !marketPrices) loadPrices(); }, [activeTab]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -216,6 +228,14 @@ export default function App() {
 
   async function loadPrices() { setLoadingPrices(true); setMarketPrices(await fetchMarketPrices()); setLoadingPrices(false); }
   function selectUser(name) { setCurrentUser(name); localStorage.setItem("finplan_user", name); setShowUserSelect(false); setLoading(true); }
+
+  // Calculate total value of a savings goal (IDR cash + all assets)
+  function calcGoalValue(goalId) {
+    const idrCash = savingsData[goalId] || 0;
+    const holdings = (savingsHoldings[goalId] || []);
+    const assetValue = holdings.reduce((sum, h) => sum + calcAssetValue(h, marketPrices), 0);
+    return idrCash + assetValue;
+  }
 
   const year = new Date().getFullYear();
   const monthTxns = transactions.filter(t => { const d = new Date(t.date); return d.getMonth() === filterMonth && d.getFullYear() === year && (filterUser === "semua" || t.user === filterUser); });
@@ -240,12 +260,60 @@ export default function App() {
   const totalInvBuy = investments.reduce((s, i) => s + (i.amount * i.buyPrice), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
 
-  async function addSavings(goalId) {
+  const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
+  const totalSavingsCurrent = SAVINGS_GOALS.reduce((s, g) => s + calcGoalValue(g.id), 0);
+
+  const childTotals = ["aroon","arunika","arkaja"].map(child => {
+    const goals = SAVINGS_GOALS.filter(g => g.category === child);
+    return { child, target: goals.reduce((s,g) => s+g.targetAmount, 0), current: goals.reduce((s,g) => s+calcGoalValue(g.id), 0) };
+  });
+
+  async function addSavingsCash(goalId) {
     const amt = parseAmount(savingsInput);
     if (!amt) return;
     const newData = { ...savingsData, [goalId]: (savingsData[goalId] || 0) + amt };
     await setDoc(doc(db, "savings", "goals"), newData);
-    setSavingsData(newData); setShowSavingsForm(null); setSavingsInput("");
+    setSavingsData(newData); setShowSavingsForm(null); setSavingsInput(""); setSavingsInputDisplay("");
+  }
+
+  async function addSavingsAsset(goalId) {
+    const qty = parseDecimal(assetForm.qty);
+    const buyPrice = parseDecimal(assetForm.buyPrice);
+    if (!qty) return;
+
+    const assetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
+    const newHolding = {
+      id: Date.now(),
+      assetType: assetForm.assetType,
+      qty,
+      buyPrice,
+      manualPrice: assetForm.manualPrice ? parseDecimal(assetForm.manualPrice) : null,
+      ticker: assetForm.ticker || null,
+      note: assetForm.note || null,
+      idrValue: assetForm.assetType === "idr" ? qty : assetForm.assetType === "obligasi" ? qty : null,
+      addedAt: new Date().toISOString(),
+    };
+
+    const existing = savingsHoldings[goalId] || [];
+    const updated = { ...savingsHoldings, [goalId]: [...existing, newHolding] };
+    await setDoc(doc(db, "savings", "holdings"), updated);
+    setSavingsHoldings(updated);
+    setShowAssetConvert(null);
+    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+  }
+
+  async function removeHolding(goalId, holdingId) {
+    const existing = savingsHoldings[goalId] || [];
+    const updated = { ...savingsHoldings, [goalId]: existing.filter(h => h.id !== holdingId) };
+    await setDoc(doc(db, "savings", "holdings"), updated);
+    setSavingsHoldings(updated);
+  }
+
+  async function updateManualPrice(goalId, holdingId, newPrice) {
+    const existing = savingsHoldings[goalId] || [];
+    const updated = { ...savingsHoldings, [goalId]: existing.map(h => h.id === holdingId ? { ...h, manualPrice: parseDecimal(newPrice) } : h) };
+    await setDoc(doc(db, "savings", "holdings"), updated);
+    setSavingsHoldings(updated);
   }
 
   async function addTransaction() {
@@ -274,18 +342,10 @@ export default function App() {
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
-
   const tabStyle = (key) => ({ flex: 1, padding: "8px 2px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "9px", fontWeight: 700, background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
   const savTabStyle = (key) => ({ padding: "6px 12px", border: "none", cursor: "pointer", borderRadius: "20px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
-
-  const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
-  const totalSavingsCurrent = SAVINGS_GOALS.reduce((s, g) => s + (savingsData[g.id] || 0), 0);
-
-  // Per-child totals
-  const childTotals = ["aroon","arunika","arkaja"].map(child => {
-    const goals = SAVINGS_GOALS.filter(g => g.category === child);
-    return { child, target: goals.reduce((s,g) => s+g.targetAmount, 0), current: goals.reduce((s,g) => s+(savingsData[g.id]||0), 0) };
-  });
+  const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
+  const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
   if (showUserSelect) return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
@@ -353,9 +413,8 @@ export default function App() {
         {activeTab === "dashboard" && (
           <div style={{ padding: "0 20px" }}>
             {loading ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
-            : Object.keys(expenseByCategory).length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>📂</div><div style={{ fontSize: "14px" }}>Belum ada transaksi bulan ini</div></div>
-            ) : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
+            : Object.keys(expenseByCategory).length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>📂</div><div style={{ fontSize: "14px" }}>Belum ada transaksi bulan ini</div></div>
+            : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
               const spent = expenseByCategory[cat.id] || 0;
               return (
                 <div key={cat.id} style={{ marginBottom: "14px" }}>
@@ -417,18 +476,26 @@ export default function App() {
         {/* TABUNGAN */}
         {activeTab === "savings" && (
           <div style={{ padding: "0 20px" }}>
-            {/* Total Semua */}
+            {/* Harga pasar mini */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "12px", color: "#555" }}>
+                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} · 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
+              </div>
+              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
+            </div>
+
+            {/* Total */}
             <div style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(124,58,237,0.15))", border: "1px solid rgba(99,102,241,0.2)" }}>
-              <div style={{ fontSize: "11px", color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Semua Tabungan</div>
+              <div style={{ fontSize: "11px", color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Semua Tabungan {marketPrices ? "(nilai pasar)" : ""}</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "2px" }}>{formatRupiah(totalSavingsCurrent)}</div>
               <div style={{ fontSize: "11px", color: "#555", marginBottom: "8px" }}>dari {formatRupiah(totalSavingsTarget)}</div>
               <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden" }}>
                 <div style={{ height: "100%", borderRadius: "10px", width: `${Math.min((totalSavingsCurrent / totalSavingsTarget) * 100, 100)}%`, background: "linear-gradient(90deg,#6366f1,#10b981)", transition: "width 0.8s ease" }} />
               </div>
-              <div style={{ fontSize: "11px", color: "#a5b4fc", marginTop: "4px", textAlign: "right" }}>{((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2)}% tercapai</div>
+              <div style={{ fontSize: "11px", color: "#a5b4fc", marginTop: "4px", textAlign: "right" }}>{((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2)}%</div>
             </div>
 
-            {/* Mini summary per anak */}
+            {/* Per anak mini */}
             <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
               {childTotals.map(({ child, target, current }) => (
                 <div key={child} style={{ flex: 1, padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
@@ -442,41 +509,93 @@ export default function App() {
               ))}
             </div>
 
-            {/* Category Tabs */}
+            {/* Tabs */}
             <div style={{ display: "flex", gap: "6px", overflowX: "auto", marginBottom: "14px" }}>
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
             </div>
 
             {/* Goals */}
             {SAVINGS_GOALS.filter(g => g.category === savingsTab).map(goal => {
-              const current = savingsData[goal.id] || 0;
-              const pct = Math.min((current / goal.targetAmount) * 100, 100);
-              const remaining = goal.targetAmount - current;
+              const currentVal = calcGoalValue(goal.id);
+              const idrCash = savingsData[goal.id] || 0;
+              const holdings = savingsHoldings[goal.id] || [];
+              const pct = Math.min((currentVal / goal.targetAmount) * 100, 100);
+              const remaining = goal.targetAmount - currentVal;
               const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
+
               return (
                 <div key={goal.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 800 }}>{goal.icon} {goal.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{goal.desc}</div>
-                      <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>⏳ {goal.yearsLeft} tahun lagi</div>
+                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{goal.desc} · ⏳ {goal.yearsLeft} thn lagi</div>
                     </div>
                     {currentUser === ADMIN_USER && (
-                      <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); }} style={{ background: `rgba(99,102,241,0.2)`, border: `1px solid rgba(99,102,241,0.4)`, color: "#a5b4fc", borderRadius: "8px", padding: "6px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>+ Setor</button>
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.4)", color: "#a5b4fc", borderRadius: "8px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>💵 Tunai</button>
+                        <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", color: "#34d399", borderRadius: "8px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>🏦 Aset</button>
+                      </div>
                     )}
                   </div>
+
+                  {/* Progress */}
                   <div style={{ marginBottom: "8px" }}>
                     <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "5px" }}>
                       <div style={{ height: "100%", borderRadius: "10px", width: `${pct}%`, background: `linear-gradient(90deg,${goal.color},${goal.color}99)`, transition: "width 0.8s ease" }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                      <span style={{ color: "#34d399", fontWeight: 700 }}>{formatRupiah(current)}</span>
+                      <span style={{ color: "#34d399", fontWeight: 700 }}>{formatRupiah(currentVal)}</span>
                       <span style={{ color: "#555" }}>{pct.toFixed(1)}% dari {formatRupiah(goal.targetAmount)}</span>
                     </div>
                   </div>
+
+                  {/* Breakdown tunai vs aset */}
+                  {(idrCash > 0 || holdings.length > 0) && (
+                    <div style={{ marginBottom: "8px" }}>
+                      {idrCash > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#666", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                          <span>💵 Tunai IDR</span>
+                          <span style={{ color: "#e8e8f0" }}>{formatRupiah(idrCash)}</span>
+                        </div>
+                      )}
+                      {holdings.map(h => {
+                        const at = ASSET_TYPES.find(a => a.id === h.assetType);
+                        const val = calcAssetValue(h, marketPrices);
+                        const buyVal = h.assetType === "usd" ? h.qty * h.buyPrice : h.assetType === "lm" ? h.qty * h.buyPrice : h.qty * (h.buyPrice || 0);
+                        const gain = val - buyVal;
+                        const needsManual = at?.manual && !h.manualPrice;
+                        return (
+                          <div key={h.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div>
+                                <span style={{ fontSize: "11px", color: "#888" }}>{at?.icon} {h.ticker || at?.label} · {h.qty} {at?.unit}</span>
+                                {h.note && <span style={{ fontSize: "10px", color: "#555", marginLeft: "4px" }}>({h.note})</span>}
+                              </div>
+                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                <div style={{ textAlign: "right" }}>
+                                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#e8e8f0" }}>{formatRupiah(val)}</div>
+                                  {buyVal > 0 && <div style={{ fontSize: "10px", color: gain >= 0 ? "#34d399" : "#f87171" }}>{gain >= 0 ? "+" : ""}{formatRupiah(gain)}</div>}
+                                </div>
+                                {currentUser === ADMIN_USER && (
+                                  <button onClick={() => removeHolding(goal.id, h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "16px", lineHeight: 1 }}>×</button>
+                                )}
+                              </div>
+                            </div>
+                            {needsManual && currentUser === ADMIN_USER && (
+                              <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                                <input placeholder="Update harga/unit sekarang" style={{ ...inputStyle, fontSize: "11px", padding: "6px 10px" }}
+                                  onBlur={e => { if (e.target.value) updateManualPrice(goal.id, h.id, e.target.value); }} />
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {remaining > 0 ? (
                     <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#888" }}>
-                      💡 Setor <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(monthlyNeeded)}/bln</span> selama {goal.yearsLeft * 12} bulan
+                      💡 Kurang <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(remaining)}</span> · Setor <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(monthlyNeeded)}/bln</span>
                     </div>
                   ) : (
                     <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#34d399", fontWeight: 700 }}>✅ Target tercapai!</div>
@@ -518,9 +637,8 @@ export default function App() {
               </div>
             )}
 
-            {invSummary.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>📈</div><div style={{ fontSize: "14px" }}>Belum ada investasi tercatat</div></div>
-            ) : invSummary.map(inv => (
+            {invSummary.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>📈</div><div style={{ fontSize: "14px" }}>Belum ada investasi tercatat</div></div>
+            : invSummary.map(inv => (
               <div key={inv.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                   <div>
@@ -548,22 +666,113 @@ export default function App() {
           <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: "28px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", border: "none", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "28px", boxShadow: "0 8px 32px rgba(99,102,241,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>+</button>
         )}
 
-        {/* Modal Setor Tabungan */}
+        {/* ===== MODAL SETOR TUNAI ===== */}
         {showSavingsForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowSavingsForm(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
             <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>Setor Tabungan</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>💵 Setor Tunai</div>
                 <div style={{ fontSize: "13px", color: "#a5b4fc", marginTop: "4px" }}>{SAVINGS_GOALS.find(g => g.id === showSavingsForm)?.icon} {SAVINGS_GOALS.find(g => g.id === showSavingsForm)?.label}</div>
               </div>
               <div style={{ marginBottom: "20px" }}>
-                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah Setoran</div>
-                <input placeholder="Rp 0" value={savingsInput} inputMode="numeric"
-                  onChange={e => { const raw = e.target.value.replace(/\D/g,""); setSavingsInput(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); }}
-                  style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "18px", fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah (Rupiah)</div>
+                <input placeholder="Rp 0" value={savingsInputDisplay} inputMode="numeric"
+                  onChange={e => { const raw = e.target.value.replace(/\D/g,""); setSavingsInputDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setSavingsInput(raw); }}
+                  style={{ ...inputStyle, fontSize: "18px" }} />
               </div>
-              <button onClick={() => addSavings(showSavingsForm)} disabled={!savingsInput} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: savingsInput ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: savingsInput ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Setoran</button>
+              <button onClick={() => addSavingsCash(showSavingsForm)} disabled={!savingsInput} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: savingsInput ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: savingsInput ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Setoran</button>
+            </div>
+          </div>
+        )}
+
+        {/* ===== MODAL SETOR ASET ===== */}
+        {showAssetConvert && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowAssetConvert(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏦 Setor dalam Bentuk Aset</div>
+                <div style={{ fontSize: "13px", color: "#34d399", marginTop: "4px" }}>{SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.icon} {SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.label}</div>
+                <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>Nilai akan otomatis mengikuti harga pasar</div>
+              </div>
+
+              {/* Pilih jenis aset */}
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Jenis Aset</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {ASSET_TYPES.map(at => (
+                    <button key={at.id} onClick={() => setAssetForm(f => ({...f, assetType: at.id}))} style={{
+                      padding: "7px 12px", borderRadius: "20px", border: "1px solid",
+                      borderColor: assetForm.assetType === at.id ? "#10b981" : "rgba(255,255,255,0.08)",
+                      background: assetForm.assetType === at.id ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.04)",
+                      color: assetForm.assetType === at.id ? "#34d399" : "#666",
+                      fontSize: "12px", cursor: "pointer", fontWeight: 700,
+                    }}>{at.icon} {at.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Ticker (saham/crypto/ETF/RD) */}
+              {["stock_id","stock_us","crypto","reksadana","etf"].includes(assetForm.assetType) && (
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>
+                    {assetForm.assetType === "stock_id" ? "Kode Saham (contoh: BBCA)" :
+                     assetForm.assetType === "stock_us" ? "Ticker (contoh: AAPL)" :
+                     assetForm.assetType === "crypto" ? "Simbol (contoh: BTC)" :
+                     assetForm.assetType === "reksadana" ? "Nama Reksa Dana" : "Kode ETF"}
+                  </div>
+                  <input placeholder="Ketik di sini..." value={assetForm.ticker} onChange={e => setAssetForm(f => ({...f, ticker: e.target.value.toUpperCase()}))} style={inputStyle} />
+                </div>
+              )}
+
+              {/* Jumlah */}
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>
+                  Jumlah ({selectedAssetType?.unit})
+                </div>
+                <input placeholder={assetForm.assetType === "lm" ? "contoh: 5" : assetForm.assetType === "usd" ? "contoh: 100" : assetForm.assetType === "idr" || assetForm.assetType === "obligasi" ? "contoh: 5000000" : "contoh: 10"}
+                  value={assetForm.qty} onChange={e => setAssetForm(f => ({...f, qty: e.target.value}))} inputMode="decimal" style={inputStyle} />
+              </div>
+
+              {/* Harga beli (untuk non-IDR/obligasi) */}
+              {!["idr","obligasi"].includes(assetForm.assetType) && (
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>
+                    Harga Beli per {selectedAssetType?.unit} {["stock_us"].includes(assetForm.assetType) ? "(USD)" : "(IDR)"}
+                  </div>
+                  <input placeholder="contoh: 1650000" value={assetForm.buyPrice} onChange={e => setAssetForm(f => ({...f, buyPrice: e.target.value}))} inputMode="decimal" style={inputStyle} />
+                </div>
+              )}
+
+              {/* Harga manual untuk saham IDX/RD/ETF */}
+              {["stock_id","reksadana","etf"].includes(assetForm.assetType) && (
+                <div style={{ marginBottom: "12px" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Saat Ini per {selectedAssetType?.unit} (IDR) — update manual</div>
+                  <input placeholder="contoh: 9500 (per lembar)" value={assetForm.manualPrice} onChange={e => setAssetForm(f => ({...f, manualPrice: e.target.value}))} inputMode="decimal" style={inputStyle} />
+                </div>
+              )}
+
+              {/* Catatan */}
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
+                <input placeholder="contoh: beli di Pegadaian, portofolio BCA" value={assetForm.note} onChange={e => setAssetForm(f => ({...f, note: e.target.value}))} style={inputStyle} />
+              </div>
+
+              {/* Preview nilai saat ini */}
+              {assetForm.qty && marketPrices && (
+                <div style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", borderRadius: "12px", padding: "12px 14px", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "11px", color: "#34d399", marginBottom: "4px" }}>Estimasi nilai saat ini:</div>
+                  <div style={{ fontSize: "18px", fontWeight: 800, color: "#fff" }}>
+                    {(() => {
+                      const tempHolding = { assetType: assetForm.assetType, qty: parseDecimal(assetForm.qty), buyPrice: parseDecimal(assetForm.buyPrice), manualPrice: assetForm.manualPrice ? parseDecimal(assetForm.manualPrice) : null, idrValue: parseDecimal(assetForm.qty) };
+                      return formatRupiah(calcAssetValue(tempHolding, marketPrices));
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              <button onClick={() => addSavingsAsset(showAssetConvert)} disabled={!assetForm.qty} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: assetForm.qty ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: assetForm.qty ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Aset ke Tabungan</button>
             </div>
           </div>
         )}
@@ -593,11 +802,11 @@ export default function App() {
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah</div>
                 <input placeholder="Rp 0" value={amountDisplay} inputMode="numeric"
                   onChange={e => { const raw = e.target.value.replace(/\D/g,""); setAmountDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setForm(f => ({...f, amount: raw})); }}
-                  style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "18px", fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                  style={{ ...inputStyle, fontSize: "18px" }} />
               </div>
               <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-                <input placeholder="Catatan (opsional)" value={form.note} onChange={e => setForm(f => ({...f, note: e.target.value}))} style={{ flex: 2, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "11px 12px", color: "#fff", fontSize: "13px", outline: "none" }} />
-                <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} style={{ flex: 1, background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "11px 10px", color: "#888", fontSize: "12px", outline: "none", colorScheme: "dark" }} />
+                <input placeholder="Catatan (opsional)" value={form.note} onChange={e => setForm(f => ({...f, note: e.target.value}))} style={{ flex: 2, ...inputStyle, fontSize: "13px" }} />
+                <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} style={{ flex: 1, ...inputStyle, color: "#888", fontSize: "12px", colorScheme: "dark" }} />
               </div>
               <button onClick={addTransaction} disabled={!form.amount} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: form.amount ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: form.amount ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Transaksi</button>
             </div>
@@ -622,19 +831,19 @@ export default function App() {
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah ({invTypeUnit[invForm.type]})</div>
-                <input placeholder={invForm.type === "usd" ? "Contoh: 100" : "Contoh: 10"} value={invForm.amount} onChange={e => setInvForm(f => ({...f, amount: e.target.value}))} inputMode="decimal" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "16px", fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                <input placeholder="contoh: 100" value={invForm.amount} onChange={e => setInvForm(f => ({...f, amount: e.target.value}))} inputMode="decimal" style={inputStyle} />
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Beli per {invTypeUnit[invForm.type]} (Rp)</div>
-                <input placeholder={invForm.type === "usd" ? "Contoh: 16000" : "Contoh: 1050000"} value={invForm.buyPrice} onChange={e => setInvForm(f => ({...f, buyPrice: e.target.value}))} inputMode="numeric" style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "16px", fontWeight: 700, outline: "none", boxSizing: "border-box" }} />
+                <input placeholder="contoh: 1650000" value={invForm.buyPrice} onChange={e => setInvForm(f => ({...f, buyPrice: e.target.value}))} inputMode="numeric" style={inputStyle} />
               </div>
               <div style={{ marginBottom: "12px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
-                <input placeholder="Contoh: Beli di BCA, cincin kawin" value={invForm.note} onChange={e => setInvForm(f => ({...f, note: e.target.value}))} style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "11px 12px", color: "#fff", fontSize: "13px", outline: "none", boxSizing: "border-box" }} />
+                <input placeholder="contoh: Beli di Pegadaian" value={invForm.note} onChange={e => setInvForm(f => ({...f, note: e.target.value}))} style={inputStyle} />
               </div>
               <div style={{ marginBottom: "20px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tanggal Pembelian</div>
-                <input type="date" value={invForm.buyDate} onChange={e => setInvForm(f => ({...f, buyDate: e.target.value}))} style={{ width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "11px 12px", color: "#888", fontSize: "13px", outline: "none", boxSizing: "border-box", colorScheme: "dark" }} />
+                <input type="date" value={invForm.buyDate} onChange={e => setInvForm(f => ({...f, buyDate: e.target.value}))} style={{ ...inputStyle, color: "#888", colorScheme: "dark" }} />
               </div>
               <button onClick={addInvestment} disabled={!invForm.amount || !invForm.buyPrice} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: invForm.amount && invForm.buyPrice ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: invForm.amount && invForm.buyPrice ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Investasi</button>
             </div>
@@ -645,4 +854,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-}
+                 }
