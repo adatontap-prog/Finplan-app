@@ -250,14 +250,12 @@ export default function App() {
   const invTypeLabel = { usd: "💵 USD", lm: "🥇 LM Antam", jewelry: "💍 Perhiasan" };
   const invTypeUnit = { usd: "USD", lm: "gram", jewelry: "gram" };
   const invSummary = investments.map(inv => {
-    if (!marketPrices) return { ...inv, currentValue: 0, profitLoss: 0, pct: 0 };
-    const currentPrice = inv.type === "usd" ? marketPrices.usdIdr : inv.type === "lm" ? marketPrices.goldPerGram : marketPrices.jewelryPerGram;
-    const currentValue = inv.amount * currentPrice;
-    const buyValue = inv.amount * inv.buyPrice;
+    const currentValue = calcAssetValue(inv, marketPrices);
+    const buyValue = ["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0);
     const profitLoss = currentValue - buyValue;
     return { ...inv, currentValue, profitLoss, pct: buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0 };
   });
-  const totalInvBuy = investments.reduce((s, i) => s + (i.amount * i.buyPrice), 0);
+  const totalInvBuy = investments.reduce((s, i) => s + (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0)), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
 
   const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
@@ -324,10 +322,29 @@ export default function App() {
   }
 
   async function addInvestment() {
-    const amt = parseFloat(invForm.amount), buyPrice = parseAmount(invForm.buyPrice);
-    if (!amt || !buyPrice) return;
-    await addDoc(collection(db, "investments"), { type: invForm.type, amount: amt, buyPrice, note: invForm.note, buyDate: invForm.buyDate, createdAt: new Date().toISOString() });
-    setShowInvForm(false); setInvForm({ type: "usd", amount: "", buyPrice: "", note: "", buyDate: new Date().toISOString().split("T")[0] });
+    // Handled by addSavingsAsset with goalId "invest_cash" or "invest_asset"
+  }
+
+  async function addInvestmentAsset(type) {
+    const qty = parseDecimal(assetForm.qty);
+    const buyPrice = parseDecimal(assetForm.buyPrice);
+    if (!qty) return;
+    const idrValue = ["idr","obligasi"].includes(assetForm.assetType) ? qty : null;
+    await addDoc(collection(db, "investments"), {
+      assetType: assetForm.assetType,
+      qty,
+      amount: qty,
+      buyPrice,
+      manualPrice: assetForm.manualPrice ? parseDecimal(assetForm.manualPrice) : null,
+      ticker: assetForm.ticker || null,
+      note: assetForm.note || null,
+      idrValue,
+      buyDate: new Date().toISOString().split("T")[0],
+      type: assetForm.assetType,
+      createdAt: new Date().toISOString(),
+    });
+    setShowAssetConvert(null);
+    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
   }
 
   async function deleteTransaction(id) { await deleteDoc(doc(db, "transactions", id)); }
@@ -609,54 +626,77 @@ export default function App() {
         {/* INVESTASI */}
         {activeTab === "invest" && (
           <div style={{ padding: "0 20px" }}>
-            <div style={{ padding: "14px", marginBottom: "16px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px" }}>Harga Pasar Hari Ini</div>
-                <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄 Refresh"}</button>
+
+            {/* Harga pasar */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "12px", color: "#555" }}>
+                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} · 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
               </div>
-              {loadingPrices ? <div style={{ fontSize: "13px", color: "#555" }}>Memuat harga...</div>
-              : marketPrices ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>💵 USD/IDR</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatFull(marketPrices.usdIdr)}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>⚡ Spot Emas /gram</span><span style={{ fontSize: "13px", fontWeight: 700, color: "#888" }}>{formatRupiah(marketPrices.goldSpot)}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>🥇 LM Antam /gram</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(marketPrices.goldPerGram)}</span></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ fontSize: "13px" }}>💍 Perhiasan 18K /gram</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(marketPrices.jewelryPerGram)}</span></div>
-                  <div style={{ fontSize: "10px", color: "#444", textAlign: "right" }}>Update: {marketPrices.lastUpdated}</div>
-                </div>
-              ) : <div style={{ fontSize: "13px", color: "#555" }}>Tekan Refresh untuk memuat harga</div>}
+              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
             </div>
 
-            {investments.length > 0 && marketPrices && (
-              <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,78,59,0.2))", border: "1px solid rgba(16,185,129,0.2)" }}>
-                <div style={{ fontSize: "11px", color: "#34d399", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "6px" }}>Total Portofolio</div>
-                <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>{formatRupiah(totalInvNow)}</div>
-                <div style={{ display: "flex", gap: "20px" }}>
-                  <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Modal</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(totalInvBuy)}</div></div>
-                  <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Untung/Rugi</div><div style={{ fontSize: "13px", fontWeight: 700, color: totalInvNow - totalInvBuy >= 0 ? "#34d399" : "#f87171" }}>{totalInvNow - totalInvBuy >= 0 ? "+" : ""}{formatRupiah(totalInvNow - totalInvBuy)}</div></div>
-                </div>
+            {/* Total Portofolio */}
+            <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,78,59,0.2))", border: "1px solid rgba(16,185,129,0.2)" }}>
+              <div style={{ fontSize: "11px", color: "#34d399", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Portofolio {marketPrices ? "(nilai pasar)" : ""}</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>{formatRupiah(totalInvNow)}</div>
+              <div style={{ display: "flex", gap: "20px" }}>
+                <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Modal</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(totalInvBuy)}</div></div>
+                <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Untung/Rugi</div><div style={{ fontSize: "13px", fontWeight: 700, color: totalInvNow - totalInvBuy >= 0 ? "#34d399" : "#f87171" }}>{totalInvNow - totalInvBuy >= 0 ? "+" : ""}{formatRupiah(totalInvNow - totalInvBuy)}</div></div>
+                <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Return</div><div style={{ fontSize: "13px", fontWeight: 700, color: totalInvNow - totalInvBuy >= 0 ? "#34d399" : "#f87171" }}>{totalInvBuy > 0 ? (((totalInvNow - totalInvBuy) / totalInvBuy) * 100).toFixed(1) : 0}%</div></div>
               </div>
-            )}
+            </div>
 
-            {invSummary.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>📈</div><div style={{ fontSize: "14px" }}>Belum ada investasi tercatat</div></div>
-            : invSummary.map(inv => (
-              <div key={inv.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                  <div>
-                    <div style={{ fontSize: "14px", fontWeight: 700 }}>{invTypeLabel[inv.type]}</div>
-                    <div style={{ fontSize: "11px", color: "#555" }}>{inv.amount} {invTypeUnit[inv.type]} · beli {formatRupiah(inv.buyPrice)}/{invTypeUnit[inv.type]} · {inv.buyDate || "-"}</div>
-                    {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
+            {/* Daftar Investasi */}
+            {invSummary.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>📈</div>
+                <div style={{ fontSize: "14px" }}>Belum ada investasi tercatat</div>
+              </div>
+            ) : invSummary.map(inv => {
+              const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.type, unit: "" };
+              const needsManual = at?.manual && !inv.manualPrice;
+              return (
+                <div key={inv.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: 700 }}>{at.icon} {inv.ticker || at.label}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{inv.qty || inv.amount} {at.unit} · beli {formatRupiah(inv.buyPrice)}/{at.unit} · {inv.buyDate || "-"}</div>
+                      {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
+                    </div>
+                    {currentUser === ADMIN_USER && <button onClick={() => deleteInvestment(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>×</button>}
                   </div>
-                  {currentUser === ADMIN_USER && <button onClick={() => deleteInvestment(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>×</button>}
-                </div>
-                {marketPrices && (
+                  {needsManual && currentUser === ADMIN_USER && (
+                    <div style={{ marginBottom: "8px" }}>
+                      <input placeholder="Update harga/unit sekarang (IDR)" style={{ ...inputStyle, fontSize: "11px", padding: "6px 10px" }}
+                        onBlur={async e => {
+                          if (!e.target.value) return;
+                          const newPrice = parseDecimal(e.target.value);
+                          // update in firebase
+                          const snap = await import("firebase/firestore").then(m => m.getDocs(m.query(collection(db, "investments"), m.where("__name__", "==", inv.id))));
+                          await import("firebase/firestore").then(m => m.updateDoc(doc(db, "investments", inv.id), { manualPrice: newPrice }));
+                        }} />
+                    </div>
+                  )}
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Nilai Sekarang</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{formatRupiah(inv.currentValue)}</div></div>
-                    <div style={{ textAlign: "right" }}><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Untung/Rugi</div><div style={{ fontSize: "14px", fontWeight: 700, color: inv.profitLoss >= 0 ? "#34d399" : "#f87171" }}>{inv.profitLoss >= 0 ? "+" : ""}{formatRupiah(inv.profitLoss)} <span style={{ fontSize: "11px" }}>({inv.pct}%)</span></div></div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Untung/Rugi</div>
+                      <div style={{ fontSize: "14px", fontWeight: 700, color: inv.profitLoss >= 0 ? "#34d399" : "#f87171" }}>
+                        {inv.profitLoss >= 0 ? "+" : ""}{formatRupiah(inv.profitLoss)} <span style={{ fontSize: "11px" }}>({inv.pct}%)</span>
+                      </div>
+                    </div>
                   </div>
-                )}
+                </div>
+              );
+            })}
+
+            {/* Tombol tambah */}
+            {currentUser === ADMIN_USER && (
+              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
+                <button onClick={() => { setShowAssetConvert("invest_cash"); setAssetForm({ assetType: "idr", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>💵 + Tunai</button>
+                <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🏦 + Aset</button>
               </div>
-            ))}
-            {currentUser === ADMIN_USER && <button onClick={() => setShowInvForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Investasi</button>}
+            )}
           </div>
         )}
 
@@ -692,9 +732,12 @@ export default function App() {
             <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏦 Setor dalam Bentuk Aset</div>
-                <div style={{ fontSize: "13px", color: "#34d399", marginTop: "4px" }}>{SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.icon} {SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.label}</div>
-                <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>Nilai akan otomatis mengikuti harga pasar</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>
+                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "📈 Tambah ke Portofolio" : "🏦 Setor dalam Bentuk Aset"}
+                </div>
+                <div style={{ fontSize: "13px", color: "#34d399", marginTop: "4px" }}>
+                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "Investasi · Nilai mengikuti harga pasar" : `${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.icon} ${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.label}`}
+                </div>
               </div>
 
               {/* Pilih jenis aset */}
@@ -772,7 +815,15 @@ export default function App() {
                 </div>
               )}
 
-              <button onClick={() => addSavingsAsset(showAssetConvert)} disabled={!assetForm.qty} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: assetForm.qty ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: assetForm.qty ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Aset ke Tabungan</button>
+              <button onClick={() => {
+                if (showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset") {
+                  addInvestmentAsset(showAssetConvert);
+                } else {
+                  addSavingsAsset(showAssetConvert);
+                }
+              }} disabled={!assetForm.qty} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: assetForm.qty ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: assetForm.qty ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>
+                {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "Simpan ke Portofolio" : "Simpan Aset ke Tabungan"}
+              </button>
             </div>
           </div>
         )}
@@ -854,4 +905,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                 }
+                                         }
