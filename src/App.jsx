@@ -187,6 +187,11 @@ export default function App() {
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
   const [showAssetConvert, setShowAssetConvert] = useState(null);
+  const [showGadaiForm, setShowGadaiForm] = useState(false);
+  const [showGadaiCalc, setShowGadaiCalc] = useState(false);
+  const [gadaiList, setGadaiList] = useState([]);
+  const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
+  const [calcForm, setCalcForm] = useState({ beratGram: "", kadar: "24", tenor: "120" });
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("finplan_user") || "");
   const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] });
@@ -207,7 +212,8 @@ export default function App() {
     const unsub2 = onSnapshot(query(collection(db, "investments"), orderBy("createdAt", "desc")), snap => { setInvestments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsub3 = onSnapshot(doc(db, "savings", "goals"), snap => { if (snap.exists()) setSavingsData(snap.data()); });
     const unsub4 = onSnapshot(doc(db, "savings", "holdings"), snap => { if (snap.exists()) setSavingsHoldings(snap.data()); });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const unsub5 = onSnapshot(query(collection(db, "gadai"), orderBy("createdAt", "desc")), snap => { setGadaiList(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
@@ -350,6 +356,61 @@ export default function App() {
   async function deleteTransaction(id) { await deleteDoc(doc(db, "transactions", id)); }
   async function deleteInvestment(id) { await deleteDoc(doc(db, "investments", id)); }
 
+  // ===== GADAI FUNCTIONS =====
+  function hitungGadai(beratGram, kadar, hargaEmasPerGram, tenor) {
+    const purity = parseInt(kadar) / 24;
+    const nilaiEmas = beratGram * purity * hargaEmasPerGram;
+    const nilaiTaksiran = Math.round(nilaiEmas * 0.92);
+    const uangPinjaman = Math.round(nilaiTaksiran * 0.90);
+    // Bunga KCA: golongan berdasarkan pinjaman
+    let bungaPer15 = 1.2; // % per 15 hari untuk emas
+    const periode = Math.ceil(tenor / 15);
+    const totalBunga = Math.round(uangPinjaman * (bungaPer15 / 100) * periode);
+    const totalLunas = uangPinjaman + totalBunga;
+    const biayaAdmin = Math.round(uangPinjaman * 0.01);
+    return { nilaiEmas: Math.round(nilaiEmas), nilaiTaksiran, uangPinjaman, bungaPer15, periode, totalBunga, totalLunas, biayaAdmin };
+  }
+
+  function hitungSisaHari(tanggalGadai, tenor) {
+    const tglGadai = new Date(tanggalGadai);
+    const tglJatuh = new Date(tglGadai);
+    tglJatuh.setDate(tglJatuh.getDate() + parseInt(tenor));
+    const today = new Date();
+    const sisa = Math.ceil((tglJatuh - today) / (1000 * 60 * 60 * 24));
+    return { tglJatuh, sisa };
+  }
+
+  async function addGadai() {
+    const berat = parseFloat(gadaiForm.beratGram);
+    const harga = parseAmount(gadaiForm.hargaEmas) || (marketPrices?.goldPerGram || 1680000);
+    if (!berat || !gadaiForm.namaBarang) return;
+    const hasil = hitungGadai(berat, gadaiForm.kadar, harga, parseInt(gadaiForm.tenor));
+    await addDoc(collection(db, "gadai"), {
+      namaBarang: gadaiForm.namaBarang,
+      beratGram: berat,
+      kadar: gadaiForm.kadar,
+      hargaEmasGadai: harga,
+      nilaiTaksiran: hasil.nilaiTaksiran,
+      uangPinjaman: hasil.uangPinjaman,
+      totalBunga: hasil.totalBunga,
+      totalLunas: hasil.totalLunas,
+      tanggalGadai: gadaiForm.tanggalGadai,
+      tenor: parseInt(gadaiForm.tenor),
+      catatan: gadaiForm.catatan,
+      status: "aktif",
+      createdAt: new Date().toISOString(),
+    });
+    setShowGadaiForm(false);
+    setGadaiForm({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
+  }
+
+  async function updateGadaiStatus(id, status) {
+    const { updateDoc } = await import("firebase/firestore");
+    await updateDoc(doc(db, "gadai", id), { status, updatedAt: new Date().toISOString() });
+  }
+
+  async function deleteGadai(id) { await deleteDoc(doc(db, "gadai", id)); }
+
   async function handleSendReport() {
     setSending(true);
     const result = await sendEmailReport(transactions);
@@ -424,6 +485,7 @@ export default function App() {
           <button style={tabStyle("family")} onClick={() => setActiveTab("family")}>👨‍👩‍👧 Keluarga</button>
           <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🏦 Tabungan</button>
           <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>
+          <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏛️ Gadai</button>
         </div>
 
         {/* DASHBOARD */}
@@ -700,7 +762,170 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ height: "100px" }} />
+        {/* GADAI */}
+        {activeTab === "gadai" && (
+          <div style={{ padding: "0 20px" }}>
+
+            {/* Ringkasan Gadai Aktif */}
+            {gadaiList.filter(g => g.status === "aktif").length > 0 && (
+              <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(245,158,11,0.15),rgba(180,100,0,0.1))", border: "1px solid rgba(245,158,11,0.3)" }}>
+                <div style={{ fontSize: "11px", color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>Gadai Aktif</div>
+                <div style={{ display: "flex", gap: "20px" }}>
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Total Pinjaman</div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff" }}>{formatRupiah(gadaiList.filter(g => g.status === "aktif").reduce((s, g) => s + g.uangPinjaman, 0))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Total Lunas</div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#f87171" }}>{formatRupiah(gadaiList.filter(g => g.status === "aktif").reduce((s, g) => s + g.totalLunas, 0))}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Item Aktif</div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#fbbf24" }}>{gadaiList.filter(g => g.status === "aktif").length} item</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Kalkulator Gadai */}
+            <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showGadaiCalc ? "14px" : "0" }}>
+                <div style={{ fontSize: "14px", fontWeight: 800 }}>🧮 Kalkulator Gadai Emas</div>
+                <button onClick={() => setShowGadaiCalc(!showGadaiCalc)} style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.3)", color: "#fbbf24", borderRadius: "8px", padding: "6px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{showGadaiCalc ? "Tutup" : "Buka"}</button>
+              </div>
+
+              {showGadaiCalc && (
+                <div>
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Berat (gram)</div>
+                      <input placeholder="contoh: 5" value={calcForm.beratGram} onChange={e => setCalcForm(f => ({...f, beratGram: e.target.value}))} inputMode="decimal" style={inputStyle} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Kadar</div>
+                      <select value={calcForm.kadar} onChange={e => setCalcForm(f => ({...f, kadar: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                        <option value="24">24K (99.9%)</option>
+                        <option value="23">23K (95.8%)</option>
+                        <option value="22">22K (91.7%)</option>
+                        <option value="21">21K (87.5%)</option>
+                        <option value="20">20K (83.3%)</option>
+                        <option value="18">18K (75%)</option>
+                        <option value="17">17K (70.8%)</option>
+                        <option value="16">16K (66.7%)</option>
+                        <option value="14">14K (58.3%)</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Tenor</div>
+                      <select value={calcForm.tenor} onChange={e => setCalcForm(f => ({...f, tenor: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                        <option value="15">15 hari</option>
+                        <option value="30">30 hari</option>
+                        <option value="60">60 hari</option>
+                        <option value="90">90 hari</option>
+                        <option value="120">120 hari</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {calcForm.beratGram && (() => {
+                    const harga = marketPrices?.goldPerGram || 1680000;
+                    const hasil = hitungGadai(parseFloat(calcForm.beratGram), calcForm.kadar, harga, parseInt(calcForm.tenor));
+                    return (
+                      <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px", padding: "14px" }}>
+                        <div style={{ fontSize: "10px", color: "#555", marginBottom: "10px" }}>Harga LM: {formatRupiah(harga)}/gram · Kadar {calcForm.kadar}K</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
+                            <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Nilai Emas</div>
+                            <div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.nilaiEmas)}</div>
+                          </div>
+                          <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
+                            <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Nilai Taksiran (92%)</div>
+                            <div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.nilaiTaksiran)}</div>
+                          </div>
+                          <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "10px", border: "1px solid rgba(16,185,129,0.2)" }}>
+                            <div style={{ fontSize: "10px", color: "#34d399", marginBottom: "2px" }}>💰 Uang Pinjaman (90%)</div>
+                            <div style={{ fontSize: "15px", fontWeight: 900, color: "#34d399" }}>{formatRupiah(hasil.uangPinjaman)}</div>
+                          </div>
+                          <div style={{ background: "rgba(239,68,68,0.1)", borderRadius: "8px", padding: "10px", border: "1px solid rgba(239,68,68,0.2)" }}>
+                            <div style={{ fontSize: "10px", color: "#f87171", marginBottom: "2px" }}>💸 Total Lunas</div>
+                            <div style={{ fontSize: "15px", fontWeight: 900, color: "#f87171" }}>{formatRupiah(hasil.totalLunas)}</div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: "10px", background: "rgba(245,158,11,0.08)", borderRadius: "8px", padding: "10px", fontSize: "11px", color: "#888", lineHeight: 1.7 }}>
+                          Bunga {hasil.bungaPer15}%/15hari × {hasil.periode} periode = <span style={{ color: "#fbbf24", fontWeight: 700 }}>{formatRupiah(hasil.totalBunga)}</span><br/>
+                          Biaya admin estimasi: <span style={{ color: "#fbbf24" }}>{formatRupiah(hasil.biayaAdmin)}</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Daftar Gadai */}
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Daftar Gadai</div>
+
+            {gadaiList.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏛️</div>
+                <div style={{ fontSize: "14px" }}>Belum ada gadai tercatat</div>
+              </div>
+            ) : gadaiList.map(g => {
+              const { tglJatuh, sisa } = hitungSisaHari(g.tanggalGadai, g.tenor);
+              const tglJatuhStr = tglJatuh.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+              const statusColor = g.status === "lunas" ? "#34d399" : g.status === "lelang" ? "#f87171" : sisa <= 7 ? "#f87171" : sisa <= 30 ? "#fbbf24" : "#a5b4fc";
+              const statusLabel = g.status === "lunas" ? "✅ Lunas" : g.status === "lelang" ? "🔴 Dilelang" : sisa <= 0 ? "⚠️ Jatuh Tempo!" : sisa <= 7 ? `🔴 ${sisa} hari lagi` : sisa <= 30 ? `🟡 ${sisa} hari lagi` : `🟢 ${sisa} hari lagi`;
+
+              return (
+                <div key={g.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: `1px solid ${g.status === "aktif" && sisa <= 7 ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.06)"}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+                    <div>
+                      <div style={{ fontSize: "15px", fontWeight: 800 }}>💍 {g.namaBarang}</div>
+                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{g.beratGram}gr · {g.kadar}K · Digadai {g.tanggalGadai}</div>
+                      {g.catatan && <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>{g.catatan}</div>}
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 700, color: statusColor }}>{statusLabel}</span>
+                      {currentUser === ADMIN_USER && (
+                        <button onClick={() => deleteGadai(g.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#444", fontSize: "16px" }}>×</button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "10px" }}>
+                    <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px" }}>
+                      <div style={{ fontSize: "9px", color: "#555", marginBottom: "2px" }}>Taksiran</div>
+                      <div style={{ fontSize: "12px", fontWeight: 700 }}>{formatRupiah(g.nilaiTaksiran)}</div>
+                    </div>
+                    <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "8px" }}>
+                      <div style={{ fontSize: "9px", color: "#34d399", marginBottom: "2px" }}>Pinjaman</div>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(g.uangPinjaman)}</div>
+                    </div>
+                    <div style={{ background: "rgba(239,68,68,0.1)", borderRadius: "8px", padding: "8px" }}>
+                      <div style={{ fontSize: "9px", color: "#f87171", marginBottom: "2px" }}>Total Lunas</div>
+                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(g.totalLunas)}</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ fontSize: "11px", color: "#555" }}>Jatuh tempo: <span style={{ color: "#e8e8f0" }}>{tglJatuhStr}</span></div>
+                    {currentUser === ADMIN_USER && g.status === "aktif" && (
+                      <div style={{ display: "flex", gap: "6px" }}>
+                        <button onClick={() => updateGadaiStatus(g.id, "lunas")} style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>✅ Lunas</button>
+                        <button onClick={() => updateGadaiStatus(g.id, "lelang")} style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>🔴 Lelang</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Tombol Catat Gadai */}
+            {currentUser === ADMIN_USER && (
+              <button onClick={() => setShowGadaiForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Catat Gadai Baru</button>
+            )}
+          </div>
+        )}
 
         {activeTab !== "invest" && activeTab !== "savings" && (
           <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: "28px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", border: "none", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "28px", boxShadow: "0 8px 32px rgba(99,102,241,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>+</button>
@@ -828,7 +1053,89 @@ export default function App() {
           </div>
         )}
 
-        {/* Modal Transaksi */}
+        {/* ===== MODAL CATAT GADAI ===== */}
+        {showGadaiForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛️ Catat Gadai Emas</div>
+                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Pegadaian · Konvensional KCA</div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Nama Barang</div>
+                <input placeholder="contoh: Cincin Kawin 18K, Gelang Emas 24K" value={gadaiForm.namaBarang} onChange={e => setGadaiForm(f => ({...f, namaBarang: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Berat (gram)</div>
+                  <input placeholder="contoh: 5" value={gadaiForm.beratGram} onChange={e => setGadaiForm(f => ({...f, beratGram: e.target.value}))} inputMode="decimal" style={inputStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Kadar</div>
+                  <select value={gadaiForm.kadar} onChange={e => setGadaiForm(f => ({...f, kadar: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                    <option value="24">24K (99.9%)</option>
+                    <option value="22">22K (91.7%)</option>
+                    <option value="21">21K (87.5%)</option>
+                    <option value="20">20K (83.3%)</option>
+                    <option value="18">18K (75%)</option>
+                    <option value="17">17K (70.8%)</option>
+                    <option value="16">16K (66.7%)</option>
+                    <option value="14">14K (58.3%)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tanggal Gadai</div>
+                  <input type="date" value={gadaiForm.tanggalGadai} onChange={e => setGadaiForm(f => ({...f, tanggalGadai: e.target.value}))} style={{ ...inputStyle, color: "#888", colorScheme: "dark" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tenor</div>
+                  <select value={gadaiForm.tenor} onChange={e => setGadaiForm(f => ({...f, tenor: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                    <option value="15">15 hari</option>
+                    <option value="30">30 hari</option>
+                    <option value="60">60 hari</option>
+                    <option value="90">90 hari</option>
+                    <option value="120">120 hari</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Emas Saat Gadai /gram (opsional)</div>
+                <input placeholder={`Default: ${formatRupiah(marketPrices?.goldPerGram || 1680000)}/gram`} value={gadaiForm.hargaEmas} onChange={e => setGadaiForm(f => ({...f, hargaEmas: e.target.value}))} inputMode="numeric" style={inputStyle} />
+              </div>
+
+              {/* Preview kalkulasi */}
+              {gadaiForm.beratGram && (() => {
+                const harga = parseAmount(gadaiForm.hargaEmas) || marketPrices?.goldPerGram || 1680000;
+                const hasil = hitungGadai(parseFloat(gadaiForm.beratGram), gadaiForm.kadar, harga, parseInt(gadaiForm.tenor));
+                return (
+                  <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
+                    <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "10px", fontWeight: 700 }}>📊 Estimasi Gadai</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <div><div style={{ fontSize: "10px", color: "#555" }}>Nilai Taksiran</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.nilaiTaksiran)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#34d399" }}>Uang Pinjaman</div><div style={{ fontSize: "13px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(hasil.uangPinjaman)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#555" }}>Total Bunga</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.totalBunga)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#f87171" }}>Total Lunas</div><div style={{ fontSize: "13px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(hasil.totalLunas)}</div></div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
+                <input placeholder="contoh: SBG No. 123456, cabang Kemang" value={gadaiForm.catatan} onChange={e => setGadaiForm(f => ({...f, catatan: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <button onClick={addGadai} disabled={!gadaiForm.namaBarang || !gadaiForm.beratGram} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: gadaiForm.namaBarang && gadaiForm.beratGram ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.07)", color: gadaiForm.namaBarang && gadaiForm.beratGram ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Gadai</button>
+            </div>
+          </div>
+        )}
         {showForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
             <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
@@ -905,4 +1212,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                                         }
+                                                                                                    }
