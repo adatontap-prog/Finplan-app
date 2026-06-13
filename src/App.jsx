@@ -189,6 +189,9 @@ export default function App() {
   const [showAssetConvert, setShowAssetConvert] = useState(null);
   const [showGadaiForm, setShowGadaiForm] = useState(false);
   const [showGadaiCalc, setShowGadaiCalc] = useState(false);
+  const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [selectedInvestment, setSelectedInvestment] = useState(null);
+  const [selectedGoal, setSelectedGoal] = useState(null);
   const [gadaiList, setGadaiList] = useState([]);
   const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   const [calcForm, setCalcForm] = useState({ beratGram: "", kadar: "24", tenor: "120" });
@@ -513,14 +516,17 @@ export default function App() {
             : monthTxns.map(t => {
               const cat = CATEGORIES.find(c => c.id === t.category);
               return (
-                <div key={t.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", marginBottom: "8px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div key={t.id} onClick={() => setSelectedTransaction(t)} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", marginBottom: "8px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", transition: "all 0.15s" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     <div style={{ fontSize: "22px" }}>{cat?.icon}</div>
-                    <div><div style={{ fontSize: "13px", fontWeight: 600 }}>{cat?.label}</div><div style={{ fontSize: "11px", color: "#555" }}>{t.user} · {t.note || t.date}</div></div>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 600 }}>{cat?.label}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{t.user} · {t.note || t.date}</div>
+                    </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                     <div style={{ fontSize: "13px", fontWeight: 700, color: t.type === "income" ? "#34d399" : "#f87171" }}>{t.type === "income" ? "+" : "-"}{formatRupiah(t.amount)}</div>
-                    {t.user === currentUser && <button onClick={() => deleteTransaction(t.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>×</button>}
+                    <div style={{ fontSize: "16px", color: "#444" }}>›</div>
                   </div>
                 </div>
               );
@@ -603,7 +609,7 @@ export default function App() {
               const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
 
               return (
-                <div key={goal.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div key={goal.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }} onClick={() => setSelectedGoal(goal.id)}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 800 }}>{goal.icon} {goal.label}</div>
@@ -718,7 +724,7 @@ export default function App() {
               const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.type, unit: "" };
               const needsManual = at?.manual && !inv.manualPrice;
               return (
-                <div key={inv.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div key={inv.id} onClick={() => setSelectedInvestment(inv)} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 700 }}>{at.icon} {inv.ticker || at.label}</div>
@@ -1053,6 +1059,199 @@ export default function App() {
           </div>
         )}
 
+        {/* ===== MODAL DETAIL TRANSAKSI ===== */}
+        {selectedTransaction && (() => {
+          const t = selectedTransaction;
+          const cat = CATEGORIES.find(c => c.id === t.category);
+          const tglFormatted = new Date(t.date).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+          const jamFormatted = t.createdAt ? new Date(t.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-";
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
+                  <div style={{ fontSize: "48px", marginBottom: "8px" }}>{cat?.icon}</div>
+                  <div style={{ fontSize: "28px", fontWeight: 900, color: t.type === "income" ? "#34d399" : "#f87171" }}>
+                    {t.type === "income" ? "+" : "-"}{formatFull(t.amount)}
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{cat?.label} · {t.type === "income" ? "Pemasukan" : "Pengeluaran"}</div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "0px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", overflow: "hidden", marginBottom: "20px" }}>
+                  {[
+                    { label: "👤 Dicatat oleh", value: t.user },
+                    { label: "📅 Tanggal", value: tglFormatted },
+                    { label: "⏰ Jam input", value: jamFormatted },
+                    { label: "🗂️ Kategori", value: cat?.label },
+                    { label: "📝 Catatan", value: t.note || "—" },
+                    { label: "🔖 Tipe", value: t.type === "income" ? "Pemasukan" : "Pengeluaran" },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", borderBottom: i < 5 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                      <div style={{ fontSize: "12px", color: "#555" }}>{item.label}</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#e8e8f0", textAlign: "right", maxWidth: "60%" }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {t.user === currentUser && (
+                    <button onClick={() => { deleteTransaction(t.id); setSelectedTransaction(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                  )}
+                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL DETAIL INVESTASI ===== */}
+        {selectedInvestment && (() => {
+          const inv = selectedInvestment;
+          const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.type || "Aset", unit: "" };
+          const currentValue = calcAssetValue(inv, marketPrices);
+          const buyValue = ["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0);
+          const profitLoss = currentValue - buyValue;
+          const pct = buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0;
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedInvestment(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
+                  <div style={{ fontSize: "40px", marginBottom: "8px" }}>{at.icon}</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff" }}>{inv.ticker || at.label}</div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{inv.qty || inv.amount} {at.unit}</div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "16px" }}>
+                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "14px" }}>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Modal</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{formatRupiah(buyValue)}</div>
+                    <div style={{ fontSize: "10px", color: "#666", marginTop: "2px" }}>{formatRupiah(inv.buyPrice)}/{at.unit}</div>
+                  </div>
+                  <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "12px", padding: "14px", border: "1px solid rgba(16,185,129,0.2)" }}>
+                    <div style={{ fontSize: "10px", color: "#34d399", marginBottom: "4px" }}>Nilai Sekarang</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: "#34d399" }}>{formatRupiah(currentValue)}</div>
+                    <div style={{ fontSize: "10px", color: "#555", marginTop: "2px" }}>{marketPrices ? "harga pasar" : "belum dimuat"}</div>
+                  </div>
+                  <div style={{ background: profitLoss >= 0 ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)", borderRadius: "12px", padding: "14px", border: `1px solid ${profitLoss >= 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}` }}>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Untung/Rugi</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{profitLoss >= 0 ? "+" : ""}{formatRupiah(profitLoss)}</div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "14px" }}>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Return</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{pct}%</div>
+                  </div>
+                </div>
+
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", overflow: "hidden", marginBottom: "20px" }}>
+                  {[
+                    { label: "📅 Tanggal Beli", value: inv.buyDate || "-" },
+                    { label: "💰 Harga Beli", value: `${formatRupiah(inv.buyPrice)}/${at.unit}` },
+                    { label: "📝 Catatan", value: inv.note || "—" },
+                    { label: "🗂️ Jenis Aset", value: at.label },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                      <div style={{ fontSize: "12px", color: "#555" }}>{item.label}</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#e8e8f0" }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {currentUser === ADMIN_USER && (
+                    <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                  )}
+                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL DETAIL TABUNGAN ===== */}
+        {selectedGoal && (() => {
+          const goal = SAVINGS_GOALS.find(g => g.id === selectedGoal);
+          if (!goal) return null;
+          const currentVal = calcGoalValue(goal.id);
+          const idrCash = savingsData[goal.id] || 0;
+          const holdings = savingsHoldings[goal.id] || [];
+          const pct = Math.min((currentVal / goal.targetAmount) * 100, 100);
+          const remaining = goal.targetAmount - currentVal;
+          const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedGoal(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "36px", marginBottom: "8px" }}>{goal.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{goal.label}</div>
+                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{goal.desc} · ⏳ {goal.yearsLeft} tahun lagi</div>
+                </div>
+
+                {/* Progress */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "16px", marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "11px", color: "#555" }}>Progress</div>
+                    <div style={{ fontSize: "13px", fontWeight: 800, color: goal.color }}>{pct.toFixed(1)}%</div>
+                  </div>
+                  <div style={{ height: "10px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "10px" }}>
+                    <div style={{ height: "100%", borderRadius: "10px", width: `${pct}%`, background: `linear-gradient(90deg,${goal.color},${goal.color}99)` }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Terkumpul</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(currentVal)}</div></div>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Target</div><div style={{ fontSize: "12px", fontWeight: 700 }}>{formatRupiah(goal.targetAmount)}</div></div>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Kurang</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(Math.max(remaining, 0))}</div></div>
+                  </div>
+                </div>
+
+                {/* Breakdown detail */}
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Rincian Aset</div>
+
+                {idrCash > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}>
+                    <div><div style={{ fontSize: "13px", fontWeight: 600 }}>💵 Tunai IDR</div><div style={{ fontSize: "11px", color: "#555" }}>Nilai tetap</div></div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#e8e8f0" }}>{formatRupiah(idrCash)}</div>
+                  </div>
+                )}
+
+                {holdings.map(h => {
+                  const at = ASSET_TYPES.find(a => a.id === h.assetType);
+                  const val = calcAssetValue(h, marketPrices);
+                  const buyVal = (h.qty || 0) * (h.buyPrice || 0);
+                  const gain = val - buyVal;
+                  return (
+                    <div key={h.id} style={{ padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                        <div><div style={{ fontSize: "13px", fontWeight: 600 }}>{at?.icon} {h.ticker || at?.label}</div><div style={{ fontSize: "11px", color: "#555" }}>{h.qty} {at?.unit} · beli {formatRupiah(h.buyPrice)}/{at?.unit}</div></div>
+                        <div style={{ textAlign: "right" }}><div style={{ fontSize: "14px", fontWeight: 800 }}>{formatRupiah(val)}</div><div style={{ fontSize: "11px", color: gain >= 0 ? "#34d399" : "#f87171" }}>{gain >= 0 ? "+" : ""}{formatRupiah(gain)}</div></div>
+                      </div>
+                      {h.note && <div style={{ fontSize: "11px", color: "#666" }}>📝 {h.note}</div>}
+                      {h.addedAt && <div style={{ fontSize: "10px", color: "#444" }}>Ditambah: {new Date(h.addedAt).toLocaleDateString("id-ID")}</div>}
+                    </div>
+                  );
+                })}
+
+                {idrCash === 0 && holdings.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "20px", color: "#444", fontSize: "13px" }}>Belum ada setoran</div>
+                )}
+
+                {monthlyNeeded > 0 && (
+                  <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "12px", padding: "12px 14px", marginTop: "12px", fontSize: "12px", color: "#a5b4fc" }}>
+                    💡 Setor <strong style={{ color: "#fff" }}>{formatRupiah(monthlyNeeded)}/bulan</strong> selama {goal.yearsLeft * 12} bulan untuk mencapai target
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                  {currentUser === ADMIN_USER && (
+                    <button onClick={() => { setSelectedGoal(null); setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>+ Setor</button>
+                  )}
+                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ===== MODAL CATAT GADAI ===== */}
         {showGadaiForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
@@ -1212,4 +1411,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                                                                                                    }
+}
