@@ -125,20 +125,33 @@ function calcAssetValue(holding, prices) {
 }
 
 async function fetchMarketPrices() {
+  const FALLBACK = { usdIdr: 17810, goldPerGram: 2711000, jewelryPerGram: 1627000, goldSpot: 2557000, lastUpdated: "fallback Juni 2026 — tekan Refresh" };
   try {
-    const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
-    const fxData = await fxRes.json();
-    const usdIdr = fxData.rates?.IDR || 16200;
-    const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
-    const goldData = await goldRes.json();
-    const goldUsdPerOz = goldData?.items?.[0]?.xauPrice || 3300;
-    const goldUsdPerGram = goldUsdPerOz / 31.1035;
-    const goldIdrPerGram = Math.round(goldUsdPerGram * usdIdr);
-    const antamPerGram = Math.round(goldIdrPerGram * 1.06);
-    const jewelryPerGram = Math.round(goldIdrPerGram * 0.75 * 0.80);
-    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot: goldIdrPerGram, lastUpdated: new Date().toLocaleTimeString("id-ID") };
+    let usdIdr = 17810;
+    try {
+      const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
+      const fxData = await fxRes.json();
+      if (fxData.rates?.IDR > 10000) usdIdr = fxData.rates.IDR;
+    } catch(e) {}
+
+    let antamPerGram = 2711000;
+    let goldSpot = 2557000;
+    let jewelryPerGram = 1627000;
+    try {
+      const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
+      const goldData = await goldRes.json();
+      const goldUsdPerOz = goldData?.items?.[0]?.xauPrice;
+      if (goldUsdPerOz && goldUsdPerOz > 1000) {
+        const goldUsdPerGram = goldUsdPerOz / 31.1035;
+        goldSpot = Math.round(goldUsdPerGram * usdIdr);
+        antamPerGram = Math.round(goldSpot * 1.06);
+        jewelryPerGram = Math.round(goldSpot * 0.75 * 0.80);
+      }
+    } catch(e) {}
+
+    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot, lastUpdated: new Date().toLocaleTimeString("id-ID") };
   } catch {
-    return { usdIdr: 16200, goldPerGram: 1680000, jewelryPerGram: 1010000, goldSpot: 1585000, lastUpdated: "gagal — tekan Refresh" };
+    return FALLBACK;
   }
 }
 
@@ -1411,4 +1424,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-}
+                                                                                  }
