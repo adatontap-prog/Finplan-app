@@ -1393,4 +1393,444 @@ export default function App() {
                     <div style={{ fontSize: "10px", color: "#555", marginTop: "2px" }}>{marketPrices ? "harga pasar" : "belum dimuat"}</div>
                   </div>
                   <div style={{ background: profitLoss >= 0 ? "rgba(16,185,129,0.08)" : "rgba(239,68,68,0.08)", borderRadius: "12px", padding: "14px", border: `1px solid ${profitLoss >= 0 ? "rgba(16,185,129,0.2)" : "rgba(239,68,68,0.2)"}` }}>
-                    <div style={{ fontSize: "10px", color: "#555", marg
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Untung/Rugi</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{profitLoss >= 0 ? "+" : ""}{formatRupiah(profitLoss)}</div>
+                  </div>
+                  <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "14px" }}>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "4px" }}>Return</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{pct}%</div>
+                  </div>
+                </div>
+
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", overflow: "hidden", marginBottom: "20px" }}>
+                  {[
+                    { label: "📅 Tanggal Beli", value: inv.buyDate || "-" },
+                    { label: "💰 Harga Beli", value: `${formatRupiah(inv.buyPrice)}/${at.unit}` },
+                    { label: "📝 Catatan", value: inv.note || "—" },
+                    { label: "🗂️ Jenis Aset", value: at.label },
+                  ].map((item, i) => (
+                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                      <div style={{ fontSize: "12px", color: "#555" }}>{item.label}</div>
+                      <div style={{ fontSize: "13px", fontWeight: 600, color: "#e8e8f0" }}>{item.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {currentUser === ADMIN_USER && (
+                    <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                  )}
+                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL DETAIL TABUNGAN ===== */}
+        {selectedGoal && (() => {
+          const goal = SAVINGS_GOALS.find(g => g.id === selectedGoal);
+          if (!goal) return null;
+          const currentVal = calcGoalValue(goal.id);
+          const idrCash = savingsData[goal.id] || 0;
+          const holdings = savingsHoldings[goal.id] || [];
+          const pct = Math.min((currentVal / goal.targetAmount) * 100, 100);
+          const remaining = goal.targetAmount - currentVal;
+          const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedGoal(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "36px", marginBottom: "8px" }}>{goal.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{goal.label}</div>
+                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{goal.desc} · ⏳ {goal.yearsLeft} tahun lagi</div>
+                </div>
+
+                {/* Progress */}
+                <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "16px", marginBottom: "16px" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "11px", color: "#555" }}>Progress</div>
+                    <div style={{ fontSize: "13px", fontWeight: 800, color: goal.color }}>{pct.toFixed(1)}%</div>
+                  </div>
+                  <div style={{ height: "10px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "10px" }}>
+                    <div style={{ height: "100%", borderRadius: "10px", width: `${pct}%`, background: `linear-gradient(90deg,${goal.color},${goal.color}99)` }} />
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Terkumpul</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(currentVal)}</div></div>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Target</div><div style={{ fontSize: "12px", fontWeight: 700 }}>{formatRupiah(goal.targetAmount)}</div></div>
+                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Kurang</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(Math.max(remaining, 0))}</div></div>
+                  </div>
+                </div>
+
+                {/* Breakdown detail */}
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Rincian Aset</div>
+
+                {idrCash > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}>
+                    <div><div style={{ fontSize: "13px", fontWeight: 600 }}>💵 Tunai IDR</div><div style={{ fontSize: "11px", color: "#555" }}>Nilai tetap</div></div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#e8e8f0" }}>{formatRupiah(idrCash)}</div>
+                  </div>
+                )}
+
+                {holdings.map(h => {
+                  const at = ASSET_TYPES.find(a => a.id === h.assetType);
+                  const val = calcAssetValue(h, marketPrices);
+                  const buyVal = (h.qty || 0) * (h.buyPrice || 0);
+                  const gain = val - buyVal;
+                  return (
+                    <div key={h.id} style={{ padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
+                        <div><div style={{ fontSize: "13px", fontWeight: 600 }}>{at?.icon} {h.ticker || at?.label}</div><div style={{ fontSize: "11px", color: "#555" }}>{h.qty} {at?.unit} · beli {formatRupiah(h.buyPrice)}/{at?.unit}</div></div>
+                        <div style={{ textAlign: "right" }}><div style={{ fontSize: "14px", fontWeight: 800 }}>{formatRupiah(val)}</div><div style={{ fontSize: "11px", color: gain >= 0 ? "#34d399" : "#f87171" }}>{gain >= 0 ? "+" : ""}{formatRupiah(gain)}</div></div>
+                      </div>
+                      {h.note && <div style={{ fontSize: "11px", color: "#666" }}>📝 {h.note}</div>}
+                      {h.addedAt && <div style={{ fontSize: "10px", color: "#444" }}>Ditambah: {new Date(h.addedAt).toLocaleDateString("id-ID")}</div>}
+                    </div>
+                  );
+                })}
+
+                {idrCash === 0 && holdings.length === 0 && (
+                  <div style={{ textAlign: "center", padding: "20px", color: "#444", fontSize: "13px" }}>Belum ada setoran</div>
+                )}
+
+                {monthlyNeeded > 0 && (
+                  <div style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: "12px", padding: "12px 14px", marginTop: "12px", fontSize: "12px", color: "#a5b4fc" }}>
+                    💡 Setor <strong style={{ color: "#fff" }}>{formatRupiah(monthlyNeeded)}/bulan</strong> selama {goal.yearsLeft * 12} bulan untuk mencapai target
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                  {currentUser === ADMIN_USER && (
+                    <button onClick={() => { setSelectedGoal(null); setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>+ Setor</button>
+                  )}
+                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL DETAIL KATEGORI ===== */}
+        {selectedCategory && (() => {
+          const cat = CATEGORIES.find(c => c.id === selectedCategory);
+          const catTxns = monthTxns.filter(t => t.category === selectedCategory).sort((a, b) => new Date(b.date) - new Date(a.date));
+          const totalCat = catTxns.reduce((s, t) => s + t.amount, 0);
+          const byUser = {};
+          catTxns.forEach(t => { byUser[t.user] = (byUser[t.user] || 0) + t.amount; });
+
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedCategory(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "40px", marginBottom: "8px" }}>{cat?.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{cat?.label}</div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{MONTHS[filterMonth]} {year} · {catTxns.length} transaksi</div>
+                </div>
+
+                {/* Total */}
+                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "16px", marginBottom: "16px", textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Total Pengeluaran</div>
+                  <div style={{ fontSize: "26px", fontWeight: 900, color: "#f87171" }}>{formatFull(totalCat)}</div>
+                </div>
+
+                {/* Per user breakdown */}
+                {Object.keys(byUser).length > 1 && (
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+                    {Object.entries(byUser).map(([user, amt]) => (
+                      <div key={user} style={{ flex: "1 1 auto", minWidth: "100px", background: "rgba(255,255,255,0.04)", borderRadius: "10px", padding: "8px 12px" }}>
+                        <div style={{ fontSize: "10px", color: "#555" }}>{user}</div>
+                        <div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(amt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* List transaksi */}
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Semua Transaksi</div>
+                {catTxns.map(t => (
+                  <div key={t.id} onClick={() => { setSelectedCategory(null); setSelectedTransaction(t); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", cursor: "pointer" }}>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 600 }}>{t.user}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{t.note || "-"} · {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#f87171" }}>-{formatRupiah(t.amount)}</div>
+                      <div style={{ fontSize: "14px", color: "#444" }}>›</div>
+                    </div>
+                  </div>
+                ))}
+
+                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "12px" }}>Tutup</button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL TAMBAH SUMBER DANA ===== */}
+        {showSDForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowSDForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>💳 Tambah Sumber Dana</div>
+                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Untuk {currentUser}</div>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Pilih Jenis</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {SUMBER_DANA_PRESETS.map(p => (
+                    <button key={p.name} onClick={() => setSdForm(f => ({...f, name: p.name, icon: p.icon}))} style={{
+                      padding: "7px 12px", borderRadius: "20px", border: "1px solid",
+                      borderColor: sdForm.name === p.name ? "#6366f1" : "rgba(255,255,255,0.08)",
+                      background: sdForm.name === p.name ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                      color: sdForm.name === p.name ? "#a5b4fc" : "#666",
+                      fontSize: "12px", cursor: "pointer", fontWeight: 700,
+                    }}>{p.icon} {p.name}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Nama (bisa diubah)</div>
+                <input placeholder="contoh: BCA Tabungan" value={sdForm.name} onChange={e => setSdForm(f => ({...f, name: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Saldo Awal (Rp)</div>
+                <input placeholder="contoh: 1000000" value={sdForm.initialBalance} onChange={e => setSdForm(f => ({...f, initialBalance: e.target.value.replace(/\D/g,"")}))} inputMode="numeric" style={inputStyle} />
+              </div>
+
+              <button onClick={addSumberDana} disabled={!sdForm.name} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: sdForm.name ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: sdForm.name ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Sumber Dana</button>
+            </div>
+          </div>
+        )}
+
+        {/* ===== MODAL DETAIL SUMBER DANA ===== */}
+        {selectedSD && (() => {
+          const sd = sumberDanaList.find(s => s.id === selectedSD);
+          if (!sd) return null;
+          const balance = calcSumberDanaBalance(sd.id);
+          const myLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedSD(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "40px", marginBottom: "8px" }}>{sd.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{sd.name}</div>
+                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{sd.user}</div>
+                </div>
+
+                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "16px", marginBottom: "16px", textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Saldo Saat Ini</div>
+                  <div style={{ fontSize: "26px", fontWeight: 900, color: balance >= 0 ? "#34d399" : "#f87171" }}>{formatFull(balance)}</div>
+                  <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>Saldo awal: {formatRupiah(sd.initialBalance || 0)}</div>
+                </div>
+
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Riwayat Mutasi</div>
+                {myLedger.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "20px", color: "#444", fontSize: "13px" }}>Belum ada mutasi</div>
+                ) : myLedger.map(l => (
+                  <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", marginBottom: "6px", borderRadius: "10px", background: "rgba(255,255,255,0.04)" }}>
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#e8e8f0" }}>{l.note}</div>
+                      <div style={{ fontSize: "10px", color: "#555" }}>{new Date(l.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: l.amount >= 0 ? "#34d399" : "#f87171" }}>{l.amount >= 0 ? "+" : ""}{formatRupiah(l.amount)}</div>
+                  </div>
+                ))}
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                  {sd.user === currentUser && (
+                    <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                  )}
+                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL CATAT GADAI ===== */}
+        {showGadaiForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛️ Catat Gadai Emas</div>
+                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Pegadaian · Konvensional KCA</div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Nama Barang</div>
+                <input placeholder="contoh: Cincin Kawin 18K, Gelang Emas 24K" value={gadaiForm.namaBarang} onChange={e => setGadaiForm(f => ({...f, namaBarang: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Berat (gram)</div>
+                  <input placeholder="contoh: 5" value={gadaiForm.beratGram} onChange={e => setGadaiForm(f => ({...f, beratGram: e.target.value}))} inputMode="decimal" style={inputStyle} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Kadar</div>
+                  <select value={gadaiForm.kadar} onChange={e => setGadaiForm(f => ({...f, kadar: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                    <option value="24">24K (99.9%)</option>
+                    <option value="22">22K (91.7%)</option>
+                    <option value="21">21K (87.5%)</option>
+                    <option value="20">20K (83.3%)</option>
+                    <option value="18">18K (75%)</option>
+                    <option value="17">17K (70.8%)</option>
+                    <option value="16">16K (66.7%)</option>
+                    <option value="14">14K (58.3%)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tanggal Gadai</div>
+                  <input type="date" value={gadaiForm.tanggalGadai} onChange={e => setGadaiForm(f => ({...f, tanggalGadai: e.target.value}))} style={{ ...inputStyle, color: "#888", colorScheme: "dark" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tenor</div>
+                  <select value={gadaiForm.tenor} onChange={e => setGadaiForm(f => ({...f, tenor: e.target.value}))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                    <option value="15">15 hari</option>
+                    <option value="30">30 hari</option>
+                    <option value="60">60 hari</option>
+                    <option value="90">90 hari</option>
+                    <option value="120">120 hari</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Emas Saat Gadai /gram (opsional)</div>
+                <input placeholder={`Default: ${formatRupiah(marketPrices?.goldPerGram || 1680000)}/gram`} value={gadaiForm.hargaEmas} onChange={e => setGadaiForm(f => ({...f, hargaEmas: e.target.value}))} inputMode="numeric" style={inputStyle} />
+              </div>
+
+              {/* Preview kalkulasi */}
+              {gadaiForm.beratGram && (() => {
+                const harga = parseAmount(gadaiForm.hargaEmas) || marketPrices?.goldPerGram || 1680000;
+                const hasil = hitungGadai(parseFloat(gadaiForm.beratGram), gadaiForm.kadar, harga, parseInt(gadaiForm.tenor));
+                return (
+                  <div style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: "12px", padding: "14px", marginBottom: "12px" }}>
+                    <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "10px", fontWeight: 700 }}>📊 Estimasi Gadai</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <div><div style={{ fontSize: "10px", color: "#555" }}>Nilai Taksiran</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.nilaiTaksiran)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#34d399" }}>Uang Pinjaman</div><div style={{ fontSize: "13px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(hasil.uangPinjaman)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#555" }}>Total Bunga</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(hasil.totalBunga)}</div></div>
+                      <div><div style={{ fontSize: "10px", color: "#f87171" }}>Total Lunas</div><div style={{ fontSize: "13px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(hasil.totalLunas)}</div></div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
+                <input placeholder="contoh: SBG No. 123456, cabang Kemang" value={gadaiForm.catatan} onChange={e => setGadaiForm(f => ({...f, catatan: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <button onClick={addGadai} disabled={!gadaiForm.namaBarang || !gadaiForm.beratGram} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: gadaiForm.namaBarang && gadaiForm.beratGram ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.07)", color: gadaiForm.namaBarang && gadaiForm.beratGram ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Gadai</button>
+            </div>
+          </div>
+        )}
+        {showForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah · {currentUser}</div>
+              </div>
+              <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "4px", marginBottom: "16px" }}>
+                {[["expense","Pengeluaran"],["income","Pemasukan"]].map(([val,label]) => (
+                  <button key={val} onClick={() => setForm(f => ({...f, type: val, category: val === "expense" ? "makan" : "gaji"}))} style={{ flex: 1, padding: "10px", border: "none", cursor: "pointer", borderRadius: "9px", fontSize: "13px", fontWeight: 700, background: form.type === val ? (val === "expense" ? "#ef4444" : "#10b981") : "transparent", color: form.type === val ? "#fff" : "#555" }}>{label}</button>
+                ))}
+              </div>
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Kategori</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {(form.type === "expense" ? EXPENSE_CATS : INCOME_CATS).map(cat => (
+                    <button key={cat.id} onClick={() => setForm(f => ({...f, category: cat.id}))} style={{ padding: "6px 12px", borderRadius: "20px", border: "1px solid", borderColor: form.category === cat.id ? "#6366f1" : "rgba(255,255,255,0.08)", background: form.category === cat.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: form.category === cat.id ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{cat.icon} {cat.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah</div>
+                <input placeholder="Rp 0" value={amountDisplay} inputMode="numeric"
+                  onChange={e => { const raw = e.target.value.replace(/\D/g,""); setAmountDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setForm(f => ({...f, amount: raw})); }}
+                  style={{ ...inputStyle, fontSize: "18px" }} />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Sumber Dana *</div>
+                {myFundingSources.length === 0 ? (
+                  <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "12px", padding: "12px 14px", fontSize: "12px", color: "#fbbf24" }}>
+                    ⚠️ Kamu belum punya sumber dana. Buka tab 💳 Dompet untuk menambahkan dulu.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {myFundingSources.map(sd => (
+                      <button key={sd.id} onClick={() => setTransactionSDId(sd.id)} style={{
+                        padding: "8px 12px", borderRadius: "20px", border: "1px solid",
+                        borderColor: transactionSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)",
+                        background: transactionSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                        color: transactionSDId === sd.id ? "#a5b4fc" : "#666",
+                        fontSize: "12px", cursor: "pointer", fontWeight: 600,
+                      }}>{sd.icon} {sd.name}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+                <input placeholder="Catatan (opsional)" value={form.note} onChange={e => setForm(f => ({...f, note: e.target.value}))} style={{ flex: 2, ...inputStyle, fontSize: "13px" }} />
+                <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} style={{ flex: 1, ...inputStyle, color: "#888", fontSize: "12px", colorScheme: "dark" }} />
+              </div>
+              <button onClick={addTransaction} disabled={!form.amount || !transactionSDId} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: form.amount && transactionSDId ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: form.amount && transactionSDId ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Transaksi</button>
+            </div>
+          </div>
+        )}
+
+        {/* Modal Investasi */}
+        {showInvForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowInvForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah Investasi 📈</div>
+              </div>
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jenis Aset</div>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  {[["usd","💵 USD"],["lm","🥇 LM"],["jewelry","💍 Perhiasan"]].map(([val,label]) => (
+                    <button key={val} onClick={() => setInvForm(f => ({...f, type: val}))} style={{ flex: 1, padding: "10px 4px", border: "1px solid", borderColor: invForm.type === val ? "#10b981" : "rgba(255,255,255,0.08)", background: invForm.type === val ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.04)", color: invForm.type === val ? "#34d399" : "#666", borderRadius: "10px", fontSize: "12px", cursor: "pointer", fontWeight: 700 }}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jumlah ({invTypeUnit[invForm.type]})</div>
+                <input placeholder="contoh: 100" value={invForm.amount} onChange={e => setInvForm(f => ({...f, amount: e.target.value}))} inputMode="decimal" style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Beli per {invTypeUnit[invForm.type]} (Rp)</div>
+                <input placeholder="contoh: 1650000" value={invForm.buyPrice} onChange={e => setInvForm(f => ({...f, buyPrice: e.target.value}))} inputMode="numeric" style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
+                <input placeholder="contoh: Beli di Pegadaian" value={invForm.note} onChange={e => setInvForm(f => ({...f, note: e.target.value}))} style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tanggal Pembelian</div>
+                <input type="date" value={invForm.buyDate} onChange={e => setInvForm(f => ({...f, buyDate: e.target.value}))} style={{ ...inputStyle, color: "#888", colorScheme: "dark" }} />
+              </div>
+              <button onClick={addInvestment} disabled={!invForm.amount || !invForm.buyPrice} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: invForm.amount && invForm.buyPrice ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: invForm.amount && invForm.buyPrice ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Investasi</button>
+            </div>
+          </div>
+        )}
+
+      </div>
+      <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
+    </div>
+  );
+                            }
