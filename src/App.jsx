@@ -17,21 +17,8 @@ const EMAILJS_PUBLIC_KEY = "JgSEIph8MbKy6IXbK";
 const REPORT_EMAIL = "dwistapratama@gmail.com";
 const ADMIN_USER = "Bape";
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx8vt1azC0xFS3v5Qbe_9ksbcXjvOmpBUxN5kt4b22nA1D5EFFob863Xve7RS_xxm6i/exec";
-const SHEETS_WEBHOOK_URL = ""; // ISI SETELAH DEPLOY APPS SCRIPT
 
 // ── Google Sheets Sync ──────────────────────────────────────
-async function syncToSheets(type, payload) {
-  if (!SHEETS_WEBHOOK_URL) return;
-  try {
-    await fetch(SHEETS_WEBHOOK_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, payload }),
-    });
-  } catch (e) { console.warn("Sheets sync failed:", e); }
-}
-
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
 
@@ -1833,4 +1820,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                            }
+        }
