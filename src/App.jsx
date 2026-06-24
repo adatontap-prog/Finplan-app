@@ -16,6 +16,21 @@ const EMAILJS_TEMPLATE_ID = "template_oq3ro9o";
 const EMAILJS_PUBLIC_KEY = "JgSEIph8MbKy6IXbK";
 const REPORT_EMAIL = "dwistapratama@gmail.com";
 const ADMIN_USER = "Bape";
+const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx8vt1azC0xFS3v5Qbe_9ksbcXjvOmpBUxN5kt4b22nA1D5EFFob863Xve7RS_xxm6i/exec";
+const SHEETS_WEBHOOK_URL = ""; // ISI SETELAH DEPLOY APPS SCRIPT
+
+// ── Google Sheets Sync ──────────────────────────────────────
+async function syncToSheets(type, payload) {
+  if (!SHEETS_WEBHOOK_URL) return;
+  try {
+    await fetch(SHEETS_WEBHOOK_URL, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type, payload }),
+    });
+  } catch (e) { console.warn("Sheets sync failed:", e); }
+}
 
 const firebaseApp = initializeApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
@@ -37,6 +52,19 @@ const CATEGORIES = [
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
 const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
+
+const SUMBER_DANA_PRESETS = [
+  { name: "Cash", icon: "💵" },
+  { name: "Bank BCA", icon: "🏦" },
+  { name: "Bank Mandiri", icon: "🏦" },
+  { name: "Bank BNI", icon: "🏦" },
+  { name: "Bank BRI", icon: "🏦" },
+  { name: "GoPay", icon: "🟢" },
+  { name: "OVO", icon: "🟣" },
+  { name: "DANA", icon: "🔵" },
+  { name: "ShopeePay", icon: "🟠" },
+  { name: "Lainnya", icon: "💳" },
+];
 
 const ASSET_TYPES = [
   { id: "idr", label: "Rupiah (IDR)", icon: "💵", unit: "IDR", dynamic: false },
@@ -155,6 +183,49 @@ async function fetchMarketPrices() {
   }
 }
 
+// ===== GOOGLE SHEETS SYNC =====
+async function syncToSheets(action, payload) {
+  try {
+    const res = await fetch(SHEETS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ action, payload }),
+    });
+    const data = await res.json();
+    return data;
+  } catch (e) {
+    console.error("Sheets sync error:", e);
+    return { success: false, message: e.message };
+  }
+}
+
+async function syncAllToSheets(transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList) {
+  // Format savings holdings into flat rows
+  const savingsRows = [];
+  Object.entries(savingsHoldings || {}).forEach(([goalId, holdings]) => {
+    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    (holdings || []).forEach(h => {
+      savingsRows.push({ ...h, goalId, goalLabel: goal?.label || goalId });
+    });
+  });
+
+  // Add cash savings
+  Object.entries(savingsData || {}).forEach(([goalId, amount]) => {
+    if (amount > 0) {
+      const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+      savingsRows.push({ id: `cash_${goalId}`, goalId, goalLabel: goal?.label || goalId, assetType: "idr", qty: amount, unit: "IDR", buyPrice: 0, note: "Tunai IDR", addedAt: new Date().toISOString() });
+    }
+  });
+
+  return await syncToSheets("syncAll", {
+    transactions: transactions || [],
+    savings: savingsRows,
+    investments: investments || [],
+    gadai: gadaiList || [],
+    sumberDana: sumberDanaList || [],
+  });
+}
+
 async function sendEmailReport(transactions) {
   const today = new Date();
   const dateStr = today.toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
@@ -205,9 +276,19 @@ export default function App() {
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedInvestment, setSelectedInvestment] = useState(null);
   const [selectedGoal, setSelectedGoal] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [gadaiList, setGadaiList] = useState([]);
   const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   const [calcForm, setCalcForm] = useState({ beratGram: "", kadar: "24", tenor: "120" });
+  const [sumberDanaList, setSumberDanaList] = useState([]);
+  const [sumberDanaLedger, setSumberDanaLedger] = useState([]);
+  const [walletFilterUser, setWalletFilterUser] = useState("");
+  const [showSDForm, setShowSDForm] = useState(false);
+  const [sdForm, setSdForm] = useState({ name: "", icon: "💵", initialBalance: "" });
+  const [selectedSD, setSelectedSD] = useState(null);
+  const [transactionSDId, setTransactionSDId] = useState("");
+  const [savingsSDId, setSavingsSDId] = useState("");
+  const [assetSDId, setAssetSDId] = useState("");
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("finplan_user") || "");
   const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] });
@@ -221,6 +302,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [emailStatus, setEmailStatus] = useState("");
+  const [syncingSheets, setSyncingSheets] = useState(false);
+  const [sheetsStatus, setSheetsStatus] = useState("");
 
   useEffect(() => {
     if (!currentUser) { setShowUserSelect(true); setLoading(false); return; }
@@ -229,11 +312,14 @@ export default function App() {
     const unsub3 = onSnapshot(doc(db, "savings", "goals"), snap => { if (snap.exists()) setSavingsData(snap.data()); });
     const unsub4 = onSnapshot(doc(db, "savings", "holdings"), snap => { if (snap.exists()) setSavingsHoldings(snap.data()); });
     const unsub5 = onSnapshot(query(collection(db, "gadai"), orderBy("createdAt", "desc")), snap => { setGadaiList(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
+    const unsub6 = onSnapshot(query(collection(db, "sumberDana"), orderBy("createdAt", "desc")), snap => { setSumberDanaList(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    const unsub7 = onSnapshot(collection(db, "sumberDanaLedger"), snap => { setSumberDanaLedger(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (activeTab === "savings" && !marketPrices) loadPrices(); }, [activeTab]);
+  useEffect(() => { if (currentUser && !walletFilterUser) setWalletFilterUser(currentUser); }, [currentUser]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -249,7 +335,7 @@ export default function App() {
   }, [transactions]);
 
   async function loadPrices() { setLoadingPrices(true); setMarketPrices(await fetchMarketPrices()); setLoadingPrices(false); }
-  function selectUser(name) { setCurrentUser(name); localStorage.setItem("finplan_user", name); setShowUserSelect(false); setLoading(true); }
+  function selectUser(name) { setCurrentUser(name); localStorage.setItem("finplan_user", name); setShowUserSelect(false); setLoading(true); setWalletFilterUser(name); }
 
   // Calculate total value of a savings goal (IDR cash + all assets)
   function calcGoalValue(goalId) {
@@ -293,7 +379,12 @@ export default function App() {
     if (!amt) return;
     const newData = { ...savingsData, [goalId]: (savingsData[goalId] || 0) + amt };
     await setDoc(doc(db, "savings", "goals"), newData);
-    setSavingsData(newData); setShowSavingsForm(null); setSavingsInput(""); setSavingsInputDisplay("");
+    setSavingsData(newData);
+    if (savingsSDId) {
+      const goalLabel = SAVINGS_GOALS.find(g => g.id === goalId)?.label || goalId;
+      await logLedger(savingsSDId, -amt, `Setor tabungan: ${goalLabel}`, "savings", goalId);
+    }
+    setShowSavingsForm(null); setSavingsInput(""); setSavingsInputDisplay(""); setSavingsSDId("");
   }
 
   async function addSavingsAsset(goalId) {
@@ -318,8 +409,20 @@ export default function App() {
     const updated = { ...savingsHoldings, [goalId]: [...existing, newHolding] };
     await setDoc(doc(db, "savings", "holdings"), updated);
     setSavingsHoldings(updated);
+
+    if (assetSDId) {
+      const buyValueIdr = ["idr","obligasi"].includes(assetForm.assetType) ? qty : qty * buyPrice;
+      const goalLabel = SAVINGS_GOALS.find(g => g.id === goalId)?.label || goalId;
+      await logLedger(assetSDId, -buyValueIdr, `Setor aset ${assetType?.label} ke ${goalLabel}`, "savings", goalId);
+    }
+
+    // Sync ke Google Sheets
+    const goalLabel = SAVINGS_GOALS.find(g => g.id === goalId)?.label || goalId;
+    syncToSheets("addSavings", { ...newHolding, goalId, goalLabel, unit: assetType?.unit || "" });
+
     setShowAssetConvert(null);
     setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+    setAssetSDId("");
   }
 
   async function removeHolding(goalId, holdingId) {
@@ -338,9 +441,14 @@ export default function App() {
 
   async function addTransaction() {
     const amt = parseAmount(form.amount);
-    if (!amt || !form.date) return;
-    await addDoc(collection(db, "transactions"), { type: form.type, category: form.category, amount: amt, note: form.note, date: form.date, user: currentUser, createdAt: new Date().toISOString() });
-    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] }); setAmountDisplay("");
+    if (!amt || !form.date || !transactionSDId) return;
+    const sd = sumberDanaList.find(s => s.id === transactionSDId);
+    const txData = { type: form.type, category: form.category, amount: amt, note: form.note, date: form.date, user: currentUser, sumberDanaId: transactionSDId, sumberDanaName: sd?.name || "", createdAt: new Date().toISOString() };
+    const docRef = await addDoc(collection(db, "transactions"), txData);
+    await logLedger(transactionSDId, form.type === "income" ? amt : -amt, `${form.type === "income" ? "Pemasukan" : "Pengeluaran"}: ${form.note || CATEGORIES.find(c=>c.id===form.category)?.label}`, "transaction", docRef.id);
+    // Sync ke Google Sheets
+    syncToSheets("addTransaction", { ...txData, id: docRef.id });
+    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] }); setAmountDisplay(""); setTransactionSDId("");
   }
 
   async function addInvestment() {
@@ -352,7 +460,8 @@ export default function App() {
     const buyPrice = parseDecimal(assetForm.buyPrice);
     if (!qty) return;
     const idrValue = ["idr","obligasi"].includes(assetForm.assetType) ? qty : null;
-    await addDoc(collection(db, "investments"), {
+    const at = ASSET_TYPES.find(a => a.id === assetForm.assetType);
+    const docRef = await addDoc(collection(db, "investments"), {
       assetType: assetForm.assetType,
       qty,
       amount: qty,
@@ -365,12 +474,26 @@ export default function App() {
       type: assetForm.assetType,
       createdAt: new Date().toISOString(),
     });
+    if (assetSDId) {
+      const buyValueIdr = idrValue !== null ? qty : qty * buyPrice;
+      await logLedger(assetSDId, -buyValueIdr, `Beli investasi: ${assetForm.ticker || at?.label}`, "investment", docRef.id);
+    }
+    // Sync ke Google Sheets
+    syncToSheets("addInvestment", { id: docRef.id, assetType: assetForm.assetType, ticker: assetForm.ticker, qty, unit: at?.unit || "", buyPrice, note: assetForm.note, buyDate: new Date().toISOString().split("T")[0] });
     setShowAssetConvert(null);
     setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+    setAssetSDId("");
   }
 
-  async function deleteTransaction(id) { await deleteDoc(doc(db, "transactions", id)); }
-  async function deleteInvestment(id) { await deleteDoc(doc(db, "investments", id)); }
+  async function deleteTransaction(id) {
+    await deleteDoc(doc(db, "transactions", id));
+    const relatedLedger = sumberDanaLedger.filter(l => l.refType === "transaction" && l.refId === id);
+    for (const l of relatedLedger) await deleteDoc(doc(db, "sumberDanaLedger", l.id));
+    syncToSheets("deleteTransaction", { id });
+  }
+  async function deleteInvestment(id) {
+    await deleteDoc(doc(db, "investments", id));
+  }
 
   // ===== GADAI FUNCTIONS =====
   function hitungGadai(beratGram, kadar, hargaEmasPerGram, tenor) {
@@ -401,21 +524,16 @@ export default function App() {
     const harga = parseAmount(gadaiForm.hargaEmas) || (marketPrices?.goldPerGram || 1680000);
     if (!berat || !gadaiForm.namaBarang) return;
     const hasil = hitungGadai(berat, gadaiForm.kadar, harga, parseInt(gadaiForm.tenor));
-    await addDoc(collection(db, "gadai"), {
-      namaBarang: gadaiForm.namaBarang,
-      beratGram: berat,
-      kadar: gadaiForm.kadar,
-      hargaEmasGadai: harga,
-      nilaiTaksiran: hasil.nilaiTaksiran,
-      uangPinjaman: hasil.uangPinjaman,
-      totalBunga: hasil.totalBunga,
-      totalLunas: hasil.totalLunas,
-      tanggalGadai: gadaiForm.tanggalGadai,
-      tenor: parseInt(gadaiForm.tenor),
-      catatan: gadaiForm.catatan,
-      status: "aktif",
-      createdAt: new Date().toISOString(),
-    });
+    const gadaiData = {
+      namaBarang: gadaiForm.namaBarang, beratGram: berat, kadar: gadaiForm.kadar,
+      hargaEmasGadai: harga, nilaiTaksiran: hasil.nilaiTaksiran,
+      uangPinjaman: hasil.uangPinjaman, totalBunga: hasil.totalBunga,
+      totalLunas: hasil.totalLunas, tanggalGadai: gadaiForm.tanggalGadai,
+      tenor: parseInt(gadaiForm.tenor), catatan: gadaiForm.catatan,
+      status: "aktif", createdAt: new Date().toISOString(),
+    };
+    const docRef = await addDoc(collection(db, "gadai"), gadaiData);
+    syncToSheets("addGadai", { ...gadaiData, id: docRef.id });
     setShowGadaiForm(false);
     setGadaiForm({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   }
@@ -423,9 +541,52 @@ export default function App() {
   async function updateGadaiStatus(id, status) {
     const { updateDoc } = await import("firebase/firestore");
     await updateDoc(doc(db, "gadai", id), { status, updatedAt: new Date().toISOString() });
+    syncToSheets("updateGadai", { id, status });
   }
 
   async function deleteGadai(id) { await deleteDoc(doc(db, "gadai", id)); }
+
+  // ===== SUMBER DANA (FUNDING SOURCE) FUNCTIONS =====
+  function calcSumberDanaBalance(sdId) {
+    const sd = sumberDanaList.find(s => s.id === sdId);
+    if (!sd) return 0;
+    const ledgerSum = sumberDanaLedger.filter(l => l.sumberDanaId === sdId).reduce((s, l) => s + l.amount, 0);
+    return (sd.initialBalance || 0) + ledgerSum;
+  }
+
+  async function logLedger(sumberDanaId, amount, note, refType, refId) {
+    if (!sumberDanaId) return;
+    await addDoc(collection(db, "sumberDanaLedger"), {
+      sumberDanaId, amount, note: note || "", refType, refId: refId || null,
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  async function addSumberDana() {
+    if (!sdForm.name) return;
+    const initBal = parseAmount(sdForm.initialBalance);
+    await addDoc(collection(db, "sumberDana"), {
+      user: currentUser, name: sdForm.name, icon: sdForm.icon, initialBalance: initBal,
+      createdAt: new Date().toISOString(),
+    });
+    setShowSDForm(false);
+    setSdForm({ name: "", icon: "💵", initialBalance: "" });
+  }
+
+  async function deleteSumberDana(id) {
+    await deleteDoc(doc(db, "sumberDana", id));
+  }
+
+  const myFundingSources = sumberDanaList.filter(sd => sd.user === currentUser);
+
+  async function handleSyncAll() {
+    setSyncingSheets(true);
+    setSheetsStatus("");
+    const result = await syncAllToSheets(transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList);
+    setSyncingSheets(false);
+    setSheetsStatus(result.success ? "✅ Google Sheets tersync!" : "❌ " + (result.message || "Gagal sync"));
+    setTimeout(() => setSheetsStatus(""), 5000);
+  }
 
   async function handleSendReport() {
     setSending(true);
@@ -436,7 +597,7 @@ export default function App() {
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
-  const tabStyle = (key) => ({ flex: 1, padding: "8px 2px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "9px", fontWeight: 700, background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
+  const tabStyle = (key) => ({ flex: "0 0 auto", padding: "8px 10px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
   const savTabStyle = (key) => ({ padding: "6px 12px", border: "none", cursor: "pointer", borderRadius: "20px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
@@ -489,19 +650,24 @@ export default function App() {
                 <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↑ Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div></div>
                 <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↓ Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
               </div>
-              <button onClick={handleSendReport} disabled={sending} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{sending ? "📤..." : "📧 Kirim"}</button>
+              <div style={{ display: "flex", gap: "6px" }}>
+                <button onClick={handleSendReport} disabled={sending} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{sending ? "📤..." : "📧"}</button>
+                <button onClick={handleSyncAll} disabled={syncingSheets} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{syncingSheets ? "⏳" : "📊 Sync"}</button>
+              </div>
             </div>
             {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
+            {sheetsStatus && <div style={{ marginTop: "6px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{sheetsStatus}</div>}
           </div>
         </div>
 
-        <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "2px" }}>
+        <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "2px", overflowX: "auto" }}>
           <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>
           <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>
           <button style={tabStyle("family")} onClick={() => setActiveTab("family")}>👨‍👩‍👧 Keluarga</button>
           <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🏦 Tabungan</button>
           <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>
           <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏛️ Gadai</button>
+          <button style={tabStyle("dompet")} onClick={() => setActiveTab("dompet")}>💳 Dompet</button>
         </div>
 
         {/* DASHBOARD */}
@@ -512,7 +678,7 @@ export default function App() {
             : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
               const spent = expenseByCategory[cat.id] || 0;
               return (
-                <div key={cat.id} style={{ marginBottom: "14px" }}>
+                <div key={cat.id} onClick={() => setSelectedCategory(cat.id)} style={{ marginBottom: "14px", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}><span style={{ fontSize: "13px" }}>{cat.icon} {cat.label}</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(spent)}</span></div>
                   <div style={{ height: "6px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden" }}><div style={{ height: "100%", borderRadius: "10px", width: `${spent / barMax * 100}%`, background: "linear-gradient(90deg,#6366f1,#10b981)" }} /></div>
                 </div>
@@ -946,7 +1112,67 @@ export default function App() {
           </div>
         )}
 
-        {activeTab !== "invest" && activeTab !== "savings" && (
+        {/* DOMPET / SUMBER DANA */}
+        {activeTab === "dompet" && (
+          <div style={{ padding: "0 20px" }}>
+            {/* User filter */}
+            <div style={{ display: "flex", gap: "6px", overflowX: "auto", marginBottom: "16px" }}>
+              {USERS.map(u => (
+                <button key={u} onClick={() => setWalletFilterUser(u)} style={{
+                  padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
+                  whiteSpace: "nowrap", fontSize: "12px", fontWeight: 700, flexShrink: 0,
+                  background: walletFilterUser === u ? "#6366f1" : "rgba(255,255,255,0.07)",
+                  color: walletFilterUser === u ? "#fff" : "#888",
+                }}>{u} {u === currentUser ? "(saya)" : ""}</button>
+              ))}
+            </div>
+
+            {/* Total saldo */}
+            {(() => {
+              const userSDs = sumberDanaList.filter(sd => sd.user === walletFilterUser);
+              const totalBalance = userSDs.reduce((s, sd) => s + calcSumberDanaBalance(sd.id), 0);
+              return (
+                <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
+                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Saldo {walletFilterUser}</div>
+                  <div style={{ fontSize: "26px", fontWeight: 900, color: "#fff" }}>{formatFull(totalBalance)}</div>
+                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.6)", marginTop: "4px" }}>{userSDs.length} sumber dana</div>
+                </div>
+              );
+            })()}
+
+            {/* Daftar sumber dana */}
+            {sumberDanaList.filter(sd => sd.user === walletFilterUser).length === 0 ? (
+              <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>💳</div>
+                <div style={{ fontSize: "14px" }}>Belum ada sumber dana</div>
+              </div>
+            ) : sumberDanaList.filter(sd => sd.user === walletFilterUser).map(sd => {
+              const balance = calcSumberDanaBalance(sd.id);
+              return (
+                <div key={sd.id} onClick={() => setSelectedSD(sd.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ fontSize: "26px" }}>{sd.icon}</div>
+                    <div>
+                      <div style={{ fontSize: "14px", fontWeight: 700 }}>{sd.name}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>Saldo awal: {formatRupiah(sd.initialBalance || 0)}</div>
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ fontSize: "15px", fontWeight: 800, color: balance >= 0 ? "#34d399" : "#f87171" }}>{formatRupiah(balance)}</div>
+                    <div style={{ fontSize: "16px", color: "#444" }}>›</div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Tombol tambah - hanya untuk diri sendiri */}
+            {walletFilterUser === currentUser && (
+              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
+            )}
+          </div>
+        )}
+
+        {activeTab !== "invest" && activeTab !== "savings" && activeTab !== "dompet" && (
           <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: "28px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", border: "none", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "28px", boxShadow: "0 8px 32px rgba(99,102,241,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>+</button>
         )}
 
@@ -964,6 +1190,15 @@ export default function App() {
                 <input placeholder="Rp 0" value={savingsInputDisplay} inputMode="numeric"
                   onChange={e => { const raw = e.target.value.replace(/\D/g,""); setSavingsInputDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setSavingsInput(raw); }}
                   style={{ ...inputStyle, fontSize: "18px" }} />
+              </div>
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Potong dari Sumber Dana (opsional)</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <button onClick={() => setSavingsSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !savingsSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !savingsSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !savingsSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>— Tidak —</button>
+                  {myFundingSources.map(sd => (
+                    <button key={sd.id} onClick={() => setSavingsSDId(sd.id)} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: savingsSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)", background: savingsSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: savingsSDId === sd.id ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{sd.icon} {sd.name}</button>
+                  ))}
+                </div>
               </div>
               <button onClick={() => addSavingsCash(showSavingsForm)} disabled={!savingsInput} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: savingsInput ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: savingsInput ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Setoran</button>
             </div>
@@ -1041,9 +1276,20 @@ export default function App() {
               )}
 
               {/* Catatan */}
-              <div style={{ marginBottom: "20px" }}>
+              <div style={{ marginBottom: "14px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Catatan (opsional)</div>
                 <input placeholder="contoh: beli di Pegadaian, portofolio BCA" value={assetForm.note} onChange={e => setAssetForm(f => ({...f, note: e.target.value}))} style={inputStyle} />
+              </div>
+
+              {/* Sumber dana opsional */}
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Potong dari Sumber Dana (opsional)</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <button onClick={() => setAssetSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !assetSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !assetSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !assetSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>— Tidak —</button>
+                  {myFundingSources.map(sd => (
+                    <button key={sd.id} onClick={() => setAssetSDId(sd.id)} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: assetSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)", background: assetSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: assetSDId === sd.id ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{sd.icon} {sd.name}</button>
+                  ))}
+                </div>
               </div>
 
               {/* Preview nilai saat ini */}
@@ -1265,6 +1511,149 @@ export default function App() {
           );
         })()}
 
+        {/* ===== MODAL DETAIL KATEGORI ===== */}
+        {selectedCategory && (() => {
+          const cat = CATEGORIES.find(c => c.id === selectedCategory);
+          const catTxns = monthTxns.filter(t => t.category === selectedCategory).sort((a, b) => new Date(b.date) - new Date(a.date));
+          const totalCat = catTxns.reduce((s, t) => s + t.amount, 0);
+          const byUser = {};
+          catTxns.forEach(t => { byUser[t.user] = (byUser[t.user] || 0) + t.amount; });
+
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedCategory(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "40px", marginBottom: "8px" }}>{cat?.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{cat?.label}</div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{MONTHS[filterMonth]} {year} · {catTxns.length} transaksi</div>
+                </div>
+
+                {/* Total */}
+                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "16px", marginBottom: "16px", textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Total Pengeluaran</div>
+                  <div style={{ fontSize: "26px", fontWeight: 900, color: "#f87171" }}>{formatFull(totalCat)}</div>
+                </div>
+
+                {/* Per user breakdown */}
+                {Object.keys(byUser).length > 1 && (
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
+                    {Object.entries(byUser).map(([user, amt]) => (
+                      <div key={user} style={{ flex: "1 1 auto", minWidth: "100px", background: "rgba(255,255,255,0.04)", borderRadius: "10px", padding: "8px 12px" }}>
+                        <div style={{ fontSize: "10px", color: "#555" }}>{user}</div>
+                        <div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(amt)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* List transaksi */}
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Semua Transaksi</div>
+                {catTxns.map(t => (
+                  <div key={t.id} onClick={() => { setSelectedCategory(null); setSelectedTransaction(t); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", cursor: "pointer" }}>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 600 }}>{t.user}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{t.note || "-"} · {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</div>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#f87171" }}>-{formatRupiah(t.amount)}</div>
+                      <div style={{ fontSize: "14px", color: "#444" }}>›</div>
+                    </div>
+                  </div>
+                ))}
+
+                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "12px" }}>Tutup</button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ===== MODAL TAMBAH SUMBER DANA ===== */}
+        {showSDForm && (
+          <div onClick={e => { if (e.target === e.currentTarget) setShowSDForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>💳 Tambah Sumber Dana</div>
+                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Untuk {currentUser}</div>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "8px", textTransform: "uppercase" }}>Pilih Jenis</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  {SUMBER_DANA_PRESETS.map(p => (
+                    <button key={p.name} onClick={() => setSdForm(f => ({...f, name: p.name, icon: p.icon}))} style={{
+                      padding: "7px 12px", borderRadius: "20px", border: "1px solid",
+                      borderColor: sdForm.name === p.name ? "#6366f1" : "rgba(255,255,255,0.08)",
+                      background: sdForm.name === p.name ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                      color: sdForm.name === p.name ? "#a5b4fc" : "#666",
+                      fontSize: "12px", cursor: "pointer", fontWeight: 700,
+                    }}>{p.icon} {p.name}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Nama (bisa diubah)</div>
+                <input placeholder="contoh: BCA Tabungan" value={sdForm.name} onChange={e => setSdForm(f => ({...f, name: e.target.value}))} style={inputStyle} />
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Saldo Awal (Rp)</div>
+                <input placeholder="contoh: 1000000" value={sdForm.initialBalance} onChange={e => setSdForm(f => ({...f, initialBalance: e.target.value.replace(/\D/g,"")}))} inputMode="numeric" style={inputStyle} />
+              </div>
+
+              <button onClick={addSumberDana} disabled={!sdForm.name} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: sdForm.name ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: sdForm.name ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Sumber Dana</button>
+            </div>
+          </div>
+        )}
+
+        {/* ===== MODAL DETAIL SUMBER DANA ===== */}
+        {selectedSD && (() => {
+          const sd = sumberDanaList.find(s => s.id === selectedSD);
+          if (!sd) return null;
+          const balance = calcSumberDanaBalance(sd.id);
+          const myLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+          return (
+            <div onClick={e => { if (e.target === e.currentTarget) setSelectedSD(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
+                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+                  <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
+                  <div style={{ fontSize: "40px", marginBottom: "8px" }}>{sd.icon}</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{sd.name}</div>
+                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{sd.user}</div>
+                </div>
+
+                <div style={{ background: "rgba(255,255,255,0.05)", borderRadius: "16px", padding: "16px", marginBottom: "16px", textAlign: "center" }}>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "4px", textTransform: "uppercase" }}>Saldo Saat Ini</div>
+                  <div style={{ fontSize: "26px", fontWeight: 900, color: balance >= 0 ? "#34d399" : "#f87171" }}>{formatFull(balance)}</div>
+                  <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>Saldo awal: {formatRupiah(sd.initialBalance || 0)}</div>
+                </div>
+
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "10px" }}>Riwayat Mutasi</div>
+                {myLedger.length === 0 ? (
+                  <div style={{ textAlign: "center", padding: "20px", color: "#444", fontSize: "13px" }}>Belum ada mutasi</div>
+                ) : myLedger.map(l => (
+                  <div key={l.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 14px", marginBottom: "6px", borderRadius: "10px", background: "rgba(255,255,255,0.04)" }}>
+                    <div>
+                      <div style={{ fontSize: "12px", color: "#e8e8f0" }}>{l.note}</div>
+                      <div style={{ fontSize: "10px", color: "#555" }}>{new Date(l.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</div>
+                    </div>
+                    <div style={{ fontSize: "13px", fontWeight: 700, color: l.amount >= 0 ? "#34d399" : "#f87171" }}>{l.amount >= 0 ? "+" : ""}{formatRupiah(l.amount)}</div>
+                  </div>
+                ))}
+
+                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+                  {sd.user === currentUser && (
+                    <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                  )}
+                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ===== MODAL CATAT GADAI ===== */}
         {showGadaiForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
@@ -1374,11 +1763,31 @@ export default function App() {
                   onChange={e => { const raw = e.target.value.replace(/\D/g,""); setAmountDisplay(raw ? "Rp " + parseInt(raw).toLocaleString("id-ID") : ""); setForm(f => ({...f, amount: raw})); }}
                   style={{ ...inputStyle, fontSize: "18px" }} />
               </div>
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Sumber Dana *</div>
+                {myFundingSources.length === 0 ? (
+                  <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "12px", padding: "12px 14px", fontSize: "12px", color: "#fbbf24" }}>
+                    ⚠️ Kamu belum punya sumber dana. Buka tab 💳 Dompet untuk menambahkan dulu.
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {myFundingSources.map(sd => (
+                      <button key={sd.id} onClick={() => setTransactionSDId(sd.id)} style={{
+                        padding: "8px 12px", borderRadius: "20px", border: "1px solid",
+                        borderColor: transactionSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)",
+                        background: transactionSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                        color: transactionSDId === sd.id ? "#a5b4fc" : "#666",
+                        fontSize: "12px", cursor: "pointer", fontWeight: 600,
+                      }}>{sd.icon} {sd.name}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
                 <input placeholder="Catatan (opsional)" value={form.note} onChange={e => setForm(f => ({...f, note: e.target.value}))} style={{ flex: 2, ...inputStyle, fontSize: "13px" }} />
                 <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} style={{ flex: 1, ...inputStyle, color: "#888", fontSize: "12px", colorScheme: "dark" }} />
               </div>
-              <button onClick={addTransaction} disabled={!form.amount} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: form.amount ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: form.amount ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Transaksi</button>
+              <button onClick={addTransaction} disabled={!form.amount || !transactionSDId} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: form.amount && transactionSDId ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: form.amount && transactionSDId ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Transaksi</button>
             </div>
           </div>
         )}
@@ -1424,4 +1833,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                                                                                  }
+}
