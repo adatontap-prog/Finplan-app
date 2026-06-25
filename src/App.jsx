@@ -1346,7 +1346,7 @@ export default function App() {
                   {t.user === currentUser && (
                     <button onClick={() => { deleteTransaction(t.id); setSelectedTransaction(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
+                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
               </div>
             </div>
@@ -1411,7 +1411,7 @@ export default function App() {
                   {currentUser === ADMIN_USER && (
                     <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
+                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
             </div>
           );
@@ -1495,7 +1495,7 @@ export default function App() {
                   {currentUser === ADMIN_USER && (
                     <button onClick={() => { setSelectedGoal(null); setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>+ Setor</button>
                   )}
-                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
+                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
             </div>
           );
@@ -1554,7 +1554,7 @@ export default function App() {
                 ))}
 
               <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", flexShrink: 0 }}>
-                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
+                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
               </div>
             </div>
           );
@@ -1640,7 +1640,7 @@ export default function App() {
                   {sd.user === currentUser && (
                     <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
+                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
             </div>
           );
