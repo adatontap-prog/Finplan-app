@@ -1166,7 +1166,8 @@ export default function App() {
         {/* ===== MODAL SETOR TUNAI ===== */}
         {showSavingsForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowSavingsForm(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>💵 Setor Tunai</div>
@@ -1187,6 +1188,12 @@ export default function App() {
                   ))}
                 </div>
               </div>
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={() => addSavingsCash(showSavingsForm)} disabled={!savingsInput} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: savingsInput ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: savingsInput ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Setoran</button>
             </div>
           </div>
@@ -1195,7 +1202,8 @@ export default function App() {
         {/* ===== MODAL SETOR ASET ===== */}
         {showAssetConvert && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowAssetConvert(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>
@@ -1292,6 +1300,12 @@ export default function App() {
                 </div>
               )}
 
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={() => {
                 if (showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset") {
                   addInvestmentAsset(showAssetConvert);
@@ -1313,7 +1327,7 @@ export default function App() {
           const jamFormatted = t.createdAt ? new Date(t.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-";
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
@@ -1363,7 +1377,7 @@ export default function App() {
           const pct = buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0;
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedInvestment(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
@@ -1429,7 +1443,7 @@ export default function App() {
           const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedGoal(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1511,7 +1525,7 @@ export default function App() {
 
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedCategory(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1563,7 +1577,8 @@ export default function App() {
         {/* ===== MODAL TAMBAH SUMBER DANA ===== */}
         {showSDForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowSDForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>💳 Tambah Sumber Dana</div>
@@ -1595,6 +1610,12 @@ export default function App() {
                 <input placeholder="contoh: 1000000" value={sdForm.initialBalance} onChange={e => setSdForm(f => ({...f, initialBalance: e.target.value.replace(/\D/g,"")}))} inputMode="numeric" style={inputStyle} />
               </div>
 
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={addSumberDana} disabled={!sdForm.name} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: sdForm.name ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: sdForm.name ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Sumber Dana</button>
             </div>
           </div>
@@ -1608,7 +1629,7 @@ export default function App() {
           const myLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedSD(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1649,7 +1670,8 @@ export default function App() {
         {/* ===== MODAL CATAT GADAI ===== */}
         {showGadaiForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛️ Catat Gadai Emas</div>
@@ -1725,13 +1747,20 @@ export default function App() {
                 <input placeholder="contoh: SBG No. 123456, cabang Kemang" value={gadaiForm.catatan} onChange={e => setGadaiForm(f => ({...f, catatan: e.target.value}))} style={inputStyle} />
               </div>
 
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={addGadai} disabled={!gadaiForm.namaBarang || !gadaiForm.beratGram} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: gadaiForm.namaBarang && gadaiForm.beratGram ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.07)", color: gadaiForm.namaBarang && gadaiForm.beratGram ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Gadai</button>
             </div>
           </div>
         )}
         {showForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah · {currentUser}</div>
@@ -1779,6 +1808,12 @@ export default function App() {
                 <input placeholder="Catatan (opsional)" value={form.note} onChange={e => setForm(f => ({...f, note: e.target.value}))} style={{ flex: 2, ...inputStyle, fontSize: "13px" }} />
                 <input type="date" value={form.date} onChange={e => setForm(f => ({...f, date: e.target.value}))} style={{ flex: 1, ...inputStyle, color: "#888", fontSize: "12px", colorScheme: "dark" }} />
               </div>
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={addTransaction} disabled={!form.amount || !transactionSDId} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: form.amount && transactionSDId ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.07)", color: form.amount && transactionSDId ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Transaksi</button>
             </div>
           </div>
@@ -1787,7 +1822,8 @@ export default function App() {
         {/* Modal Investasi */}
         {showInvForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowInvForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+              <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah Investasi 📈</div>
@@ -1816,6 +1852,12 @@ export default function App() {
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Tanggal Pembelian</div>
                 <input type="date" value={invForm.buyDate} onChange={e => setInvForm(f => ({...f, buyDate: e.target.value}))} style={{ ...inputStyle, color: "#888", colorScheme: "dark" }} />
               </div>
+
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
+              
+              </div>
+              <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={addInvestment} disabled={!invForm.amount || !invForm.buyPrice} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: invForm.amount && invForm.buyPrice ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: invForm.amount && invForm.buyPrice ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Investasi</button>
             </div>
           </div>
@@ -1825,4 +1867,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-}
+    }
