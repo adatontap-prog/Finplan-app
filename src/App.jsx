@@ -1195,7 +1195,7 @@ export default function App() {
         {/* ===== MODAL SETOR ASET ===== */}
         {showAssetConvert && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowAssetConvert(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>
@@ -1314,6 +1314,7 @@ export default function App() {
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
               <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
                   <div style={{ fontSize: "48px", marginBottom: "8px" }}>{cat?.icon}</div>
@@ -1339,11 +1340,13 @@ export default function App() {
                   ))}
                 </div>
 
-                <div style={{ display: "flex", gap: "10px" }}>
+              </div>
+              </div>
+                <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px" }}>
                   {t.user === currentUser && (
                     <button onClick={() => { deleteTransaction(t.id); setSelectedTransaction(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
                 </div>
               </div>
             </div>
@@ -1361,7 +1364,8 @@ export default function App() {
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedInvestment(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
               <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div style={{ textAlign: "center", marginBottom: "24px" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
+              <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
                   <div style={{ fontSize: "40px", marginBottom: "8px" }}>{at.icon}</div>
                   <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff" }}>{inv.ticker || at.label}</div>
@@ -1403,13 +1407,12 @@ export default function App() {
                   ))}
                 </div>
 
-                <div style={{ display: "flex", gap: "10px" }}>
+              <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px", flexShrink: 0 }}>
                   {currentUser === ADMIN_USER && (
                     <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                  <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
                 </div>
-              </div>
             </div>
           );
         })()}
@@ -1426,8 +1429,9 @@ export default function App() {
           const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedGoal(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
-                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                   <div style={{ fontSize: "36px", marginBottom: "8px" }}>{goal.icon}</div>
                   <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{goal.label}</div>
@@ -1487,13 +1491,12 @@ export default function App() {
                   </div>
                 )}
 
-                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px", flexShrink: 0 }}>
                   {currentUser === ADMIN_USER && (
                     <button onClick={() => { setSelectedGoal(null); setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>+ Setor</button>
                   )}
-                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                  <button onClick={() => setSelectedGoal(null)} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
                 </div>
-              </div>
             </div>
           );
         })()}
@@ -1508,8 +1511,9 @@ export default function App() {
 
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedCategory(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
-                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                   <div style={{ fontSize: "40px", marginBottom: "8px" }}>{cat?.icon}</div>
                   <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{cat?.label}</div>
@@ -1549,7 +1553,8 @@ export default function App() {
                   </div>
                 ))}
 
-                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "12px" }}>Tutup</button>
+              <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", flexShrink: 0 }}>
+                <button onClick={() => setSelectedCategory(null)} style={{ width: "100%", padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
               </div>
             </div>
           );
@@ -1603,8 +1608,9 @@ export default function App() {
           const myLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedSD(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "85vh", overflowY: "auto" }}>
-                <div style={{ textAlign: "center", marginBottom: "20px" }}>
+              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
+              <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                   <div style={{ fontSize: "40px", marginBottom: "8px" }}>{sd.icon}</div>
                   <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{sd.name}</div>
@@ -1630,13 +1636,12 @@ export default function App() {
                   </div>
                 ))}
 
-                <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
+              <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px", flexShrink: 0 }}>
                   {sd.user === currentUser && (
                     <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
                   )}
-                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                  <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>✕ Tutup</button>
                 </div>
-              </div>
             </div>
           );
         })()}
@@ -1644,7 +1649,7 @@ export default function App() {
         {/* ===== MODAL CATAT GADAI ===== */}
         {showGadaiForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", padding: "24px 20px 40px", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛️ Catat Gadai Emas</div>
@@ -1820,4 +1825,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-        }
+}
