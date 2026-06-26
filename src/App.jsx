@@ -17,6 +17,16 @@ const EMAILJS_PUBLIC_KEY = "JgSEIph8MbKy6IXbK";
 const REPORT_EMAIL = "dwistapratama@gmail.com";
 const ADMIN_USER = "Bape";
 const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx8vt1azC0xFS3v5Qbe_9ksbcXjvOmpBUxN5kt4b22nA1D5EFFob863Xve7RS_xxm6i/exec";
+const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 menit
+const PIN_SALT = "finplan_adp_2026";
+const PIN_DIGITS = 6;
+
+async function hashPin(pin) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(pin + PIN_SALT);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
 
 // ── Google Sheets Sync ──────────────────────────────────────
 const firebaseApp = initializeApp(firebaseConfig);
@@ -292,8 +302,19 @@ export default function App() {
   const [syncingSheets, setSyncingSheets] = useState(false);
   const [sheetsStatus, setSheetsStatus] = useState("");
 
+  // ===== SECURITY STATES =====
+  const [securityData, setSecurityData] = useState(null);
+  const [securityLoaded, setSecurityLoaded] = useState(false);
+  const [authStep, setAuthStep] = useState("family"); // "family" | "userSelect" | "userPin" | "unlocked"
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [setupMode, setSetupMode] = useState(null); // null | "familyPw" | "userPin" | "confirmFamilyPw" | "confirmUserPin"
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [tempPin, setTempPin] = useState("");
+  const [lastActivity, setLastActivity] = useState(Date.now());
+
   useEffect(() => {
-    if (!currentUser) { setShowUserSelect(true); setLoading(false); return; }
+    if (!currentUser) { setLoading(false); return; }
     const unsub1 = onSnapshot(query(collection(db, "transactions"), orderBy("createdAt", "desc")), snap => { setTransactions(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); });
     const unsub2 = onSnapshot(query(collection(db, "investments"), orderBy("createdAt", "desc")), snap => { setInvestments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsub3 = onSnapshot(doc(db, "savings", "goals"), snap => { if (snap.exists()) setSavingsData(snap.data()); });
@@ -307,6 +328,44 @@ export default function App() {
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (activeTab === "savings" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (currentUser && !walletFilterUser) setWalletFilterUser(currentUser); }, [currentUser]);
+
+  // Load security data from Firebase
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "settings", "security"), snap => {
+      if (snap.exists()) {
+        setSecurityData(snap.data());
+        setSecurityLoaded(true);
+      } else {
+        // First time - no security setup yet
+        setSecurityData({});
+        setSecurityLoaded(true);
+        setSetupMode("familyPw");
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  // Auto-lock after 5 minutes of inactivity
+  useEffect(() => {
+    if (authStep !== "unlocked") return;
+    const handleActivity = () => setLastActivity(Date.now());
+    window.addEventListener("touchstart", handleActivity);
+    window.addEventListener("click", handleActivity);
+    const timer = setInterval(() => {
+      if (Date.now() - lastActivity > AUTO_LOCK_MS) {
+        setAuthStep("family");
+        setPinInput("");
+        setPinError("");
+        setCurrentUser("");
+        localStorage.removeItem("finplan_user");
+      }
+    }, 10000); // check every 10 seconds
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("touchstart", handleActivity);
+      window.removeEventListener("click", handleActivity);
+    };
+  }, [authStep, lastActivity]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -322,6 +381,133 @@ export default function App() {
   }, [transactions]);
 
   async function loadPrices() { setLoadingPrices(true); setMarketPrices(await fetchMarketPrices()); setLoadingPrices(false); }
+
+  // ===== SECURITY FUNCTIONS =====
+  function handlePinPress(digit) {
+    if (pinInput.length < PIN_DIGITS) {
+      setPinInput(prev => prev + digit);
+      setPinError("");
+    }
+  }
+
+  function handlePinDelete() {
+    setPinInput(prev => prev.slice(0, -1));
+    setPinError("");
+  }
+
+  async function handleFamilyPwSubmit() {
+    if (pinInput.length < PIN_DIGITS) return;
+    const hashed = await hashPin(pinInput);
+    if (hashed === securityData?.familyPwHash) {
+      setAuthStep("userSelect");
+      setPinInput("");
+      setPinError("");
+    } else {
+      setPinError("Password salah! Coba lagi.");
+      setPinInput("");
+    }
+  }
+
+  async function handleUserPinSubmit() {
+    if (pinInput.length < PIN_DIGITS) return;
+    const hashed = await hashPin(pinInput);
+    const userPins = securityData?.userPins || {};
+    if (!userPins[currentUser]) {
+      // No PIN set yet - go to setup
+      setSetupMode("userPin");
+      setTempPin(pinInput);
+      setPinInput("");
+    } else if (hashed === userPins[currentUser]) {
+      setAuthStep("unlocked");
+      setPinInput("");
+      setPinError("");
+      setLastActivity(Date.now());
+    } else {
+      setPinError("PIN salah! Coba lagi.");
+      setPinInput("");
+    }
+  }
+
+  async function handleSetupFamilyPw() {
+    if (pinInput.length < PIN_DIGITS) return;
+    if (setupMode === "familyPw") {
+      setTempPin(pinInput);
+      setSetupMode("confirmFamilyPw");
+      setPinInput("");
+    } else if (setupMode === "confirmFamilyPw") {
+      if (pinInput !== tempPin) {
+        setPinError("Password tidak cocok! Ulangi.");
+        setSetupMode("familyPw");
+        setPinInput("");
+        setTempPin("");
+        return;
+      }
+      const hashed = await hashPin(pinInput);
+      const newData = { ...(securityData || {}), familyPwHash: hashed };
+      await setDoc(doc(db, "settings", "security"), newData);
+      setSetupMode(null);
+      setAuthStep("userSelect");
+      setPinInput("");
+      setPinError("");
+    }
+  }
+
+  async function handleSetupUserPin() {
+    if (pinInput.length < PIN_DIGITS) return;
+    if (setupMode === "userPin") {
+      setTempPin(pinInput);
+      setSetupMode("confirmUserPin");
+      setPinInput("");
+    } else if (setupMode === "confirmUserPin") {
+      if (pinInput !== tempPin) {
+        setPinError("PIN tidak cocok! Ulangi.");
+        setSetupMode("userPin");
+        setPinInput("");
+        setTempPin("");
+        return;
+      }
+      const hashed = await hashPin(pinInput);
+      const userPins = securityData?.userPins || {};
+      const newData = { ...(securityData || {}), userPins: { ...userPins, [currentUser]: hashed } };
+      await setDoc(doc(db, "settings", "security"), newData);
+      setSetupMode(null);
+      setAuthStep("unlocked");
+      setPinInput("");
+      setPinError("");
+      setLastActivity(Date.now());
+    }
+  }
+
+  async function handleChangePw(type) {
+    if (type === "family") {
+      setSetupMode("familyPw");
+      setAuthStep("family");
+      setTempPin("");
+      setPinInput("");
+    } else {
+      setSetupMode("userPin");
+      setTempPin("");
+      setPinInput("");
+    }
+  }
+
+  function handleUserSelectForPin(name) {
+    setCurrentUser(name);
+    localStorage.setItem("finplan_user", name);
+    setWalletFilterUser(name);
+    setLoading(true);
+    // Check if user has PIN
+    const userPins = securityData?.userPins || {};
+    if (!userPins[name]) {
+      // First time - setup PIN
+      setSetupMode("userPin");
+      setPinInput("");
+    } else {
+      setAuthStep("userPin");
+      setPinInput("");
+    }
+  }
+
   function selectUser(name) { setCurrentUser(name); localStorage.setItem("finplan_user", name); setShowUserSelect(false); setLoading(true); setWalletFilterUser(name); }
 
   // Calculate total value of a savings goal (IDR cash + all assets)
@@ -589,7 +775,115 @@ export default function App() {
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
-  if (showUserSelect) return (
+  // ===== PIN PAD COMPONENT =====
+  const PinPad = ({ onPress, onDelete, onSubmit, disabled }) => {
+    const digits = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","⌫"]];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", maxWidth: "280px", margin: "0 auto" }}>
+        {digits.map((row, i) => (
+          <div key={i} style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+            {row.map((d, j) => (
+              <button key={j} onClick={() => d === "⌫" ? onDelete() : d ? onPress(d) : null}
+                disabled={disabled || (!d && d !== "0")}
+                style={{
+                  width: "76px", height: "76px", borderRadius: "50%", border: "none",
+                  background: d ? "rgba(255,255,255,0.1)" : "transparent",
+                  color: "#fff", fontSize: d === "⌫" ? "22px" : "24px",
+                  fontWeight: 700, cursor: d ? "pointer" : "default",
+                  transition: "all 0.15s",
+                  opacity: (!d && d !== "0") ? 0 : 1,
+                }}>{d}</button>
+            ))}
+          </div>
+        ))}
+        <button onClick={onSubmit} style={{
+          width: "100%", padding: "16px", borderRadius: "14px", border: "none",
+          background: "linear-gradient(135deg,#6366f1,#7c3aed)",
+          color: "#fff", fontSize: "16px", fontWeight: 800,
+          cursor: "pointer", marginTop: "8px",
+          opacity: pinInput.length === PIN_DIGITS ? 1 : 0.4,
+        }}>Konfirmasi</button>
+      </div>
+    );
+  };
+
+  const PinDots = ({ filled }) => (
+    <div style={{ display: "flex", gap: "16px", justifyContent: "center", margin: "28px 0" }}>
+      {Array.from({ length: PIN_DIGITS }).map((_, i) => (
+        <div key={i} style={{
+          width: i < filled ? "16px" : "16px",
+          height: i < filled ? "16px" : "16px",
+          borderRadius: "50%",
+          background: i < filled ? "#6366f1" : "rgba(255,255,255,0.2)",
+          transition: "all 0.15s",
+          transform: i < filled ? "scale(1.2)" : "scale(1)",
+        }} />
+      ))}
+    </div>
+  );
+
+  const AuthScreen = ({ children }) => (
+    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+      <div style={{ width: "100%", maxWidth: "380px", textAlign: "center" }}>
+        <div style={{ fontSize: "48px", marginBottom: "12px" }}>💰</div>
+        <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "4px" }}>FinPlan ADP</div>
+        {children}
+      </div>
+    </div>
+  );
+
+  // ===== AUTH SCREENS =====
+
+  // Loading security
+  if (!securityLoaded) return (
+    <AuthScreen>
+      <div style={{ fontSize: "14px", color: "#555", marginTop: "32px" }}>Memuat keamanan...</div>
+    </AuthScreen>
+  );
+
+  // Setup Family Password (first time)
+  if (setupMode === "familyPw" || setupMode === "confirmFamilyPw") return (
+    <AuthScreen>
+      <div style={{ fontSize: "13px", color: "#6366f1", textTransform: "uppercase", letterSpacing: "2px", marginTop: "24px" }}>
+        {setupMode === "familyPw" ? "Buat Password Keluarga" : "Konfirmasi Password"}
+      </div>
+      <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>
+        {setupMode === "familyPw" ? "Masukkan 6 digit password baru" : "Masukkan password yang sama"}
+      </div>
+      <PinDots filled={pinInput.length} />
+      {pinError && <div style={{ color: "#f87171", fontSize: "13px", marginBottom: "16px" }}>{pinError}</div>}
+      <PinPad onPress={handlePinPress} onDelete={handlePinDelete} onSubmit={handleSetupFamilyPw} />
+    </AuthScreen>
+  );
+
+  // Setup User PIN
+  if (setupMode === "userPin" || setupMode === "confirmUserPin") return (
+    <AuthScreen>
+      <div style={{ fontSize: "13px", color: "#10b981", textTransform: "uppercase", letterSpacing: "2px", marginTop: "24px" }}>
+        {setupMode === "userPin" ? `Buat PIN untuk ${currentUser}` : "Konfirmasi PIN"}
+      </div>
+      <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>
+        {setupMode === "userPin" ? "Masukkan 6 digit PIN baru" : "Masukkan PIN yang sama"}
+      </div>
+      <PinDots filled={pinInput.length} />
+      {pinError && <div style={{ color: "#f87171", fontSize: "13px", marginBottom: "16px" }}>{pinError}</div>}
+      <PinPad onPress={handlePinPress} onDelete={handlePinDelete} onSubmit={handleSetupUserPin} />
+    </AuthScreen>
+  );
+
+  // Family Password Screen
+  if (authStep === "family") return (
+    <AuthScreen>
+      <div style={{ fontSize: "13px", color: "#6366f1", textTransform: "uppercase", letterSpacing: "2px", marginTop: "24px" }}>Password Keluarga</div>
+      <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>Masukkan 6 digit password keluarga</div>
+      <PinDots filled={pinInput.length} />
+      {pinError && <div style={{ color: "#f87171", fontSize: "13px", marginBottom: "16px" }}>{pinError}</div>}
+      <PinPad onPress={handlePinPress} onDelete={handlePinDelete} onSubmit={handleFamilyPwSubmit} />
+    </AuthScreen>
+  );
+
+  // User Selection Screen (after family password)
+  if (authStep === "userSelect") return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
       <div style={{ width: "100%", maxWidth: "380px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
@@ -599,14 +893,38 @@ export default function App() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           {USERS.map(u => (
-            <button key={u} onClick={() => selectUser(u)} style={{ padding: "16px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#e8e8f0", fontSize: "15px", fontWeight: 700, cursor: "pointer", textAlign: "left" }}>
-              {u} {u === ADMIN_USER ? "👑" : ""}
+            <button key={u} onClick={() => handleUserSelectForPin(u)} style={{
+              padding: "16px 20px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)",
+              background: "rgba(255,255,255,0.05)", color: "#e8e8f0", fontSize: "15px",
+              fontWeight: 700, cursor: "pointer", textAlign: "left",
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+            }}>
+              <span>{u} {u === ADMIN_USER ? "👑" : ""}</span>
+              <span style={{ fontSize: "12px", color: (securityData?.userPins || {})[u] ? "#34d399" : "#f59e0b" }}>
+                {(securityData?.userPins || {})[u] ? "🔒 PIN aktif" : "⚠️ Belum ada PIN"}
+              </span>
             </button>
           ))}
         </div>
+        <button onClick={() => { setAuthStep("family"); setPinInput(""); }} style={{ width: "100%", marginTop: "20px", padding: "12px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#555", fontSize: "13px", cursor: "pointer" }}>← Kembali</button>
       </div>
     </div>
   );
+
+  // User PIN Screen
+  if (authStep === "userPin") return (
+    <AuthScreen>
+      <div style={{ fontSize: "13px", color: "#10b981", textTransform: "uppercase", letterSpacing: "2px", marginTop: "24px" }}>Halo, {currentUser}! 👋</div>
+      <div style={{ fontSize: "13px", color: "#555", marginTop: "8px" }}>Masukkan PIN 6 digit kamu</div>
+      <PinDots filled={pinInput.length} />
+      {pinError && <div style={{ color: "#f87171", fontSize: "13px", marginBottom: "16px" }}>{pinError}</div>}
+      <PinPad onPress={handlePinPress} onDelete={handlePinDelete} onSubmit={handleUserPinSubmit} />
+      <button onClick={() => { setAuthStep("userSelect"); setPinInput(""); setPinError(""); }} style={{ marginTop: "20px", background: "none", border: "none", color: "#555", fontSize: "13px", cursor: "pointer" }}>← Ganti User</button>
+    </AuthScreen>
+  );
+
+  // Guard: hanya tampil jika sudah unlock
+  if (authStep !== "unlocked") return null;
 
   return (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
@@ -617,7 +935,10 @@ export default function App() {
             <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP</div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "👑" : "👋"}</div>
           </div>
-          <button onClick={() => setShowUserSelect(true)} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>Ganti</button>
+          <div style={{ display: "flex", gap: "6px" }}>
+            <button onClick={() => { setAuthStep("family"); setPinInput(""); setPinError(""); setCurrentUser(""); localStorage.removeItem("finplan_user"); }} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>🔒</button>
+            {currentUser === ADMIN_USER && <button onClick={() => handleChangePw("family")} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "#888", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>⚙️</button>}
+          </div>
         </div>
 
         <div style={{ padding: "8px 20px", display: "flex", gap: "6px", overflowX: "auto" }}>
@@ -1166,7 +1487,8 @@ export default function App() {
         {/* ===== MODAL SETOR TUNAI ===== */}
         {showSavingsForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowSavingsForm(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowSavingsForm(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1202,8 +1524,11 @@ export default function App() {
         {/* ===== MODAL SETOR ASET ===== */}
         {showAssetConvert && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowAssetConvert(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowAssetConvert(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
+              <button onClick={() => setShowAssetConvert(null)} style={{ position: "absolute", top: "16px", right: "20px", width: "36px", height: "36px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: "20px", cursor: "pointer", zIndex: 10 }}>×</button>
+              <button onClick={() => setShowAssetConvert(null)} style={{ position: "absolute", top: "16px", right: "20px", width: "36px", height: "36px", borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", fontSize: "20px", cursor: "pointer", zIndex: 10 }}>×</button>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>
@@ -1327,7 +1652,8 @@ export default function App() {
           const jamFormatted = t.createdAt ? new Date(t.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-";
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+              <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
                 <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
@@ -1377,7 +1703,8 @@ export default function App() {
           const pct = buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0;
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedInvestment(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setSelectedInvestment(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+              <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "24px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
@@ -1443,7 +1770,8 @@ export default function App() {
           const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedGoal(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setSelectedGoal(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+              <div style={{ position: "relative", position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1525,7 +1853,8 @@ export default function App() {
 
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedCategory(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setSelectedCategory(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+              <div style={{ position: "relative", position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1577,7 +1906,8 @@ export default function App() {
         {/* ===== MODAL TAMBAH SUMBER DANA ===== */}
         {showSDForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowSDForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowSDForm(false)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1629,7 +1959,8 @@ export default function App() {
           const myLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
           return (
             <div onClick={e => { if (e.target === e.currentTarget) setSelectedSD(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setSelectedSD(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+              <div style={{ position: "relative", position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1670,7 +2001,8 @@ export default function App() {
         {/* ===== MODAL CATAT GADAI ===== */}
         {showGadaiForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowGadaiForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", height: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowGadaiForm(false)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1759,7 +2091,8 @@ export default function App() {
         )}
         {showForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowForm(false)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1822,7 +2155,8 @@ export default function App() {
         {/* Modal Investasi */}
         {showInvForm && (
           <div onClick={e => { if (e.target === e.currentTarget) setShowInvForm(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-            <div style={{ width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <button onClick={() => setShowInvForm(false)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>×</button>
+            <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
@@ -1867,4 +2201,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-      }
+}
