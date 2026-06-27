@@ -2,21 +2,21 @@ import { useState, useEffect } from "react";
 import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, setDoc, updateDoc } from "firebase/firestore";
 
 // Config & Constants
-import { db } from "./config/firebase";
+import { db } from "./Config/firebase";
 import {
   ADMIN_USER, AUTO_LOCK_MS, PIN_DIGITS,
   USERS, MONTHS, CATEGORIES,
   SUMBER_DANA_PRESETS, ASSET_TYPES,
   SAVINGS_GOALS, CATEGORY_GROUPS,
-} from "./config/constants";
+} from "./Config/constants";
 
 // Utils
 import { formatRupiah, formatFull, parseAmount, parseDecimal, calcAssetValue, hashPin, hitungGadai, hitungSisaHari } from "./utils/finance";
 
 // Services
-import { fetchMarketPrices } from "./services/market";
-import { sendEmailReport }   from "./services/email";
-import { syncToSheets, syncAllToSheets } from "./services/sheets";
+import { fetchMarketPrices } from "./Services/market";
+import { sendEmailReport }   from "./Services/email";
+import { syncToSheets, syncAllToSheets } from "./Services/sheets";
 
 export default function App() {
   const [transactions, setTransactions] = useState([]);
