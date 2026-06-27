@@ -1385,48 +1385,69 @@ export default function App() {
         {selectedTransaction && (() => {
           const t = selectedTransaction;
           const cat = CATEGORIES.find(c => c.id === t.category);
-          const tglFormatted = new Date(t.date).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-          const jamFormatted = t.createdAt ? new Date(t.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-";
+          const tglFormatted = new Date(t.date).toLocaleDateString("id-ID", {
+            weekday: "long", day: "numeric", month: "long", year: "numeric"
+          });
+          const jamFormatted = t.createdAt
+            ? new Date(t.createdAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })
+            : "-";
+          const rows = [
+            { label: "Dicatat oleh", value: t.user },
+            { label: "Tanggal",      value: tglFormatted },
+            { label: "Jam input",    value: jamFormatted },
+            { label: "Kategori",     value: cat ? cat.label : "-" },
+            { label: "Catatan",      value: t.note ? t.note : "-" },
+            { label: "Tipe",         value: t.type === "income" ? "Pemasukan" : "Pengeluaran" },
+          ];
           return (
-            <div onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}>
-              <button onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 4px 20px rgba(0,0,0,0.5)" }}>x</button>
+            <div
+              onClick={e => { if (e.target === e.currentTarget) setSelectedTransaction(null); }}
+              style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 200, display: "flex", alignItems: "flex-end", justifyContent: "center", backdropFilter: "blur(4px)" }}
+            >
+              <button
+                onClick={() => setSelectedTransaction(null)}
+                style={{ position: "fixed", top: "10vh", right: "20px", width: "40px", height: "40px", borderRadius: "50%", background: "rgba(30,30,50,0.95)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", fontSize: "22px", cursor: "pointer", zIndex: 9999 }}
+              >x</button>
               <div style={{ position: "relative", width: "100%", maxWidth: "430px", background: "#14141f", borderRadius: "24px 24px 0 0", border: "1px solid rgba(255,255,255,0.08)", maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 0" }}>
+                <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
                   <div style={{ textAlign: "center", marginBottom: "24px" }}>
                     <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 20px" }} />
-                    <div style={{ fontSize: "48px", marginBottom: "8px" }}>{cat?.icon}</div>
+                    <div style={{ fontSize: "48px", marginBottom: "8px" }}>{cat ? cat.icon : ""}</div>
                     <div style={{ fontSize: "28px", fontWeight: 900, color: t.type === "income" ? "#34d399" : "#f87171" }}>
                       {t.type === "income" ? "+" : "-"}{formatFull(t.amount)}
                     </div>
-                    <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{cat?.label} · {t.type === "income" ? "Pemasukan" : "Pengeluaran"}</div>
+                    <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>
+                      {cat ? cat.label : "-"} {t.type === "income" ? "Pemasukan" : "Pengeluaran"}
+                    </div>
                   </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "0px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", overflow: "hidden", marginBottom: "20px" }}>
-                    {[
-                      { label: "👤 Dicatat oleh", value: t.user },
-                      { label: "📅 Tanggal", value: tglFormatted },
-                      { label: "⏰ Jam input", value: jamFormatted },
-                      { label: "🗂️ Kategori", value: cat?.label },
-                      { label: "📝 Catatan", value: t.note || "—" },
-                      { label: "🔖 Tipe", value: t.type === "income" ? "Pemasukan" : "Pengeluaran" },
-                    ].map((item, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", borderBottom: i < 5 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-                        <div style={{ fontSize: "12px", color: "#555" }}>{item.label}</div>
-                        <div style={{ fontSize: "13px", fontWeight: 600, color: "#e8e8f0", textAlign: "right", maxWidth: "60%" }}>{item.value}</div>
+                  <div style={{ borderRadius: "16px", overflow: "hidden", marginBottom: "16px", background: "rgba(255,255,255,0.04)" }}>
+                    {rows.map((row, i) => (
+                      <div
+                        key={i}
+                        style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 16px", borderBottom: i < rows.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}
+                      >
+                        <div style={{ fontSize: "12px", color: "#555" }}>{row.label}</div>
+                        <div style={{ fontSize: "13px", fontWeight: 600, color: "#e8e8f0", textAlign: "right", maxWidth: "60%" }}>{row.value}</div>
                       </div>
                     ))}
                   </div>
                 </div>
                 <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", flexShrink: 0, display: "flex", gap: "10px" }}>
                   {t.user === currentUser && (
-                    <button onClick={() => { deleteTransaction(t.id); setSelectedTransaction(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Hapus</button>
+                    <button
+                      onClick={() => { deleteTransaction(t.id); setSelectedTransaction(null); }}
+                      style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}
+                    >Hapus</button>
                   )}
-                  <button onClick={() => setSelectedTransaction(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
+                  <button
+                    onClick={() => setSelectedTransaction(null)}
+                    style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}
+                  >Tutup</button>
                 </div>
               </div>
             </div>
           );
         })()}
-
         {/* ===== MODAL DETAIL INVESTASI ===== */}
         {selectedInvestment && (() => {
           const inv = selectedInvestment;
@@ -1935,4 +1956,4 @@ export default function App() {
       <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
-                     }
+}
