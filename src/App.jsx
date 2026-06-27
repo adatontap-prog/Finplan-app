@@ -1,259 +1,22 @@
 import { useState, useEffect } from "react";
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, setDoc } from "firebase/firestore";
+import { collection, addDoc, onSnapshot, deleteDoc, doc, query, orderBy, setDoc, updateDoc } from "firebase/firestore";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyCL4pDGpsBt4yR_Y5OJS0BdqmSNf1h0JxM",
-  authDomain: "finplan-adp.firebaseapp.com",
-  projectId: "finplan-adp",
-  storageBucket: "finplan-adp.firebasestorage.app",
-  messagingSenderId: "528693206812",
-  appId: "1:528693206812:web:8bce8d7bfa0d604ae7e4d9",
-};
+// Config & Constants
+import { db } from "./config/firebase";
+import {
+  ADMIN_USER, AUTO_LOCK_MS, PIN_DIGITS,
+  USERS, MONTHS, CATEGORIES,
+  SUMBER_DANA_PRESETS, ASSET_TYPES,
+  SAVINGS_GOALS, CATEGORY_GROUPS,
+} from "./config/constants";
 
-const EMAILJS_SERVICE_ID = "service_mwasugh";
-const EMAILJS_TEMPLATE_ID = "template_oq3ro9o";
-const EMAILJS_PUBLIC_KEY = "JgSEIph8MbKy6IXbK";
-const REPORT_EMAIL = "dwistapratama@gmail.com";
-const ADMIN_USER = "Bape";
-const SHEETS_URL = "https://script.google.com/macros/s/AKfycbx8vt1azC0xFS3v5Qbe_9ksbcXjvOmpBUxN5kt4b22nA1D5EFFob863Xve7RS_xxm6i/exec";
-const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 menit
-const PIN_SALT = "finplan_adp_2026";
-const PIN_DIGITS = 6;
+// Utils
+import { formatRupiah, formatFull, parseAmount, parseDecimal, calcAssetValue, hashPin, hitungGadai, hitungSisaHari } from "./utils/finance";
 
-async function hashPin(pin) {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(pin + PIN_SALT);
-  const hash = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-// ── Google Sheets Sync ──────────────────────────────────────
-const firebaseApp = initializeApp(firebaseConfig);
-const db = getFirestore(firebaseApp);
-
-const CATEGORIES = [
-  { id: "gaji", label: "Gaji", icon: "💼", type: "income" },
-  { id: "freelance", label: "Freelance", icon: "🖥️", type: "income" },
-  { id: "investasi", label: "Investasi", icon: "📈", type: "income" },
-  { id: "lainnya_in", label: "Lainnya", icon: "➕", type: "income" },
-  { id: "makan", label: "Makan", icon: "🍜", type: "expense" },
-  { id: "transport", label: "Transport", icon: "🚗", type: "expense" },
-  { id: "belanja", label: "Belanja", icon: "🛍️", type: "expense" },
-  { id: "tagihan", label: "Tagihan", icon: "📄", type: "expense" },
-  { id: "hiburan", label: "Hiburan", icon: "🎬", type: "expense" },
-  { id: "kesehatan", label: "Kesehatan", icon: "🏥", type: "expense" },
-  { id: "tabungan", label: "Tabungan", icon: "🏦", type: "expense" },
-  { id: "lainnya_ex", label: "Lainnya", icon: "➖", type: "expense" },
-];
-
-const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
-const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
-
-const SUMBER_DANA_PRESETS = [
-  { name: "Cash", icon: "💵" },
-  { name: "Bank BCA", icon: "🏦" },
-  { name: "Bank Mandiri", icon: "🏦" },
-  { name: "Bank BNI", icon: "🏦" },
-  { name: "Bank BRI", icon: "🏦" },
-  { name: "GoPay", icon: "🟢" },
-  { name: "OVO", icon: "🟣" },
-  { name: "DANA", icon: "🔵" },
-  { name: "ShopeePay", icon: "🟠" },
-  { name: "Lainnya", icon: "💳" },
-];
-
-const ASSET_TYPES = [
-  { id: "idr", label: "Rupiah (IDR)", icon: "💵", unit: "IDR", dynamic: false },
-  { id: "usd", label: "Dollar USD", icon: "🇺🇸", unit: "USD", dynamic: true },
-  { id: "lm", label: "LM Antam", icon: "🥇", unit: "gram", dynamic: true },
-  { id: "jewelry", label: "Perhiasan 18K", icon: "💍", unit: "gram", dynamic: true },
-  { id: "stock_id", label: "Saham IDX", icon: "📈", unit: "lot", dynamic: true, manual: true },
-  { id: "stock_us", label: "Saham US", icon: "🌐", unit: "lembar", dynamic: true },
-  { id: "crypto", label: "Crypto", icon: "₿", unit: "unit", dynamic: true },
-  { id: "reksadana", label: "Reksa Dana", icon: "📁", unit: "unit", dynamic: true, manual: true },
-  { id: "obligasi", label: "Obligasi/Sukuk", icon: "📜", unit: "IDR", dynamic: false },
-  { id: "etf", label: "ETF", icon: "🗂️", unit: "lot", dynamic: true },
-];
-
-const SAVINGS_GOALS = [
-  { id: "aroon_sd", label: "SD Aroon (kelas 1-6)", icon: "📚", category: "aroon", targetAmount: 61724880, yearsLeft: 1, color: "#6366f1", desc: "SD kelas 1-6 · 2026-2032" },
-  { id: "aroon_smp", label: "SMP Aroon", icon: "📖", category: "aroon", targetAmount: 63776196, yearsLeft: 6, color: "#8b5cf6", desc: "Mulai 2032 · 3 tahun" },
-  { id: "aroon_sma", label: "SMA Aroon", icon: "📝", category: "aroon", targetAmount: 127329175, yearsLeft: 9, color: "#a78bfa", desc: "Mulai 2035 · 3 tahun" },
-  { id: "aroon_kuliah", label: "Kuliah Aroon", icon: "🎓", category: "aroon", targetAmount: 2353821282, yearsLeft: 12, color: "#c4b5fd", desc: "Mulai 2038 · Eropa/Aussie" },
-  { id: "arunika_kg1", label: "Kindergarten 1 Arunika", icon: "🎨", category: "arunika", targetAmount: 7700000, yearsLeft: 1, color: "#ec4899", desc: "Mulai 2027" },
-  { id: "arunika_kg2", label: "Kindergarten 2 Arunika", icon: "🎨", category: "arunika", targetAmount: 8470000, yearsLeft: 2, color: "#f472b6", desc: "Mulai 2028" },
-  { id: "arunika_sd", label: "SD Arunika", icon: "📚", category: "arunika", targetAmount: 63888000, yearsLeft: 3, color: "#f9a8d4", desc: "Mulai 2029 · kelas 1-6" },
-  { id: "arunika_smp", label: "SMP Arunika", icon: "📖", category: "arunika", targetAmount: 84886116, yearsLeft: 9, color: "#fbcfe8", desc: "Mulai 2035 · 3 tahun" },
-  { id: "arunika_sma", label: "SMA Arunika", icon: "📝", category: "arunika", targetAmount: 169475132, yearsLeft: 12, color: "#fce7f3", desc: "Mulai 2038 · 3 tahun" },
-  { id: "arunika_kuliah", label: "Kuliah Arunika", icon: "🎓", category: "arunika", targetAmount: 3132936127, yearsLeft: 15, color: "#fbcfe8", desc: "Mulai 2041 · Eropa/Aussie" },
-  { id: "arkaja_nursery1", label: "Nursery 1 Arkaja", icon: "🧸", category: "arkaja", targetAmount: 5500000, yearsLeft: 1, color: "#10b981", desc: "Mulai Juli 2027" },
-  { id: "arkaja_nursery2", label: "Nursery 2 Arkaja", icon: "🧸", category: "arkaja", targetAmount: 6050000, yearsLeft: 2, color: "#34d399", desc: "Mulai 2028" },
-  { id: "arkaja_kg1", label: "Kindergarten 1 Arkaja", icon: "🎨", category: "arkaja", targetAmount: 9317000, yearsLeft: 3, color: "#6ee7b7", desc: "Mulai 2029" },
-  { id: "arkaja_kg2", label: "Kindergarten 2 Arkaja", icon: "🎨", category: "arkaja", targetAmount: 10248700, yearsLeft: 4, color: "#a7f3d0", desc: "Mulai 2030" },
-  { id: "arkaja_sd", label: "SD Arkaja", icon: "📚", category: "arkaja", targetAmount: 77304480, yearsLeft: 5, color: "#d1fae5", desc: "Mulai 2031 · kelas 1-6" },
-  { id: "arkaja_smp", label: "SMP Arkaja", icon: "📖", category: "arkaja", targetAmount: 102712201, yearsLeft: 11, color: "#a7f3d0", desc: "Mulai 2037 · 3 tahun" },
-  { id: "arkaja_sma", label: "SMA Arkaja", icon: "📝", category: "arkaja", targetAmount: 205064910, yearsLeft: 14, color: "#6ee7b7", desc: "Mulai 2040 · 3 tahun" },
-  { id: "arkaja_kuliah", label: "Kuliah Arkaja", icon: "🎓", category: "arkaja", targetAmount: 3790852713, yearsLeft: 17, color: "#34d399", desc: "Mulai 2043 · Eropa/Aussie" },
-  { id: "emergency", label: "Dana Darurat", icon: "🛡️", category: "future", targetAmount: 60000000, yearsLeft: 2, color: "#f59e0b", desc: "Target 6x pengeluaran bulanan" },
-  { id: "future", label: "Masa Depan", icon: "🏠", category: "future", targetAmount: 500000000, yearsLeft: 10, color: "#fbbf24", desc: "Aset & masa depan keluarga" },
-  { id: "pension", label: "Dana Pensiun", icon: "👴", category: "pension", targetAmount: 3000000000, yearsLeft: 23, color: "#14b8a6", desc: "Target usia 60 tahun (2049)" },
-  { id: "health", label: "Dana Kesehatan", icon: "🏥", category: "health", targetAmount: 150000000, yearsLeft: 5, color: "#ef4444", desc: "Cadangan di luar BPJS" },
-  { id: "insurance", label: "Asuransi Jiwa", icon: "💊", category: "health", targetAmount: 60000000, yearsLeft: 3, color: "#f87171", desc: "Premi asuransi jiwa keluarga" },
-];
-
-const CATEGORY_GROUPS = [
-  { id: "aroon", label: "📚 Aroon", color: "#6366f1" },
-  { id: "arunika", label: "📚 Arunika", color: "#ec4899" },
-  { id: "arkaja", label: "📚 Arkaja", color: "#10b981" },
-  { id: "future", label: "🏠 Masa Depan", color: "#f59e0b" },
-  { id: "pension", label: "👴 Pensiun", color: "#14b8a6" },
-  { id: "health", label: "🏥 Kesehatan", color: "#ef4444" },
-];
-
-function formatRupiah(num) {
-  if (!num && num !== 0) return "Rp 0";
-  if (num >= 1000000000) return "Rp " + (num / 1000000000).toFixed(2) + " M";
-  if (num >= 1000000) return "Rp " + (num / 1000000).toFixed(1) + " Jt";
-  return "Rp " + Number(Math.round(num)).toLocaleString("id-ID");
-}
-
-function formatFull(num) {
-  if (!num && num !== 0) return "Rp 0";
-  return "Rp " + Number(Math.round(num)).toLocaleString("id-ID");
-}
-
-function parseAmount(str) {
-  return parseInt(String(str).replace(/\D/g, "")) || 0;
-}
-
-function parseDecimal(str) {
-  return parseFloat(String(str).replace(/[^0-9.]/g, "")) || 0;
-}
-
-// Calculate current value of an asset holding based on market prices
-function calcAssetValue(holding, prices) {
-  if (!holding || !prices) return holding?.idrValue || 0;
-  switch (holding.assetType) {
-    case "idr": return holding.idrValue || 0;
-    case "usd": return (holding.qty || 0) * (prices.usdIdr || 16200);
-    case "lm": return (holding.qty || 0) * (prices.goldPerGram || 1680000);
-    case "jewelry": return (holding.qty || 0) * (prices.jewelryPerGram || 1010000);
-    case "obligasi": return holding.idrValue || 0;
-    case "stock_id": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0) * 100;
-    case "stock_us": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0) * (prices.usdIdr || 16200);
-    case "crypto": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
-    case "reksadana": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
-    case "etf": return (holding.qty || 0) * (holding.manualPrice || holding.buyPrice || 0);
-    default: return holding.idrValue || 0;
-  }
-}
-
-async function fetchMarketPrices() {
-  const FALLBACK = { usdIdr: 17810, goldPerGram: 2711000, jewelryPerGram: 1627000, goldSpot: 2557000, lastUpdated: "fallback Juni 2026 — tekan Refresh" };
-  try {
-    let usdIdr = 17810;
-    try {
-      const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
-      const fxData = await fxRes.json();
-      if (fxData.rates?.IDR > 10000) usdIdr = fxData.rates.IDR;
-    } catch(e) {}
-
-    let antamPerGram = 2711000;
-    let goldSpot = 2557000;
-    let jewelryPerGram = 1627000;
-    try {
-      const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
-      const goldData = await goldRes.json();
-      const goldUsdPerOz = goldData?.items?.[0]?.xauPrice;
-      if (goldUsdPerOz && goldUsdPerOz > 1000) {
-        const goldUsdPerGram = goldUsdPerOz / 31.1035;
-        goldSpot = Math.round(goldUsdPerGram * usdIdr);
-        antamPerGram = Math.round(goldSpot * 1.06);
-        jewelryPerGram = Math.round(goldSpot * 0.75 * 0.80);
-      }
-    } catch(e) {}
-
-    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot, lastUpdated: new Date().toLocaleTimeString("id-ID") };
-  } catch {
-    return FALLBACK;
-  }
-}
-
-// ===== GOOGLE SHEETS SYNC =====
-async function syncToSheets(action, payload) {
-  try {
-    const res = await fetch(SHEETS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ action, payload }),
-    });
-    const data = await res.json();
-    return data;
-  } catch (e) {
-    console.error("Sheets sync error:", e);
-    return { success: false, message: e.message };
-  }
-}
-
-async function syncAllToSheets(transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList) {
-  // Format savings holdings into flat rows
-  const savingsRows = [];
-  Object.entries(savingsHoldings || {}).forEach(([goalId, holdings]) => {
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
-    (holdings || []).forEach(h => {
-      savingsRows.push({ ...h, goalId, goalLabel: goal?.label || goalId });
-    });
-  });
-
-  // Add cash savings
-  Object.entries(savingsData || {}).forEach(([goalId, amount]) => {
-    if (amount > 0) {
-      const goal = SAVINGS_GOALS.find(g => g.id === goalId);
-      savingsRows.push({ id: `cash_${goalId}`, goalId, goalLabel: goal?.label || goalId, assetType: "idr", qty: amount, unit: "IDR", buyPrice: 0, note: "Tunai IDR", addedAt: new Date().toISOString() });
-    }
-  });
-
-  return await syncToSheets("syncAll", {
-    transactions: transactions || [],
-    savings: savingsRows,
-    investments: investments || [],
-    gadai: gadaiList || [],
-    sumberDana: sumberDanaList || [],
-  });
-}
-
-async function sendEmailReport(transactions) {
-  const today = new Date();
-  const dateStr = today.toLocaleDateString("id-ID", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
-  const todayStr = today.toISOString().split("T")[0];
-  const todayTxns = transactions.filter(t => t.date === todayStr);
-  if (todayTxns.length === 0) return { success: false, message: "Tidak ada transaksi hari ini" };
-  const userSummary = {};
-  USERS.forEach(u => { userSummary[u] = { income: 0, expense: 0, items: [] }; });
-  todayTxns.forEach(t => {
-    if (!userSummary[t.user]) userSummary[t.user] = { income: 0, expense: 0, items: [] };
-    if (t.type === "income") userSummary[t.user].income += t.amount;
-    else userSummary[t.user].expense += t.amount;
-    const cat = CATEGORIES.find(c => c.id === t.category);
-    userSummary[t.user].items.push(`  ${cat?.icon} ${cat?.label}: ${t.type==="income"?"+":"-"}${formatFull(t.amount)}${t.note?` (${t.note})`:""}`);
-  });
-  let report = `📅 ${dateStr}\n${"=".repeat(40)}\n\n`;
-  let totalIncome = 0, totalExpense = 0;
-  Object.entries(userSummary).forEach(([user, data]) => {
-    if (data.items.length === 0) return;
-    report += `👤 ${user}\n${data.items.join("\n")}\n  Saldo: ${formatFull(data.income - data.expense)}\n\n`;
-    totalIncome += data.income; totalExpense += data.expense;
-  });
-  report += `${"=".repeat(40)}\n📊 RINGKASAN KELUARGA\n↑ Pemasukan: ${formatFull(totalIncome)}\n↓ Pengeluaran: ${formatFull(totalExpense)}\n💰 Saldo: ${formatFull(totalIncome - totalExpense)}`;
-  try {
-    const res = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ service_id: EMAILJS_SERVICE_ID, template_id: EMAILJS_TEMPLATE_ID, user_id: EMAILJS_PUBLIC_KEY, template_params: { to_email: REPORT_EMAIL, date: dateStr, report } }),
-    });
-    return res.ok ? { success: true } : { success: false, message: "Gagal mengirim" };
-  } catch (e) { return { success: false, message: e.message }; }
-}
+// Services
+import { fetchMarketPrices } from "./services/market";
+import { sendEmailReport }   from "./services/email";
+import { syncToSheets, syncAllToSheets } from "./services/sheets";
 
 export default function App() {
   const [transactions, setTransactions] = useState([]);
@@ -624,10 +387,6 @@ export default function App() {
     setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] }); setAmountDisplay(""); setTransactionSDId("");
   }
 
-  async function addInvestment() {
-    // Handled by addSavingsAsset with goalId "invest_cash" or "invest_asset"
-  }
-
   async function addInvestmentAsset(type) {
     const qty = parseDecimal(assetForm.qty);
     const buyPrice = parseDecimal(assetForm.buyPrice);
@@ -669,28 +428,7 @@ export default function App() {
   }
 
   // ===== GADAI FUNCTIONS =====
-  function hitungGadai(beratGram, kadar, hargaEmasPerGram, tenor) {
-    const purity = parseInt(kadar) / 24;
-    const nilaiEmas = beratGram * purity * hargaEmasPerGram;
-    const nilaiTaksiran = Math.round(nilaiEmas * 0.92);
-    const uangPinjaman = Math.round(nilaiTaksiran * 0.90);
-    // Bunga KCA: golongan berdasarkan pinjaman
-    let bungaPer15 = 1.2; // % per 15 hari untuk emas
-    const periode = Math.ceil(tenor / 15);
-    const totalBunga = Math.round(uangPinjaman * (bungaPer15 / 100) * periode);
-    const totalLunas = uangPinjaman + totalBunga;
-    const biayaAdmin = Math.round(uangPinjaman * 0.01);
-    return { nilaiEmas: Math.round(nilaiEmas), nilaiTaksiran, uangPinjaman, bungaPer15, periode, totalBunga, totalLunas, biayaAdmin };
-  }
-
-  function hitungSisaHari(tanggalGadai, tenor) {
-    const tglGadai = new Date(tanggalGadai);
-    const tglJatuh = new Date(tglGadai);
-    tglJatuh.setDate(tglJatuh.getDate() + parseInt(tenor));
-    const today = new Date();
-    const sisa = Math.ceil((tglJatuh - today) / (1000 * 60 * 60 * 24));
-    return { tglJatuh, sisa };
-  }
+  // hitungGadai & hitungSisaHari imported from utils/finance.js
 
   async function addGadai() {
     const berat = parseFloat(gadaiForm.beratGram);
@@ -712,7 +450,6 @@ export default function App() {
   }
 
   async function updateGadaiStatus(id, status) {
-    const { updateDoc } = await import("firebase/firestore");
     await updateDoc(doc(db, "gadai", id), { status, updatedAt: new Date().toISOString() });
     syncToSheets("updateGadai", { id, status });
   }
@@ -755,7 +492,7 @@ export default function App() {
   async function handleSyncAll() {
     setSyncingSheets(true);
     setSheetsStatus("");
-    const result = await syncAllToSheets(transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList);
+    const result = await syncAllToSheets({ transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList });
     setSyncingSheets(false);
     setSheetsStatus(result.success ? "✅ Google Sheets tersync!" : "❌ " + (result.message || "Gagal sync"));
     setTimeout(() => setSheetsStatus(""), 5000);
