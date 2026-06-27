@@ -44,7 +44,7 @@ export default function App() {
   const [sumberDanaLedger, setSumberDanaLedger] = useState([]);
   const [walletFilterUser, setWalletFilterUser] = useState("");
   const [showSDForm, setShowSDForm] = useState(false);
-  const [sdForm, setSdForm] = useState({ name: "", icon: "💵", initialBalance: "" });
+  const [sdForm, setSdForm] = useState({ name: "", icon: "?", initialBalance: "" });
   const [selectedSD, setSelectedSD] = useState(null);
   const [transactionSDId, setTransactionSDId] = useState("");
   const [savingsSDId, setSavingsSDId] = useState("");
@@ -291,7 +291,7 @@ export default function App() {
   const usersWithData = [...new Set(transactions.map(t => t.user))];
   const barMax = Math.max(...Object.values(expenseByCategory), 1);
 
-  const invTypeLabel = { usd: "💵 USD", lm: "🥇 LM Antam", jewelry: "💍 Perhiasan" };
+  const invTypeLabel = { usd: "? USD", lm: "? LM Antam", jewelry: "? Perhiasan" };
   const invTypeUnit = { usd: "USD", lm: "gram", jewelry: "gram" };
   const invSummary = investments.map(inv => {
     const currentValue = calcAssetValue(inv, marketPrices);
@@ -480,7 +480,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
     });
     setShowSDForm(false);
-    setSdForm({ name: "", icon: "💵", initialBalance: "" });
+    setSdForm({ name: "", icon: "?", initialBalance: "" });
   }
 
   async function deleteSumberDana(id) {
@@ -494,14 +494,14 @@ export default function App() {
     setSheetsStatus("");
     const result = await syncAllToSheets({ transactions, savingsData, savingsHoldings, investments, gadaiList, sumberDanaList });
     setSyncingSheets(false);
-    setSheetsStatus(result.success ? "✅ Google Sheets tersync!" : "❌ " + (result.message || "Gagal sync"));
+    setSheetsStatus(result.success ? "? Google Sheets tersync!" : "? " + (result.message || "Gagal sync"));
     setTimeout(() => setSheetsStatus(""), 5000);
   }
 
   async function handleSendReport() {
     setSending(true);
     const result = await sendEmailReport(transactions);
-    setSending(false); setEmailStatus(result.success ? "✅ Laporan terkirim!" : "❌ " + result.message);
+    setSending(false); setEmailStatus(result.success ? "? Laporan terkirim!" : "? " + result.message);
     setTimeout(() => setEmailStatus(""), 4000);
   }
 
@@ -514,18 +514,18 @@ export default function App() {
 
   // ===== PIN PAD COMPONENT =====
   const PinPad = ({ onPress, onDelete, onSubmit, disabled }) => {
-    const digits = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","⌫"]];
+    const digits = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","?"]];
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", maxWidth: "280px", margin: "0 auto" }}>
         {digits.map((row, i) => (
           <div key={i} style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
             {row.map((d, j) => (
-              <button key={j} onClick={() => d === "⌫" ? onDelete() : d ? onPress(d) : null}
+              <button key={j} onClick={() => d === "?" ? onDelete() : d ? onPress(d) : null}
                 disabled={disabled || (!d && d !== "0")}
                 style={{
                   width: "76px", height: "76px", borderRadius: "50%", border: "none",
                   background: d ? "rgba(255,255,255,0.1)" : "transparent",
-                  color: "#fff", fontSize: d === "⌫" ? "22px" : "24px",
+                  color: "#fff", fontSize: d === "?" ? "22px" : "24px",
                   fontWeight: 700, cursor: d ? "pointer" : "default",
                   transition: "all 0.15s",
                   opacity: (!d && d !== "0") ? 0 : 1,
@@ -636,9 +636,9 @@ export default function App() {
               fontWeight: 700, cursor: "pointer", textAlign: "left",
               display: "flex", justifyContent: "space-between", alignItems: "center",
             }}>
-              <span>{u} {u === ADMIN_USER ? "👑" : ""}</span>
+              <span>{u} {u === ADMIN_USER ? "?" : ""}</span>
               <span style={{ fontSize: "12px", color: (securityData?.userPins || {})[u] ? "#34d399" : "#f59e0b" }}>
-                {(securityData?.userPins || {})[u] ? "🔒 PIN aktif" : "⚠️ Belum ada PIN"}
+                {(securityData?.userPins || {})[u] ? "? PIN aktif" : "? Belum ada PIN"}
               </span>
             </button>
           ))}
@@ -670,11 +670,11 @@ export default function App() {
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP</div>
-            <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "👑" : "👋"}</div>
+            <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "?" : "?"}</div>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
             <button onClick={() => { setAuthStep("family"); setPinInput(""); setPinError(""); setCurrentUser(""); localStorage.removeItem("finplan_user"); }} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>🔒</button>
-            {currentUser === ADMIN_USER && <button onClick={() => handleChangePw("family")} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "#888", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>⚙️</button>}
+            {currentUser === ADMIN_USER && <button onClick={() => handleChangePw("family")} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "#888", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>⚙</button>}
           </div>
         </div>
 
@@ -683,7 +683,7 @@ export default function App() {
         </div>
 
         <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
-          {["semua", ...usersWithData].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
+          {["semua", ...usersWithData].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "??????? Semua" : u}</button>)}
         </div>
 
         <div style={{ padding: "0 20px 16px" }}>
@@ -696,8 +696,8 @@ export default function App() {
                 <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>↓ Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
               </div>
               <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={handleSendReport} disabled={sending} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{sending ? "📤..." : "📧"}</button>
-                <button onClick={handleSyncAll} disabled={syncingSheets} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{syncingSheets ? "⏳" : "📊 Sync"}</button>
+                <button onClick={handleSendReport} disabled={sending} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{sending ? "?..." : "?"}</button>
+                <button onClick={handleSyncAll} disabled={syncingSheets} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{syncingSheets ? "?" : "? Sync"}</button>
               </div>
             </div>
             {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
@@ -711,7 +711,7 @@ export default function App() {
           <button style={tabStyle("family")} onClick={() => setActiveTab("family")}>👨‍👩‍👧 Keluarga</button>
           <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🏦 Tabungan</button>
           <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>
-          <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏛️ Gadai</button>
+          <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏛 Gadai</button>
           <button style={tabStyle("dompet")} onClick={() => setActiveTab("dompet")}>💳 Dompet</button>
         </div>
 
@@ -736,7 +736,7 @@ export default function App() {
         {activeTab === "history" && (
           <div style={{ padding: "0 20px" }}>
             {loading ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
-            : monthTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🗒️</div><div style={{ fontSize: "14px" }}>Belum ada transaksi</div></div>
+            : monthTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🗒</div><div style={{ fontSize: "14px" }}>Belum ada transaksi</div></div>
             : monthTxns.map(t => {
               const cat = CATEGORIES.find(c => c.id === t.category);
               return (
@@ -745,7 +745,7 @@ export default function App() {
                     <div style={{ fontSize: "22px" }}>{cat?.icon}</div>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: 600 }}>{cat?.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555" }}>{t.user} · {t.note || t.date}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{t.user} . {t.note || t.date}</div>
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -769,7 +769,7 @@ export default function App() {
               return (
                 <div key={user} style={{ padding: "16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{user} {user === ADMIN_USER ? "👑" : ""}</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{user} {user === ADMIN_USER ? "?" : ""}</div>
                     <div style={{ fontSize: "13px", fontWeight: 700, color: ui - ue >= 0 ? "#34d399" : "#f87171" }}>{formatRupiah(ui - ue)}</div>
                   </div>
                   <div style={{ display: "flex", gap: "16px" }}>
@@ -788,9 +788,9 @@ export default function App() {
             {/* Harga pasar mini */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ fontSize: "12px", color: "#555" }}>
-                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} · 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
+                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} . 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
               </div>
-              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
+              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "?" : "?"}</button>
             </div>
 
             {/* Total */}
@@ -837,7 +837,7 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 800 }}>{goal.icon} {goal.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{goal.desc} · ⏳ {goal.yearsLeft} thn lagi</div>
+                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{goal.desc} . ⏳ {goal.yearsLeft} thn lagi</div>
                     </div>
                     {currentUser === ADMIN_USER && (
                       <div style={{ display: "flex", gap: "6px" }}>
@@ -877,7 +877,7 @@ export default function App() {
                           <div key={h.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <div>
-                                <span style={{ fontSize: "11px", color: "#888" }}>{at?.icon} {h.ticker || at?.label} · {h.qty} {at?.unit}</span>
+                                <span style={{ fontSize: "11px", color: "#888" }}>{at?.icon} {h.ticker || at?.label} . {h.qty} {at?.unit}</span>
                                 {h.note && <span style={{ fontSize: "10px", color: "#555", marginLeft: "4px" }}>({h.note})</span>}
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -904,7 +904,7 @@ export default function App() {
 
                   {remaining > 0 ? (
                     <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#888" }}>
-                      💡 Kurang <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(remaining)}</span> · Setor <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(monthlyNeeded)}/bln</span>
+                      💡 Kurang <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(remaining)}</span> . Setor <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(monthlyNeeded)}/bln</span>
                     </div>
                   ) : (
                     <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#34d399", fontWeight: 700 }}>✅ Target tercapai!</div>
@@ -922,9 +922,9 @@ export default function App() {
             {/* Harga pasar */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ fontSize: "12px", color: "#555" }}>
-                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} · 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
+                {marketPrices ? `💵 ${formatFull(marketPrices.usdIdr)} . 🥇 ${formatRupiah(marketPrices.goldPerGram)}/gr` : "Harga belum dimuat"}
               </div>
-              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
+              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "?" : "?"}</button>
             </div>
 
             {/* Total Portofolio */}
@@ -945,14 +945,14 @@ export default function App() {
                 <div style={{ fontSize: "14px" }}>Belum ada investasi tercatat</div>
               </div>
             ) : invSummary.map(inv => {
-              const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.type, unit: "" };
+              const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "?", label: inv.type, unit: "" };
               const needsManual = at?.manual && !inv.manualPrice;
               return (
                 <div key={inv.id} onClick={() => setSelectedInvestment(inv)} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 700 }}>{at.icon} {inv.ticker || at.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555" }}>{inv.qty || inv.amount} {at.unit} · beli {formatRupiah(inv.buyPrice)}/{at.unit} · {inv.buyDate || "-"}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{inv.qty || inv.amount} {at.unit} . beli {formatRupiah(inv.buyPrice)}/{at.unit} . {inv.buyDate || "-"}</div>
                       {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
                     </div>
                     {currentUser === ADMIN_USER && <button onClick={() => deleteInvestment(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>×</button>}
@@ -1062,7 +1062,7 @@ export default function App() {
                     const hasil = hitungGadai(parseFloat(calcForm.beratGram), calcForm.kadar, harga, parseInt(calcForm.tenor));
                     return (
                       <div style={{ background: "rgba(0,0,0,0.3)", borderRadius: "12px", padding: "14px" }}>
-                        <div style={{ fontSize: "10px", color: "#555", marginBottom: "10px" }}>Harga LM: {formatRupiah(harga)}/gram · Kadar {calcForm.kadar}K</div>
+                        <div style={{ fontSize: "10px", color: "#555", marginBottom: "10px" }}>Harga LM: {formatRupiah(harga)}/gram . Kadar {calcForm.kadar}K</div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                           <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "8px", padding: "10px" }}>
                             <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Nilai Emas</div>
@@ -1097,21 +1097,21 @@ export default function App() {
 
             {gadaiList.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
-                <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏛️</div>
+                <div style={{ fontSize: "40px", marginBottom: "12px" }}>🏛</div>
                 <div style={{ fontSize: "14px" }}>Belum ada gadai tercatat</div>
               </div>
             ) : gadaiList.map(g => {
               const { tglJatuh, sisa } = hitungSisaHari(g.tanggalGadai, g.tenor);
               const tglJatuhStr = tglJatuh.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
               const statusColor = g.status === "lunas" ? "#34d399" : g.status === "lelang" ? "#f87171" : sisa <= 7 ? "#f87171" : sisa <= 30 ? "#fbbf24" : "#a5b4fc";
-              const statusLabel = g.status === "lunas" ? "✅ Lunas" : g.status === "lelang" ? "🔴 Dilelang" : sisa <= 0 ? "⚠️ Jatuh Tempo!" : sisa <= 7 ? `🔴 ${sisa} hari lagi` : sisa <= 30 ? `🟡 ${sisa} hari lagi` : `🟢 ${sisa} hari lagi`;
+              const statusLabel = g.status === "lunas" ? "? Lunas" : g.status === "lelang" ? "? Dilelang" : sisa <= 0 ? "? Jatuh Tempo!" : sisa <= 7 ? `🔴 ${sisa} hari lagi` : sisa <= 30 ? `🟡 ${sisa} hari lagi` : `🟢 ${sisa} hari lagi`;
 
               return (
                 <div key={g.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: `1px solid ${g.status === "aktif" && sisa <= 7 ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.06)"}` }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
                     <div>
                       <div style={{ fontSize: "15px", fontWeight: 800 }}>💍 {g.namaBarang}</div>
-                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{g.beratGram}gr · {g.kadar}K · Digadai {g.tanggalGadai}</div>
+                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{g.beratGram}gr . {g.kadar}K . Digadai {g.tanggalGadai}</div>
                       {g.catatan && <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>{g.catatan}</div>}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
@@ -1212,7 +1212,7 @@ export default function App() {
 
             {/* Tombol tambah - hanya untuk diri sendiri */}
             {walletFilterUser === currentUser && (
-              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
+              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "?", initialBalance: "" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
             )}
           </div>
         )}
@@ -1241,7 +1241,7 @@ export default function App() {
               <div style={{ marginBottom: "20px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Potong dari Sumber Dana (opsional)</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  <button onClick={() => setSavingsSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !savingsSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !savingsSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !savingsSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>— Tidak —</button>
+                  <button onClick={() => setSavingsSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !savingsSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !savingsSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !savingsSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>- Tidak -</button>
                   {myFundingSources.map(sd => (
                     <button key={sd.id} onClick={() => setSavingsSDId(sd.id)} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: savingsSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)", background: savingsSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: savingsSDId === sd.id ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{sd.icon} {sd.name}</button>
                   ))}
@@ -1269,10 +1269,10 @@ export default function App() {
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                 <div style={{ fontSize: "16px", fontWeight: 800 }}>
-                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "📈 Tambah ke Portofolio" : "🏦 Setor dalam Bentuk Aset"}
+                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "? Tambah ke Portofolio" : "? Setor dalam Bentuk Aset"}
                 </div>
                 <div style={{ fontSize: "13px", color: "#34d399", marginTop: "4px" }}>
-                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "Investasi · Nilai mengikuti harga pasar" : `${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.icon} ${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.label}`}
+                  {showAssetConvert === "invest_cash" || showAssetConvert === "invest_asset" ? "Investasi . Nilai mengikuti harga pasar" : `${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.icon} ${SAVINGS_GOALS.find(g => g.id === showAssetConvert)?.label}`}
                 </div>
               </div>
 
@@ -1327,7 +1327,7 @@ export default function App() {
               {/* Harga manual untuk saham IDX/RD/ETF */}
               {["stock_id","reksadana","etf"].includes(assetForm.assetType) && (
                 <div style={{ marginBottom: "12px" }}>
-                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Saat Ini per {selectedAssetType?.unit} (IDR) — update manual</div>
+                  <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Harga Saat Ini per {selectedAssetType?.unit} (IDR) - update manual</div>
                   <input placeholder="contoh: 9500 (per lembar)" value={assetForm.manualPrice} onChange={e => setAssetForm(f => ({...f, manualPrice: e.target.value}))} inputMode="decimal" style={inputStyle} />
                 </div>
               )}
@@ -1342,7 +1342,7 @@ export default function App() {
               <div style={{ marginBottom: "20px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Potong dari Sumber Dana (opsional)</div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                  <button onClick={() => setAssetSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !assetSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !assetSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !assetSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>— Tidak —</button>
+                  <button onClick={() => setAssetSDId("")} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: !assetSDId ? "#6366f1" : "rgba(255,255,255,0.08)", background: !assetSDId ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: !assetSDId ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>- Tidak -</button>
                   {myFundingSources.map(sd => (
                     <button key={sd.id} onClick={() => setAssetSDId(sd.id)} style={{ padding: "8px 12px", borderRadius: "20px", border: "1px solid", borderColor: assetSDId === sd.id ? "#6366f1" : "rgba(255,255,255,0.08)", background: assetSDId === sd.id ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", color: assetSDId === sd.id ? "#a5b4fc" : "#666", fontSize: "12px", cursor: "pointer", fontWeight: 600 }}>{sd.icon} {sd.name}</button>
                   ))}
@@ -1451,7 +1451,7 @@ export default function App() {
         {/* ===== MODAL DETAIL INVESTASI ===== */}
         {selectedInvestment && (() => {
           const inv = selectedInvestment;
-          const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.type || "Aset", unit: "" };
+          const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "?", label: inv.type || "Aset", unit: "" };
           const currentValue = calcAssetValue(inv, marketPrices);
           const buyValue = ["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0);
           const profitLoss = currentValue - buyValue;
@@ -1491,10 +1491,10 @@ export default function App() {
 
                 <div style={{ background: "rgba(255,255,255,0.04)", borderRadius: "16px", overflow: "hidden", marginBottom: "20px" }}>
                   {[
-                    { label: "📅 Tanggal Beli", value: inv.buyDate || "-" },
-                    { label: "💰 Harga Beli", value: `${formatRupiah(inv.buyPrice)}/${at.unit}` },
-                    { label: "📝 Catatan", value: inv.note || "—" },
-                    { label: "🗂️ Jenis Aset", value: at.label },
+                    { label: "? Tanggal Beli", value: inv.buyDate || "-" },
+                    { label: "? Harga Beli", value: `${formatRupiah(inv.buyPrice)}/${at.unit}` },
+                    { label: "? Catatan", value: inv.note || "-" },
+                    { label: "? Jenis Aset", value: at.label },
                   ].map((item, i) => (
                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", borderBottom: i < 3 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
                       <div style={{ fontSize: "12px", color: "#555" }}>{item.label}</div>
@@ -1505,7 +1505,7 @@ export default function App() {
 
               <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px", flexShrink: 0 }}>
                   {currentUser === ADMIN_USER && (
-                    <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                    <button onClick={() => { deleteInvestment(inv.id); setSelectedInvestment(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>🗑 Hapus</button>
                   )}
                   <button onClick={() => setSelectedInvestment(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
@@ -1532,7 +1532,7 @@ export default function App() {
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                   <div style={{ fontSize: "36px", marginBottom: "8px" }}>{goal.icon}</div>
                   <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{goal.label}</div>
-                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{goal.desc} · ⏳ {goal.yearsLeft} tahun lagi</div>
+                  <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>{goal.desc} . ⏳ {goal.yearsLeft} tahun lagi</div>
                 </div>
 
                 {/* Progress */}
@@ -1569,7 +1569,7 @@ export default function App() {
                   return (
                     <div key={h.id} style={{ padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                        <div><div style={{ fontSize: "13px", fontWeight: 600 }}>{at?.icon} {h.ticker || at?.label}</div><div style={{ fontSize: "11px", color: "#555" }}>{h.qty} {at?.unit} · beli {formatRupiah(h.buyPrice)}/{at?.unit}</div></div>
+                        <div><div style={{ fontSize: "13px", fontWeight: 600 }}>{at?.icon} {h.ticker || at?.label}</div><div style={{ fontSize: "11px", color: "#555" }}>{h.qty} {at?.unit} . beli {formatRupiah(h.buyPrice)}/{at?.unit}</div></div>
                         <div style={{ textAlign: "right" }}><div style={{ fontSize: "14px", fontWeight: 800 }}>{formatRupiah(val)}</div><div style={{ fontSize: "11px", color: gain >= 0 ? "#34d399" : "#f87171" }}>{gain >= 0 ? "+" : ""}{formatRupiah(gain)}</div></div>
                       </div>
                       {h.note && <div style={{ fontSize: "11px", color: "#666" }}>📝 {h.note}</div>}
@@ -1615,7 +1615,7 @@ export default function App() {
                   <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
                   <div style={{ fontSize: "40px", marginBottom: "8px" }}>{cat?.icon}</div>
                   <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff" }}>{cat?.label}</div>
-                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{MONTHS[filterMonth]} {year} · {catTxns.length} transaksi</div>
+                  <div style={{ fontSize: "13px", color: "#555", marginTop: "4px" }}>{MONTHS[filterMonth]} {year} . {catTxns.length} transaksi</div>
                 </div>
 
                 {/* Total */}
@@ -1642,7 +1642,7 @@ export default function App() {
                   <div key={t.id} onClick={() => { setSelectedCategory(null); setSelectedTransaction(t); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", marginBottom: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", cursor: "pointer" }}>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: 600 }}>{t.user}</div>
-                      <div style={{ fontSize: "11px", color: "#555" }}>{t.note || "-"} · {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{t.note || "-"} . {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</div>
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <div style={{ fontSize: "13px", fontWeight: 700, color: "#f87171" }}>-{formatRupiah(t.amount)}</div>
@@ -1745,7 +1745,7 @@ export default function App() {
 
               <div style={{ padding: "12px 20px 40px", borderTop: "1px solid rgba(255,255,255,0.06)", background: "#14141f", display: "flex", gap: "10px", flexShrink: 0 }}>
                   {sd.user === currentUser && (
-                    <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑️ Hapus</button>
+                    <button onClick={() => { deleteSumberDana(sd.id); setSelectedSD(null); }} style={{ flex: 1, padding: "14px", borderRadius: "12px", border: "1px solid rgba(239,68,68,0.3)", background: "rgba(239,68,68,0.1)", color: "#f87171", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>🗑 Hapus</button>
                   )}
                   <button onClick={() => setSelectedSD(null)} style={{ flex: 2, padding: "14px", borderRadius: "12px", border: "none", background: "rgba(255,255,255,0.08)", color: "#e8e8f0", fontSize: "14px", cursor: "pointer", fontWeight: 700 }}>Tutup</button>
                 </div>
@@ -1761,8 +1761,8 @@ export default function App() {
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛️ Catat Gadai Emas</div>
-                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Pegadaian · Konvensional KCA</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>🏛 Catat Gadai Emas</div>
+                <div style={{ fontSize: "12px", color: "#555", marginTop: "4px" }}>Pegadaian . Konvensional KCA</div>
               </div>
 
               <div style={{ marginBottom: "12px" }}>
@@ -1851,7 +1851,7 @@ export default function App() {
               <div style={{ overflowY: "auto", flex: 1, padding: "24px 20px 12px" }}>
               <div style={{ textAlign: "center", marginBottom: "20px" }}>
                 <div style={{ width: "36px", height: "4px", background: "rgba(255,255,255,0.15)", borderRadius: "2px", margin: "0 auto 16px" }} />
-                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah · {currentUser}</div>
+                <div style={{ fontSize: "16px", fontWeight: 800 }}>Tambah . {currentUser}</div>
               </div>
               <div style={{ display: "flex", gap: "4px", background: "rgba(255,255,255,0.05)", borderRadius: "12px", padding: "4px", marginBottom: "16px" }}>
                 {[["expense","Pengeluaran"],["income","Pemasukan"]].map(([val,label]) => (
@@ -1876,7 +1876,7 @@ export default function App() {
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Sumber Dana *</div>
                 {myFundingSources.length === 0 ? (
                   <div style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.3)", borderRadius: "12px", padding: "12px 14px", fontSize: "12px", color: "#fbbf24" }}>
-                    ⚠️ Kamu belum punya sumber dana. Buka tab 💳 Dompet untuk menambahkan dulu.
+                    ⚠ Kamu belum punya sumber dana. Buka tab 💳 Dompet untuk menambahkan dulu.
                   </div>
                 ) : (
                   <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -1920,7 +1920,7 @@ export default function App() {
               <div style={{ marginBottom: "14px" }}>
                 <div style={{ fontSize: "11px", color: "#555", marginBottom: "6px", textTransform: "uppercase" }}>Jenis Aset</div>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  {[["usd","💵 USD"],["lm","🥇 LM"],["jewelry","💍 Perhiasan"]].map(([val,label]) => (
+                  {[["usd","? USD"],["lm","? LM"],["jewelry","? Perhiasan"]].map(([val,label]) => (
                     <button key={val} onClick={() => setInvForm(f => ({...f, type: val}))} style={{ flex: 1, padding: "10px 4px", border: "1px solid", borderColor: invForm.type === val ? "#10b981" : "rgba(255,255,255,0.08)", background: invForm.type === val ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.04)", color: invForm.type === val ? "#34d399" : "#666", borderRadius: "10px", fontSize: "12px", cursor: "pointer", fontWeight: 700 }}>{label}</button>
                   ))}
                 </div>
