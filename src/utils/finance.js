@@ -1,7 +1,7 @@
 // src/utils/finance.js
 import { PIN_SALT } from "../config/constants";
 
-// ── Format ────────────────────────────────────────────────────
+// \u2500\u2500 Format \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export function formatRupiah(num) {
   if (!num && num !== 0) return "Rp 0";
   if (num >= 1_000_000_000) return "Rp " + (num / 1_000_000_000).toFixed(2) + " M";
@@ -14,7 +14,7 @@ export function formatFull(num) {
   return "Rp " + Number(Math.round(num)).toLocaleString("id-ID");
 }
 
-// ── Parse ─────────────────────────────────────────────────────
+// \u2500\u2500 Parse \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export function parseAmount(str) {
   return parseInt(String(str).replace(/\D/g, "")) || 0;
 }
@@ -23,7 +23,7 @@ export function parseDecimal(str) {
   return parseFloat(String(str).replace(/[^0-9.]/g, "")) || 0;
 }
 
-// ── Asset valuation ───────────────────────────────────────────
+// \u2500\u2500 Asset valuation \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export function calcAssetValue(holding, prices) {
   if (!holding || !prices) return holding?.idrValue || 0;
   const qty = holding.qty || 0;
@@ -42,7 +42,7 @@ export function calcAssetValue(holding, prices) {
   }
 }
 
-// ── Security ──────────────────────────────────────────────────
+// \u2500\u2500 Security \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export async function hashPin(pin) {
   const encoder = new TextEncoder();
   const data    = encoder.encode(pin + PIN_SALT);
@@ -52,13 +52,13 @@ export async function hashPin(pin) {
     .join("");
 }
 
-// ── Gadai ─────────────────────────────────────────────────────
+// \u2500\u2500 Gadai \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export function hitungGadai(beratGram, kadar, hargaEmasPerGram, tenor) {
   const purity        = parseInt(kadar) / 24;
   const nilaiEmas     = beratGram * purity * hargaEmasPerGram;
   const nilaiTaksiran = Math.round(nilaiEmas * 0.92);
   const uangPinjaman  = Math.round(nilaiTaksiran * 0.90);
-  const bungaPer15    = 1.2; // % per 15 hari — KCA emas
+  const bungaPer15    = 1.2; // % per 15 hari \u2014 KCA emas
   const periode       = Math.ceil(tenor / 15);
   const totalBunga    = Math.round(uangPinjaman * (bungaPer15 / 100) * periode);
   const totalLunas    = uangPinjaman + totalBunga;
