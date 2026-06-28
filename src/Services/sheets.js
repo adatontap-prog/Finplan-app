@@ -28,7 +28,7 @@ export async function syncAllToSheets({ transactions, savingsData, savingsHoldin
     if (amount <= 0) return;
     const goal = SAVINGS_GOALS.find(g => g.id === goalId);
     savingsRows.push({
-      id: `cash_${goalId}`, goalId, goalLabel: goal?.label || goalId,
+      id: "cash_" + goalId, goalId, goalLabel: goal?.label || goalId,
       assetType: "idr", qty: amount, unit: "IDR",
       buyPrice: 0, note: "Tunai IDR", addedAt: new Date().toISOString(),
     });
