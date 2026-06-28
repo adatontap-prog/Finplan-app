@@ -2194,11 +2194,6 @@ export default function App() {
               <div style={{ padding: "12px 20px 32px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.08)", background: "#14141f" }}>
               <button onClick={addInvestment} disabled={!invForm.amount || !invForm.buyPrice} style={{ width: "100%", padding: "15px", borderRadius: "14px", border: "none", cursor: "pointer", background: invForm.amount && invForm.buyPrice ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.07)", color: invForm.amount && invForm.buyPrice ? "#fff" : "#444", fontSize: "15px", fontWeight: 800 }}>Simpan Investasi</button>
             </div>
-          </div>
-        )}
-
-      </div>
-      <style>{`* { margin:0; padding:0; box-sizing:border-box; } ::-webkit-scrollbar { display:none; }`}</style>
     </div>
   );
 }
