@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3.2";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 4 Wallet v2";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -366,8 +366,10 @@ export default function App() {
   const [sumberDanaLedger, setSumberDanaLedger] = useState([]);
   const [walletFilterUser, setWalletFilterUser] = useState("");
   const [showSDForm, setShowSDForm] = useState(false);
-  const [sdForm, setSdForm] = useState({ name: "", icon: "\uD83D\uDCB5", initialBalance: "" });
+  const [sdForm, setSdForm] = useState({ name: "", icon: "\uD83D\uDCB5", initialBalance: "", color: "#6366f1", status: "active" });
   const [selectedSD, setSelectedSD] = useState(null);
+  const [mergeTargetSDId, setMergeTargetSDId] = useState("");
+  const [showArchivedWallets, setShowArchivedWallets] = useState(false);
   const [transactionSDId, setTransactionSDId] = useState("");
   const [savingsSDId, setSavingsSDId] = useState("");
   const [assetSDId, setAssetSDId] = useState("");
@@ -1156,22 +1158,157 @@ export default function App() {
     });
   }
 
+  function getSumberDanaStatus(sd) {
+    return sd?.status || (sd?.active === false ? "inactive" : "active");
+  }
+
+  function isSumberDanaActive(sd) {
+    return getSumberDanaStatus(sd) === "active";
+  }
+
+  function openSumberDanaEditor(sd) {
+    if (!sd) return;
+    setSelectedSD(sd.id);
+    setMergeTargetSDId("");
+    setSdForm({
+      name: sd.name || "",
+      icon: sd.icon || "💵",
+      initialBalance: String(sd.initialBalance || ""),
+      color: sd.color || "#6366f1",
+      status: getSumberDanaStatus(sd),
+    });
+  }
+
+  function resetSumberDanaForm() {
+    setShowSDForm(false);
+    setSelectedSD(null);
+    setMergeTargetSDId("");
+    setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" });
+  }
+
   async function addSumberDana() {
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengelola Sumber Dana.");
+      return;
+    }
     if (!sdForm.name) return;
     const initBal = parseAmount(sdForm.initialBalance);
     await addDoc(collection(db, "sumberDana"), {
-      user: currentUser, name: sdForm.name, icon: sdForm.icon, initialBalance: initBal,
+      user: currentUser,
+      name: sdForm.name.trim(),
+      icon: sdForm.icon || "💵",
+      color: sdForm.color || "#6366f1",
+      initialBalance: initBal,
+      status: "active",
       createdAt: new Date().toISOString(),
+      createdBy: currentUser,
     });
-    setShowSDForm(false);
-    setSdForm({ name: "", icon: "\uD83D\uDCB5", initialBalance: "" });
+    await addActivityLog("wallet_created", "Tambah Sumber Dana: " + sdForm.name.trim());
+    resetSumberDanaForm();
+  }
+
+  async function saveSumberDanaChanges(id) {
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah Sumber Dana.");
+      return;
+    }
+    const sd = sumberDanaList.find(s => s.id === id);
+    if (!sd || !sdForm.name.trim()) return;
+    const initBal = parseAmount(sdForm.initialBalance);
+    await setDoc(doc(db, "sumberDana", id), {
+      name: sdForm.name.trim(),
+      icon: sdForm.icon || "💵",
+      color: sdForm.color || sd.color || "#6366f1",
+      initialBalance: initBal,
+      status: sdForm.status || getSumberDanaStatus(sd),
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    }, { merge: true });
+
+    // Keep old transactions readable after rename.
+    const relatedTransactions = transactions.filter(t => t.sumberDanaId === id);
+    for (const tx of relatedTransactions) {
+      await setDoc(doc(db, "transactions", tx.id), { sumberDanaName: sdForm.name.trim(), updatedAt: new Date().toISOString() }, { merge: true });
+    }
+
+    await addActivityLog("wallet_renamed", (sd.name || "Sumber Dana") + " → " + sdForm.name.trim());
+    setSelectedSD(null);
+    setMergeTargetSDId("");
+  }
+
+  async function setSumberDanaStatus(id, status) {
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah status Sumber Dana.");
+      return;
+    }
+    const sd = sumberDanaList.find(s => s.id === id);
+    if (!sd) return;
+    await setDoc(doc(db, "sumberDana", id), {
+      status,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    }, { merge: true });
+    await addActivityLog("wallet_status_updated", (sd.name || "Sumber Dana") + " → " + status);
+    setSdForm(prev => ({ ...prev, status }));
+  }
+
+  async function mergeSumberDana(sourceId, targetId) {
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin merge Sumber Dana.");
+      return;
+    }
+    if (!sourceId || !targetId || sourceId === targetId) return;
+    const source = sumberDanaList.find(s => s.id === sourceId);
+    const target = sumberDanaList.find(s => s.id === targetId);
+    if (!source || !target) return;
+    const ok = window.confirm("Merge " + source.name + " ke " + target.name + "? Semua ledger dan transaksi lama akan dipindahkan ke sumber dana tujuan.");
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    const relatedLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sourceId);
+    for (const l of relatedLedger) {
+      await setDoc(doc(db, "sumberDanaLedger", l.id), { sumberDanaId: targetId, mergedFrom: sourceId, updatedAt: now }, { merge: true });
+    }
+
+    const relatedTransactions = transactions.filter(t => t.sumberDanaId === sourceId);
+    for (const tx of relatedTransactions) {
+      await setDoc(doc(db, "transactions", tx.id), { sumberDanaId: targetId, sumberDanaName: target.name, mergedFromSumberDanaId: sourceId, updatedAt: now }, { merge: true });
+    }
+
+    await setDoc(doc(db, "sumberDana", sourceId), {
+      status: "archived",
+      mergedInto: targetId,
+      mergedIntoName: target.name,
+      mergedAt: now,
+      updatedAt: now,
+      updatedBy: currentUser,
+    }, { merge: true });
+
+    await addActivityLog("wallet_merged", source.name + " → " + target.name + " (" + relatedTransactions.length + " transaksi, " + relatedLedger.length + " ledger)");
+    setSelectedSD(null);
+    setMergeTargetSDId("");
+    setShowArchivedWallets(true);
   }
 
   async function deleteSumberDana(id) {
+    if (!isOwner) {
+      showAccessNotice("Hapus permanen Sumber Dana hanya bisa dilakukan oleh Owner.");
+      return;
+    }
+    const sd = sumberDanaList.find(s => s.id === id);
+    if (!sd) return;
+    const hasUsage = transactions.some(t => t.sumberDanaId === id) || sumberDanaLedger.some(l => l.sumberDanaId === id);
+    if (hasUsage) {
+      showAccessNotice("Sumber Dana masih punya transaksi/ledger. Gunakan Archive atau Merge agar data tidak hilang.");
+      return;
+    }
+    if (!window.confirm("Hapus permanen " + sd.name + "?")) return;
     await deleteDoc(doc(db, "sumberDana", id));
+    await addActivityLog("wallet_deleted", "Hapus permanen Sumber Dana: " + sd.name);
+    setSelectedSD(null);
   }
 
-  const myFundingSources = sumberDanaList.filter(sd => sd.user === currentUser);
+  const myFundingSources = sumberDanaList.filter(sd => sd.user === currentUser && isSumberDanaActive(sd));
 
   async function handleSyncAll() {
     setSyncingSheets(true);
@@ -1554,7 +1691,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 3.2. Settings fokus pada akun, family admin, permission, backup, dan sistem.
+                FinPlan v1.1.0 Family Edition Phase 4. Wallet v2 mendukung rename, aktif/nonaktif, archive, merge, dan activity log.
               </div>
             </div>
           </div>
@@ -1568,7 +1705,8 @@ export default function App() {
 
   const AddTransactionModal = () => {
     if (!showForm) return null;
-    const selectableFundingSources = myFundingSources.length > 0 ? myFundingSources : sumberDanaList;
+    const activeFundingSources = sumberDanaList.filter(sd => isSumberDanaActive(sd));
+    const selectableFundingSources = myFundingSources.length > 0 ? myFundingSources : activeFundingSources;
     return (
       <div onClick={() => setShowForm(false)} style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997,
@@ -1662,7 +1800,7 @@ export default function App() {
     if (!showSDForm) return null;
     const presets = SUMBER_DANA_PRESETS || [];
     return (
-      <div onClick={() => setShowSDForm(false)} style={{
+      <div onClick={resetSumberDanaForm} style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996,
         display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box"
       }}>
@@ -1673,10 +1811,10 @@ export default function App() {
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Sumber Dana Manual</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Wallet v2</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Tambah Dompet/Rekening</div>
             </div>
-            <button onClick={() => setShowSDForm(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
+            <button onClick={resetSumberDanaForm} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
           </div>
 
           <div style={{ display: "grid", gap: "10px" }}>
@@ -1696,6 +1834,11 @@ export default function App() {
             </div>
 
             <div>
+              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Warna Label</div>
+              <input type="color" value={sdForm.color || "#6366f1"} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setSdForm(prev => ({ ...prev, color: e.target.value }))} style={{ width: "100%", height: "46px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "6px", boxSizing: "border-box" }} />
+            </div>
+
+            <div>
               <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Preset cepat</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                 {presets.map(p => (
@@ -1708,6 +1851,89 @@ export default function App() {
               width: "100%", padding: "15px", borderRadius: "16px", border: "none",
               background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, fontSize: "15px", marginTop: "8px"
             }}>Simpan Sumber Dana</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const SumberDanaDetailModal = () => {
+    if (!selectedSD) return null;
+    const sd = sumberDanaList.find(s => s.id === selectedSD);
+    if (!sd) return null;
+    const status = getSumberDanaStatus(sd);
+    const balance = calcSumberDanaBalance(sd.id);
+    const walletTransactions = transactions.filter(t => t.sumberDanaId === sd.id);
+    const walletLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id);
+    const mergeTargets = sumberDanaList.filter(item => item.user === sd.user && item.id !== sd.id && getSumberDanaStatus(item) !== "archived");
+    return (
+      <div onClick={() => setSelectedSD(null)} style={{
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.74)", zIndex: 99996,
+        display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box"
+      }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{
+          width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto",
+          background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#86efac", fontWeight: 900, textTransform: "uppercase" }}>Wallet v2 · {status}</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "4px" }}>
+                <div style={{ fontSize: "28px" }}>{sd.icon || "💵"}</div>
+                <div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff" }}>{sd.name}</div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8" }}>{sd.user} · Saldo {formatFull(balance)}</div>
+                </div>
+              </div>
+            </div>
+            <button onClick={() => setSelectedSD(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "14px" }}>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Saldo Awal</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{formatRupiah(sd.initialBalance || 0)}</div></div>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Transaksi</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{walletTransactions.length}</div></div>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Ledger</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{walletLedger.length}</div></div>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px" }}>
+            <div>
+              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Rename Sumber Dana</div>
+              <input value={sdForm.name} onChange={(e) => setSdForm(prev => ({ ...prev, name: e.target.value }))} style={inputStyle} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "86px 1fr", gap: "10px" }}>
+              <div>
+                <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Icon</div>
+                <input value={sdForm.icon} onChange={(e) => setSdForm(prev => ({ ...prev, icon: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Saldo Awal</div>
+                <input value={sdForm.initialBalance} inputMode="numeric" onChange={(e) => setSdForm(prev => ({ ...prev, initialBalance: e.target.value.replace(/[^0-9]/g, "") }))} style={inputStyle} />
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Warna Label</div>
+              <input type="color" value={sdForm.color || sd.color || "#6366f1"} onChange={(e) => setSdForm(prev => ({ ...prev, color: e.target.value }))} style={{ width: "100%", height: "46px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "6px", boxSizing: "border-box" }} />
+            </div>
+            <button onClick={() => saveSumberDanaChanges(sd.id)} style={{ padding: "14px", borderRadius: "16px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900 }}>💾 Simpan Perubahan</button>
+
+            <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+            <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>Status</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <button onClick={() => setSumberDanaStatus(sd.id, status === "active" ? "inactive" : "active")} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: status === "active" ? "rgba(245,158,11,0.14)" : "rgba(16,185,129,0.14)", color: status === "active" ? "#fbbf24" : "#86efac", fontWeight: 900 }}>{status === "active" ? "⏸ Nonaktifkan" : "✅ Aktifkan"}</button>
+              <button onClick={() => setSumberDanaStatus(sd.id, "archived")} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontWeight: 900 }}>📦 Arsipkan</button>
+            </div>
+
+            <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
+            <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>Merge Sumber Dana</div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>Gunakan saat ada salah ketik, misalnya BCAA digabung ke BCA. Transaksi dan ledger akan dipindahkan, sumber lama otomatis diarsipkan.</div>
+            <select value={mergeTargetSDId} onChange={(e) => setMergeTargetSDId(e.target.value)} style={inputStyle}>
+              <option value="">Pilih tujuan merge...</option>
+              {mergeTargets.map(target => <option key={target.id} value={target.id}>{target.icon || "💵"} {target.name} · {formatFull(calcSumberDanaBalance(target.id))}</option>)}
+            </select>
+            <button disabled={!mergeTargetSDId} onClick={() => mergeSumberDana(sd.id, mergeTargetSDId)} style={{ padding: "14px", borderRadius: "16px", border: "none", background: mergeTargetSDId ? "rgba(16,185,129,0.18)" : "rgba(255,255,255,0.05)", color: mergeTargetSDId ? "#86efac" : "#64748b", fontWeight: 900, cursor: mergeTargetSDId ? "pointer" : "not-allowed" }}>🔄 Merge ke Sumber Dana Tujuan</button>
+
+            {isOwner && <button onClick={() => deleteSumberDana(sd.id)} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.08)", color: "#fca5a5", fontWeight: 900 }}>🗑 Hapus Permanen jika belum dipakai</button>}
           </div>
         </div>
       </div>
@@ -2117,7 +2343,7 @@ export default function App() {
                 <div>✅ Phase 2.1: Access control awal, relogin ke Home, UI per halaman aktif.</div>
                 <div>✅ Phase 3.1: User switcher aktif dan izin tambah/hapus transaksi mengikuti permission.</div>
                 <div>✅ Phase 3.2: Settings dirapikan; Tabungan/Goal dan Investasi keluar dari Settings dan tetap di navigasi utama.</div>
-                <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
+                <div>✅ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
             </div>
@@ -2507,29 +2733,32 @@ export default function App() {
         {activeTab === "dompet" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Alur Sumber Dana Manual</div>
-              <div style={{ fontSize: "20px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Mulai dari sini</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Wallet v2 · Rename · Archive · Merge</div>
+              <div style={{ fontSize: "20px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Sumber Dana Keluarga</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
                 1. Tambahkan sumber dana sesuai kebutuhan: Cash, BCA, Mandiri, DANA, Owner Draw, atau lainnya.<br />
-                2. Setiap transaksi wajib memilih sumber dana agar saldo dompet akurat.<br />
-                3. Untuk FinPlan pribadi, pemasukan utama dari usaha dicatat sebagai <b>Owner Draw</b>, bukan omzet toko.
+                2. Setiap transaksi wajib memilih sumber dana aktif agar saldo dompet akurat.<br />
+                3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.
               </div>
             </div>
             {/* User filter */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "16px" }}>
-              {USERS.map(u => (
+              {activeFamilyMembers.map(member => { const u = member.name; return (
                 <button key={u} onClick={() => setWalletFilterUser(u)} style={{
                   padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
                   whiteSpace: "nowrap", fontSize: "12px", fontWeight: 700, flexShrink: 0,
                   background: walletFilterUser === u ? "#6366f1" : "rgba(255,255,255,0.07)",
                   color: walletFilterUser === u ? "#fff" : "#888",
-                }}>{u} {u === currentUser ? "(saya)" : ""}</button>
-              ))}
+                }}>{member.avatar || "👤"} {u} {u === currentUser ? "(saya)" : ""}</button>
+              );})}
             </div>
+            <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "14px" }}>
+              {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif/nonaktif"}
+            </button>
 
             {/* Total saldo */}
             {(() => {
-              const userSDs = sumberDanaList.filter(sd => sd.user === walletFilterUser);
+              const userSDs = sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived"));
               const totalBalance = userSDs.reduce((s, sd) => s + calcSumberDanaBalance(sd.id), 0);
               return (
                 <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
@@ -2541,20 +2770,22 @@ export default function App() {
             })()}
 
             {/* Daftar sumber dana */}
-            {sumberDanaList.filter(sd => sd.user === walletFilterUser).length === 0 ? (
+            {sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div>
                 <div style={{ fontSize: "14px" }}>Belum ada sumber dana</div>
               </div>
-            ) : sumberDanaList.filter(sd => sd.user === walletFilterUser).map(sd => {
+            ) : sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).map(sd => {
               const balance = calcSumberDanaBalance(sd.id);
+              const status = getSumberDanaStatus(sd);
               return (
-                <div key={sd.id} onClick={() => setSelectedSD(sd.id)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div key={sd.id} onClick={() => openSumberDanaEditor(sd)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 16px", marginBottom: "10px", borderRadius: "16px", background: status === "archived" ? "rgba(245,158,11,0.06)" : status === "inactive" ? "rgba(255,255,255,0.035)" : "rgba(255,255,255,0.05)", border: "1px solid " + (sd.color || "rgba(255,255,255,0.06)"), cursor: "pointer", opacity: status === "archived" ? 0.72 : 1 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                     <div style={{ fontSize: "26px" }}>{sd.icon}</div>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 700 }}>{sd.name}</div>
                       <div style={{ fontSize: "11px", color: "#555" }}>Saldo awal: {formatRupiah(sd.initialBalance || 0)}</div>
+                      <div style={{ display: "inline-block", marginTop: "5px", padding: "3px 7px", borderRadius: "999px", background: status === "active" ? "rgba(16,185,129,0.14)" : status === "inactive" ? "rgba(245,158,11,0.14)" : "rgba(148,163,184,0.12)", color: status === "active" ? "#86efac" : status === "inactive" ? "#fbbf24" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{status}</div>
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -2567,7 +2798,7 @@ export default function App() {
 
             {/* Tombol tambah - hanya untuk diri sendiri */}
             {walletFilterUser === currentUser && (
-              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "\uD83D\uDCB5", initialBalance: "" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
+              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
             )}
           </div>
         )}
@@ -2580,6 +2811,7 @@ export default function App() {
 
         {AddTransactionModal()}
         {SumberDanaModal()}
+        {SumberDanaDetailModal()}
         {CategoryDetailModal()}
         {TransactionDetailModal()}
 
