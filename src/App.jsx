@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 2.1";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -88,23 +88,45 @@ const FAMILY_ROLES_V110 = [
 ];
 
 const PERMISSIONS_V110 = [
-  { id: "dashboard", label: "Dashboard", icon: "📊" },
-  { id: "transaction_add", label: "Tambah Transaksi", icon: "➕" },
-  { id: "transaction_edit", label: "Edit Transaksi", icon: "✏️" },
-  { id: "transaction_delete", label: "Hapus Transaksi", icon: "🗑️" },
-  { id: "goals", label: "Goal Engine", icon: "🎯" },
-  { id: "wallets", label: "Sumber Dana", icon: "🏦" },
-  { id: "backup", label: "Backup", icon: "💾" },
-  { id: "sync", label: "Sync", icon: "📊" },
-  { id: "settings", label: "Settings", icon: "⚙️" },
+  { id: "dashboard", label: "Dashboard", icon: "📊", group: "Core" },
+  { id: "history", label: "Riwayat", icon: "📋", group: "Core" },
+  { id: "transaction_add", label: "Tambah Transaksi", icon: "➕", group: "Transaksi" },
+  { id: "transaction_edit", label: "Edit Transaksi", icon: "✏️", group: "Transaksi" },
+  { id: "transaction_delete", label: "Hapus Transaksi", icon: "🗑️", group: "Transaksi" },
+  { id: "goals", label: "Tabungan / Goal", icon: "🎯", group: "Keuangan" },
+  { id: "investments", label: "Investasi", icon: "📈", group: "Keuangan" },
+  { id: "gadai", label: "Gadai", icon: "🏦", group: "Keuangan" },
+  { id: "wallets", label: "Sumber Dana", icon: "👛", group: "Keuangan" },
+  { id: "family_manage", label: "Family Management", icon: "👨‍👩‍👧‍👦", group: "Family Admin" },
+  { id: "permission_manage", label: "Permission Manager", icon: "🛡️", group: "Family Admin" },
+  { id: "security", label: "Security / PIN", icon: "🔐", group: "Family Admin" },
+  { id: "sync", label: "Sync Google Sheets", icon: "📊", group: "Backup" },
+  { id: "reports", label: "Email Report", icon: "✉️", group: "Backup" },
+  { id: "backup", label: "Export Backup", icon: "💾", group: "Backup" },
+  { id: "settings", label: "Settings", icon: "⚙️", group: "Core" },
 ];
 
 const ROLE_PERMISSION_PRESET_V110 = {
-  Owner: ["dashboard", "transaction_add", "transaction_edit", "transaction_delete", "goals", "wallets", "backup", "sync", "settings"],
-  Admin: ["dashboard", "transaction_add", "transaction_edit", "goals", "wallets", "sync"],
-  Member: ["dashboard", "transaction_add", "goals"],
-  Viewer: ["dashboard"],
+  Owner: PERMISSIONS_V110.map(p => p.id),
+  Admin: ["dashboard", "history", "transaction_add", "transaction_edit", "goals", "investments", "gadai", "wallets", "sync", "reports", "settings"],
+  Member: ["dashboard", "history", "transaction_add", "goals", "settings"],
+  Viewer: ["dashboard", "history", "settings"],
 };
+
+const OWNER_LOCKED_PERMISSIONS_V110 = ["dashboard", "settings", "family_manage", "permission_manage", "security"];
+
+function normalizePermissionData(data) {
+  const allowedIds = new Set(PERMISSIONS_V110.map(p => p.id));
+  const normalized = {};
+  FAMILY_ROLES_V110.forEach(role => {
+    const base = Array.isArray(data?.[role.label]) ? data[role.label] : (ROLE_PERMISSION_PRESET_V110[role.label] || []);
+    const clean = base.filter(id => allowedIds.has(id));
+    normalized[role.label] = role.label === "Owner"
+      ? [...new Set([...clean, ...OWNER_LOCKED_PERMISSIONS_V110])]
+      : [...new Set(clean)];
+  });
+  return normalized;
+}
 
 const SUMBER_DANA_PRESETS = [
   { name: "Cash", icon: "\uD83D\uDCB5" },
@@ -373,6 +395,9 @@ export default function App() {
   const [familyForm, setFamilyForm] = useState({ name: "", role: "Member", avatar: "👤", status: "active" });
   const [familyStatus, setFamilyStatus] = useState("");
   const [activityLog, setActivityLog] = useState([]);
+  const [rolePermissions, setRolePermissions] = useState(ROLE_PERMISSION_PRESET_V110);
+  const [permissionsLoaded, setPermissionsLoaded] = useState(false);
+  const [familyPanel, setFamilyPanel] = useState("members");
 
   // ===== SECURITY STATES =====
   const [securityData, setSecurityData] = useState(null);
@@ -450,6 +475,23 @@ export default function App() {
         console.error("family members listener error:", err);
         setFamilyMembers(FAMILY_MEMBERS_V110);
         setFamilyLoaded(true);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "family", "permissions"),
+      snap => {
+        const saved = snap.exists() ? snap.data()?.permissions : null;
+        setRolePermissions(normalizePermissionData(saved));
+        setPermissionsLoaded(true);
+      },
+      err => {
+        console.error("family permissions listener error:", err);
+        setRolePermissions(ROLE_PERMISSION_PRESET_V110);
+        setPermissionsLoaded(true);
       }
     );
     return () => unsub();
@@ -1184,14 +1226,25 @@ export default function App() {
   });
   const currentFamilyMember = familyEditionMembers.find(member => member.name === currentUser) || familyEditionMembers[0] || FAMILY_MEMBERS_V110[0];
   const userFilterNames = [...new Set([...familyEditionMembers.filter(m => m.status !== "archived").map(m => m.name), ...usersWithData])];
-  const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
-    const permissions = ROLE_PERMISSION_PRESET_V110[role.label] || [];
-    return { ...role, permissions, count: permissions.length };
-  });
   const currentRole = currentFamilyMember?.role || "Viewer";
   const isOwner = currentRole === "Owner";
+  const effectiveRolePermissions = normalizePermissionData(rolePermissions);
+  function permissionsForRole(roleLabel = currentRole) {
+    return effectiveRolePermissions?.[roleLabel] || ROLE_PERMISSION_PRESET_V110[roleLabel] || [];
+  }
+  function hasPermission(permissionId, roleLabel = currentRole) {
+    return permissionsForRole(roleLabel).includes(permissionId);
+  }
+  const canManageFamily = isOwner || hasPermission("family_manage");
+  const canManagePermissions = isOwner;
+  const canAccessFamilyPage = canManageFamily || canManagePermissions;
   const isAdminOrOwner = currentRole === "Owner" || currentRole === "Admin";
+  const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
+    const permissions = permissionsForRole(role.label);
+    return { ...role, permissions, count: permissions.length };
+  });
   const showTimeFilters = activeTab === "dashboard" || activeTab === "history";
+  const showMainNav = activeTab !== "family";
 
   function showAccessNotice(message) {
     setShowSettingsCenter(false);
@@ -1199,19 +1252,63 @@ export default function App() {
     setTimeout(() => setEmailStatus(""), 4200);
   }
 
-  function openFamilyManagement() {
-    if (!isOwner) {
-      showAccessNotice("Family Management hanya bisa diatur oleh Owner.");
+  async function saveRolePermissions(nextPermissions, detail) {
+    if (!canManagePermissions) {
+      showAccessNotice("Permission Manager hanya bisa dikelola oleh Owner.");
+      return;
+    }
+    const normalized = normalizePermissionData(nextPermissions);
+    await setDoc(doc(db, "family", "permissions"), {
+      permissions: normalized,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser || "System",
+    });
+    setRolePermissions(normalized);
+    setFamilyStatus("✅ Permission role tersimpan");
+    setTimeout(() => setFamilyStatus(""), 3500);
+    await addActivityLog("permissions_updated", detail || "Update permission role");
+  }
+
+  async function toggleRolePermission(roleLabel, permissionId) {
+    if (!canManagePermissions) {
+      showAccessNotice("Permission Manager hanya bisa dikelola oleh Owner.");
+      return;
+    }
+    if (roleLabel === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permissionId)) {
+      setFamilyStatus("⚠️ Permission inti Owner dikunci agar tidak terjadi lockout.");
+      setTimeout(() => setFamilyStatus(""), 3500);
+      return;
+    }
+    const current = permissionsForRole(roleLabel);
+    const nextForRole = current.includes(permissionId)
+      ? current.filter(id => id !== permissionId)
+      : [...current, permissionId];
+    await saveRolePermissions({ ...effectiveRolePermissions, [roleLabel]: nextForRole }, roleLabel + " permission: " + permissionId);
+  }
+
+  function openFamilyManagement(panel = "members") {
+    if (!canAccessFamilyPage) {
+      showAccessNotice("Family Management hanya bisa diakses role yang memiliki izin Family Admin.");
       setActiveTab("dashboard");
       return;
     }
+    setFamilyPanel(panel);
     setShowSettingsCenter(false);
     setActiveTab("family");
   }
 
+  function openPermissionManager() {
+    if (!canManagePermissions) {
+      showAccessNotice("Permission Manager hanya bisa dikelola oleh Owner.");
+      setActiveTab("dashboard");
+      return;
+    }
+    openFamilyManagement("permissions");
+  }
+
   function openWalletManager() {
-    if (!isAdminOrOwner) {
-      showAccessNotice("Sumber Dana hanya untuk Owner/Admin.");
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Sumber Dana belum diizinkan untuk role " + currentRole + ".");
       setActiveTab("dashboard");
       return;
     }
@@ -1298,60 +1395,72 @@ export default function App() {
 
   const SettingsCenterModal = () => {
     if (!showSettingsCenter) return null;
+    const sectionStyle = { padding: "14px", borderRadius: "18px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)", display: "grid", gap: "9px" };
+    const sectionTitleStyle = { fontSize: "11px", letterSpacing: "1.8px", textTransform: "uppercase", color: "#94a3b8", fontWeight: 900, marginBottom: "2px" };
+    const btnBase = { padding: "13px 14px", borderRadius: "15px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer", width: "100%" };
+    const SettingButton = ({ children, onClick, tone = "default" }) => {
+      const tones = {
+        default: { background: "rgba(255,255,255,0.06)", color: "#fff", border: "1px solid rgba(255,255,255,0.08)" },
+        purple: { background: "rgba(99,102,241,0.14)", color: "#c7d2fe", border: "1px solid rgba(99,102,241,0.30)" },
+        green: { background: "rgba(16,185,129,0.12)", color: "#86efac", border: "1px solid rgba(16,185,129,0.24)" },
+        amber: { background: "rgba(245,158,11,0.14)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.25)" },
+        red: { background: "rgba(248,113,113,0.10)", color: "#fca5a5", border: "1px solid rgba(248,113,113,0.25)" },
+      };
+      return <button onClick={onClick} style={{ ...btnBase, ...(tones[tone] || tones.default) }}>{children}</button>;
+    };
+    const Section = ({ title, children }) => children ? <div style={sectionStyle}><div style={sectionTitleStyle}>{title}</div>{children}</div> : null;
     return (
       <div onClick={() => setShowSettingsCenter(false)} style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.72)",
-        zIndex: 99996,
-        display: "flex",
-        alignItems: "flex-end",
-        justifyContent: "center",
-        padding: "16px",
-        boxSizing: "border-box"
+        position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996,
+        display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box"
       }}>
         <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{
-          width: "100%",
-          maxWidth: "430px",
-          maxHeight: "88vh",
-          overflowY: "auto",
-          overflowX: "hidden",
-          background: "linear-gradient(180deg,#181827,#0f1020)",
-          border: "1px solid rgba(255,255,255,0.12)",
-          borderRadius: "24px 24px 18px 18px",
-          padding: "20px",
-          boxSizing: "border-box",
-          boxShadow: "0 -20px 70px rgba(0,0,0,0.55)",
-          color: "#e8e8f0"
+          width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", overflowX: "hidden",
+          background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box",
+          boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0"
         }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Settings Center</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Pengaturan FinPlan</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>{currentFamilyMember?.avatar} {currentUser} · {currentRole}</div>
             </div>
-            <button onClick={() => setShowSettingsCenter(false)} style={{
-              width: "40px", height: "40px", borderRadius: "14px",
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "rgba(255,255,255,0.07)", color: "#fff",
-              fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0
-            }}>×</button>
+            <button onClick={() => setShowSettingsCenter(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
           </div>
 
-          <div style={{ display: "grid", gap: "10px" }}>
-            <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👤 Ganti / Pilih User</button>
-            {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔐 Ganti Password Keluarga</button>}
-            {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔑 Reset / Ganti PIN User</button>}
-            {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👨‍👩‍👧 Family Management v1.1</button>}
-            {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🏦 Sumber Dana / Wallet v2</button>}
-            {isAdminOrOwner && <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>📊 Sync Google Sheets</button>}
-            {isAdminOrOwner && <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>✉️ Kirim Email Report</button>}
-            {isOwner && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>💾 Export Backup JSON</button>}
-            {!isAdminOrOwner && <div style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Mode {currentRole}: hanya bisa ganti user dan logout. Pengaturan akses dikelola oleh Owner.</div>}
-            <button onClick={lockApp} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🚪 Lock / Logout</button>
+          <div style={{ display: "grid", gap: "12px" }}>
+            <Section title="Akun & Login">
+              <SettingButton onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }}>👤 Ganti / Pilih User</SettingButton>
+              <SettingButton onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }}>🔑 Ganti PIN Saya</SettingButton>
+            </Section>
+
+            <Section title="Family Admin">
+              {canManageFamily && <SettingButton onClick={() => openFamilyManagement("members")} tone="purple">👨‍👩‍👧 Family Management</SettingButton>}
+              {canManagePermissions && <SettingButton onClick={openPermissionManager} tone="purple">🛡️ Permission Manager</SettingButton>}
+              {hasPermission("security") && <SettingButton onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }}>🔐 Ganti Password Keluarga</SettingButton>}
+              {hasPermission("security") && <SettingButton onClick={() => openFamilyManagement("members")}>🔑 Reset PIN Anggota</SettingButton>}
+            </Section>
+
+            <Section title="Keuangan">
+              {hasPermission("wallets") && <SettingButton onClick={openWalletManager} tone="green">🏦 Sumber Dana / Wallet v2</SettingButton>}
+              {hasPermission("goals") && <SettingButton onClick={() => { setShowSettingsCenter(false); setActiveTab("savings"); }} tone="green">🎯 Tabungan / Goal</SettingButton>}
+              {hasPermission("investments") && <SettingButton onClick={() => { setShowSettingsCenter(false); setActiveTab("invest"); }} tone="green">📈 Investasi</SettingButton>}
+            </Section>
+
+            <Section title="Backup & Sinkronisasi">
+              {hasPermission("sync") && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} tone="purple">📊 Sync Google Sheets</SettingButton>}
+              {hasPermission("reports") && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} tone="green">✉️ Kirim Email Report</SettingButton>}
+              {hasPermission("backup") && <SettingButton onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} tone="amber">💾 Export Backup JSON</SettingButton>}
+            </Section>
+
+            {!isOwner && <div style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Mode {currentRole}: menu mengikuti Permission Manager. Akses dapat diubah oleh Owner.</div>}
+            {!permissionsLoaded && <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", color: "#c7d2fe", fontSize: "12px", fontWeight: 800 }}>Memuat permission dari Firebase...</div>}
+            <SettingButton onClick={lockApp} tone="red">🚪 Lock / Logout</SettingButton>
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 2.1. Fokus: akses Owner, relogin ke Home, dan UI hanya menampilkan halaman aktif.
+            FinPlan v1.1.0 Family Edition Phase 3. Settings dibagi per grup dan akses menu mengikuti Permission Manager yang tersimpan di Firebase.
           </div>
         </div>
       </div>
@@ -1421,7 +1530,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 2.1. Family Management dikunci untuk Owner; user lain hanya melihat menu sesuai role.
+                FinPlan v1.1.0 Family Edition Phase 3. Family Management dikunci untuk Owner; user lain hanya melihat menu sesuai role.
               </div>
             </div>
           </div>
@@ -1781,15 +1890,17 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
-          <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>
-          <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>
-          <button style={tabStyle("family")} onClick={() => setActiveTab("family")}>👨‍👩‍👧‍👦 Keluarga</button>
-          <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>
-          <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>
-          <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Gadai</button>
-          <button style={tabStyle("dompet")} onClick={() => setActiveTab("dompet")}>👛 Sumber Dana</button>
-        </div>
+        {showMainNav && (
+          <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
+            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>}
+            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>}
+            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => openFamilyManagement("members")}>👨‍👩‍👧‍👦 Keluarga</button>}
+            {hasPermission("goals") && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
+            {hasPermission("investments") && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
+            {hasPermission("gadai") && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Gadai</button>}
+            {hasPermission("wallets") && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Sumber Dana</button>}
+          </div>
+        )}
 
         {/* DASHBOARD */}
         {activeTab === "dashboard" && (
@@ -1837,26 +1948,33 @@ export default function App() {
         {/* FAMILY */}
         {activeTab === "family" && (
           <div style={{ padding: "0 20px" }}>
-            {!isOwner ? (
+            {!canAccessFamilyPage ? (
               <div style={{ padding: "22px", marginBottom: "14px", borderRadius: "20px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)", color: "#fef3c7" }}>
                 <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase", marginBottom: "8px" }}>Akses dibatasi</div>
-                <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management hanya untuk Owner</div>
-                <div style={{ fontSize: "13px", lineHeight: 1.6, color: "#fde68a" }}>Role kamu saat ini: <b>{currentRole}</b>. Pengaturan anggota, role, reset PIN, dan permission hanya bisa dikelola oleh Owner.</div>
+                <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management belum diizinkan</div>
+                <div style={{ fontSize: "13px", lineHeight: 1.6, color: "#fde68a" }}>Role kamu saat ini: <b>{currentRole}</b>. Akses halaman ini mengikuti Permission Manager yang dikelola oleh Owner.</div>
                 <button onClick={() => setActiveTab("dashboard")} style={{ marginTop: "14px", padding: "12px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, cursor: "pointer" }}>Kembali ke Home</button>
               </div>
             ) : (
               <>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 2.1</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 3</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
-                Phase 2.1 mengunci Family Management untuk Owner, merapikan akses Settings, dan memastikan relogin selalu kembali ke Home. Data member disimpan di Firebase tanpa mengubah struktur transaksi lama.
+                Phase 3 menambahkan Permission Manager yang bisa dicentang oleh Owner, menyimpan permission ke Firebase, dan merapikan hirarki Settings Center.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Total</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{familyEditionMembers.length}</div></div>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Activity</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activityLog.length}</div></div>
               </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "14px" }}>
+              <button onClick={() => setActiveTab("dashboard")} style={{ padding: "10px 12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#e5e7eb", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>← Home</button>
+              <button onClick={() => setFamilyPanel("members")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "members" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "members" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>👨‍👩‍👧 Anggota</button>
+              {canManagePermissions && <button onClick={() => setFamilyPanel("permissions")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "permissions" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "permissions" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>🛡️ Permission</button>}
+              <button onClick={() => setFamilyPanel("activity")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "activity" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "activity" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Activity</button>
             </div>
 
             {familyStatus && <div style={{ marginBottom: "12px", padding: "12px", borderRadius: "14px", background: familyStatus.startsWith("✅") ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: "1px solid " + (familyStatus.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"), color: familyStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", fontWeight: 800 }}>{familyStatus}</div>}
@@ -1869,10 +1987,10 @@ export default function App() {
                 </div>
                 <div style={{ padding: "8px 12px", borderRadius: "999px", background: "rgba(251,191,36,0.12)", color: "#fbbf24", fontSize: "12px", fontWeight: 900 }}>{currentFamilyMember.role}</div>
               </div>
-              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Owner dapat menambah anggota, edit role, arsip anggota, dan reset PIN anggota dari halaman ini.</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Halaman ini sekarang fokus pada panel aktif: Anggota, Permission, atau Activity.</div>
             </div>
 
-            <div style={{ marginBottom: "14px" }}>
+            {familyPanel === "members" && <div style={{ marginBottom: "14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
                 <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>👨‍👩‍👧‍👦 Anggota Keluarga</div>
                 <button onClick={startAddFamilyMember} style={{ padding: "9px 12px", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>+ Tambah</button>
@@ -1927,10 +2045,10 @@ export default function App() {
                   </div>
                 );
               })}
-            </div>
+            </div>}
 
-            <div style={{ marginBottom: "14px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Role & Permission Manager Preview</div>
+            {familyPanel === "permissions" && <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Permission Manager</div>
               {rolePermissionSummary.map(role => (
                 <div key={role.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
@@ -1938,19 +2056,21 @@ export default function App() {
                     <div style={{ fontSize: "11px", color: "#94a3b8" }}>{role.count}/{PERMISSIONS_V110.length} izin</div>
                   </div>
                   <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "8px" }}>{role.desc}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <div style={{ display: "grid", gap: "6px" }}>
                     {PERMISSIONS_V110.map(permission => {
                       const allowed = role.permissions.includes(permission.id);
-                      return <span key={permission.id} style={{ padding: "5px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 800, background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)") }}>{allowed ? "✓" : "–"} {permission.icon} {permission.label}</span>;
+                      const locked = role.label === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permission.id);
+                      return <button key={permission.id} onClick={() => toggleRolePermission(role.label, permission.id)} disabled={locked || !canManagePermissions} style={{ padding: "9px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 900, textAlign: "left", cursor: locked || !canManagePermissions ? "not-allowed" : "pointer", background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)"), opacity: locked ? 0.82 : 1 }}>{allowed ? "☑" : "☐"} {permission.icon} {permission.label}{locked ? " · locked" : ""}</button>;
                     })}
                   </div>
                 </div>
               ))}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5 }}>
-                Permission masih preview. Di Phase 3, Owner bisa centang permission dan menyimpannya ke Firebase.
+                Permission tersimpan di Firebase. Owner dapat mencentang/mematikan akses role; permission inti Owner dikunci agar tidak terkunci dari sistem.
               </div>
-            </div>
+            </div>}
 
+            {familyPanel === "activity" && <>
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.22)" }}>
               <div style={{ fontSize: "13px", fontWeight: 900, color: "#7dd3fc", marginBottom: "8px" }}>📝 Activity Log Dasar</div>
               {activityLog.length === 0 ? <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada aktivitas Family Edition.</div> : activityLog.slice(0, 6).map(item => (
@@ -1967,11 +2087,12 @@ export default function App() {
                 <div>✅ Phase 1: UI foundation, roles, permission blueprint.</div>
                 <div>✅ Phase 2: CRUD anggota keluarga, role, reset PIN, activity log dasar.</div>
                 <div>✅ Phase 2.1: Access control awal, relogin ke Home, UI per halaman aktif.</div>
-                <div>⏭ Phase 3: Permission Manager editable dan tersimpan di Firebase.</div>
+                <div>✅ Phase 3: Permission Manager editable, Settings dikelompokkan, dan menu mengikuti permission.</div>
                 <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
             </div>
+            </>}
 
               </>
             )}
