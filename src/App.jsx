@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3.1";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3.2";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -1465,10 +1465,11 @@ export default function App() {
               {hasPermission("security") && <SettingButton onClick={() => openFamilyManagement("members")}>🔑 Reset PIN Anggota</SettingButton>}
             </Section>
 
-            <Section title="Keuangan">
-              {hasPermission("wallets") && <SettingButton onClick={openWalletManager} tone="green">🏦 Sumber Dana / Wallet v2</SettingButton>}
-              {hasPermission("goals") && <SettingButton onClick={() => { setShowSettingsCenter(false); setActiveTab("savings"); }} tone="green">🎯 Tabungan / Goal</SettingButton>}
-              {hasPermission("investments") && <SettingButton onClick={() => { setShowSettingsCenter(false); setActiveTab("invest"); }} tone="green">📈 Investasi</SettingButton>}
+            <Section title="Keuangan Settings">
+              {hasPermission("wallets") && <SettingButton onClick={openWalletManager} tone="green">🏦 Kelola Sumber Dana / Wallet v2</SettingButton>}
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.16)", color: "#a7f3d0", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
+                Settings hanya untuk konfigurasi keuangan. Tabungan / Goal dan Investasi tetap berada di navigasi utama agar tidak tercampur dengan pengaturan.
+              </div>
             </Section>
 
             <Section title="Backup & Sinkronisasi">
@@ -1483,7 +1484,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 3.1.1. User switcher dan izin transaksi diperketat mengikuti Permission Manager.
+            FinPlan v1.1.0 Family Edition Phase 3.2. Settings dirapikan: fitur utama tetap di navigasi utama, pengaturan tetap di Settings.
           </div>
         </div>
       </div>
@@ -1545,7 +1546,7 @@ export default function App() {
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>}
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>}
                 {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>}
-                {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Sumber Dana / Wallet v2</button>}
+                {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Kelola Sumber Dana / Wallet v2</button>}
                 <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>📊 Sync Google Sheets</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>✉️ Kirim Email Report</button>
                 {typeof exportBackupJSON === "function" && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left" }}>💾 Export Backup JSON</button>}
@@ -1553,7 +1554,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 3.1.1. Settings mengikuti role dan user switcher kembali aktif.
+                FinPlan v1.1.0 Family Edition Phase 3.2. Settings fokus pada akun, family admin, permission, backup, dan sistem.
               </div>
             </div>
           </div>
@@ -1985,10 +1986,10 @@ export default function App() {
             ) : (
               <>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 3.1</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 3.2</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
-                Phase 3.1 memperketat Permission Manager, memperbaiki Ganti/Pilih User, dan mengunci hapus transaksi sesuai role.
+                Phase 3.2 merapikan hierarki UI: Family Management fokus pada panel aktif, Settings fokus pada pengaturan, dan fitur utama tetap di navigasi utama.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
@@ -2115,6 +2116,7 @@ export default function App() {
                 <div>✅ Phase 2: CRUD anggota keluarga, role, reset PIN, activity log dasar.</div>
                 <div>✅ Phase 2.1: Access control awal, relogin ke Home, UI per halaman aktif.</div>
                 <div>✅ Phase 3.1: User switcher aktif dan izin tambah/hapus transaksi mengikuti permission.</div>
+                <div>✅ Phase 3.2: Settings dirapikan; Tabungan/Goal dan Investasi keluar dari Settings dan tetap di navigasi utama.</div>
                 <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
