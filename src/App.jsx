@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 1";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 2";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -366,6 +366,13 @@ export default function App() {
   const [syncingSheets, setSyncingSheets] = useState(false);
   const [sheetsStatus, setSheetsStatus] = useState("");
   const [showSettingsCenter, setShowSettingsCenter] = useState(false);
+  const [familyMembers, setFamilyMembers] = useState(FAMILY_MEMBERS_V110);
+  const [familyLoaded, setFamilyLoaded] = useState(false);
+  const [showFamilyForm, setShowFamilyForm] = useState(false);
+  const [editingFamilyMemberId, setEditingFamilyMemberId] = useState(null);
+  const [familyForm, setFamilyForm] = useState({ name: "", role: "Member", avatar: "👤", status: "active" });
+  const [familyStatus, setFamilyStatus] = useState("");
+  const [activityLog, setActivityLog] = useState([]);
 
   // ===== SECURITY STATES =====
   const [securityData, setSecurityData] = useState(null);
@@ -424,6 +431,41 @@ export default function App() {
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (activeTab === "savings" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (currentUser && !walletFilterUser) setWalletFilterUser(currentUser); }, [currentUser]);
+
+  // ===== FAMILY EDITION V1.1 PHASE 2 =====
+  // Members are stored in Firebase, but the default family list stays as a safe fallback.
+  useEffect(() => {
+    const unsub = onSnapshot(
+      doc(db, "family", "members"),
+      snap => {
+        const savedMembers = snap.exists() ? snap.data()?.members : null;
+        if (Array.isArray(savedMembers) && savedMembers.length > 0) {
+          setFamilyMembers(savedMembers);
+        } else {
+          setFamilyMembers(FAMILY_MEMBERS_V110);
+        }
+        setFamilyLoaded(true);
+      },
+      err => {
+        console.error("family members listener error:", err);
+        setFamilyMembers(FAMILY_MEMBERS_V110);
+        setFamilyLoaded(true);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "activityLog"),
+      snap => {
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setActivityLog(items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 12));
+      },
+      err => console.error("activityLog listener error:", err)
+    );
+    return () => unsub();
+  }, []);
 
   // Keep login simple after refresh: if session is still valid, restore last user automatically.
   useEffect(() => {
@@ -690,6 +732,108 @@ export default function App() {
   }
 
   function selectUser(name) { setCurrentUser(name); localStorage.setItem("finplan_user", name); setShowUserSelect(false); setLoading(true); setWalletFilterUser(name); }
+
+  async function addActivityLog(action, detail) {
+    try {
+      await addDoc(collection(db, "activityLog"), {
+        actor: currentUser || "System",
+        action,
+        detail: detail || "",
+        createdAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error("activity log write error:", err);
+    }
+  }
+
+  function resetFamilyForm() {
+    setShowFamilyForm(false);
+    setEditingFamilyMemberId(null);
+    setFamilyForm({ name: "", role: "Member", avatar: "👤", status: "active" });
+  }
+
+  async function saveFamilyMembers(nextMembers, action, detail) {
+    const cleaned = nextMembers.map(m => ({
+      id: m.id || ("member_" + Date.now()),
+      name: String(m.name || "").trim(),
+      role: m.role || "Member",
+      status: m.status || "active",
+      avatar: m.avatar || "👤",
+      pinStatus: m.pinStatus || "Perlu setup",
+      updatedAt: new Date().toISOString(),
+    })).filter(m => m.name);
+
+    await setDoc(doc(db, "family", "members"), {
+      members: cleaned,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser || "System",
+    });
+    setFamilyMembers(cleaned);
+    setFamilyStatus("✅ " + (detail || "Family members tersimpan"));
+    setTimeout(() => setFamilyStatus(""), 3500);
+    await addActivityLog(action || "family_update", detail || "Update anggota keluarga");
+  }
+
+  function startAddFamilyMember() {
+    setEditingFamilyMemberId(null);
+    setFamilyForm({ name: "", role: "Member", avatar: "👤", status: "active" });
+    setShowFamilyForm(true);
+    setFamilyStatus("");
+  }
+
+  function startEditFamilyMember(member) {
+    setEditingFamilyMemberId(member.id);
+    setFamilyForm({
+      name: member.name || "",
+      role: member.role || "Member",
+      avatar: member.avatar || "👤",
+      status: member.status || "active",
+    });
+    setShowFamilyForm(true);
+    setFamilyStatus("");
+  }
+
+  async function handleSaveFamilyMember() {
+    const name = familyForm.name.trim();
+    if (!name) { setFamilyStatus("⚠️ Nama anggota wajib diisi"); return; }
+    const duplicate = familyMembers.some(m => m.id !== editingFamilyMemberId && String(m.name || "").toLowerCase() === name.toLowerCase());
+    if (duplicate) { setFamilyStatus("⚠️ Nama anggota sudah ada"); return; }
+
+    const memberData = {
+      id: editingFamilyMemberId || ("member_" + Date.now()),
+      name,
+      role: familyForm.role || "Member",
+      avatar: familyForm.avatar || "👤",
+      status: familyForm.status || "active",
+      pinStatus: editingFamilyMemberId ? (familyMembers.find(m => m.id === editingFamilyMemberId)?.pinStatus || "Perlu setup") : "Perlu setup",
+    };
+
+    const nextMembers = editingFamilyMemberId
+      ? familyMembers.map(m => m.id === editingFamilyMemberId ? { ...m, ...memberData } : m)
+      : [...familyMembers, memberData];
+
+    await saveFamilyMembers(nextMembers, editingFamilyMemberId ? "family_member_updated" : "family_member_added", (editingFamilyMemberId ? "Edit anggota: " : "Tambah anggota: ") + name);
+    resetFamilyForm();
+  }
+
+  async function archiveFamilyMember(memberId) {
+    const member = familyMembers.find(m => m.id === memberId);
+    if (!member) return;
+    const nextMembers = familyMembers.map(m => m.id === memberId ? { ...m, status: m.status === "archived" ? "active" : "archived" } : m);
+    await saveFamilyMembers(nextMembers, "family_member_status", (member.status === "archived" ? "Aktifkan anggota: " : "Arsipkan anggota: ") + member.name);
+  }
+
+  async function resetMemberPin(memberName) {
+    const userPins = securityData?.userPins || {};
+    const nextPins = { ...userPins };
+    delete nextPins[memberName];
+    const newData = { ...(securityData || {}), userPins: nextPins };
+    await setDoc(doc(db, "settings", "security"), newData);
+    setSecurityData(newData);
+    setFamilyStatus("✅ PIN " + memberName + " direset. Saat login berikutnya, user akan membuat PIN baru.");
+    setTimeout(() => setFamilyStatus(""), 5000);
+    await addActivityLog("member_pin_reset", "Reset PIN: " + memberName);
+  }
 
   // Calculate total value of a savings goal (IDR cash + all assets)
   function calcGoalValue(goalId) {
@@ -1013,13 +1157,20 @@ export default function App() {
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
-  const familyEditionMembers = FAMILY_MEMBERS_V110.map(member => ({
-    ...member,
-    transactionCount: transactions.filter(t => t.user === member.name).length,
-    walletCount: sumberDanaList.filter(sd => sd.user === member.name).length,
-    isCurrent: member.name === currentUser,
-  }));
-  const currentFamilyMember = familyEditionMembers.find(member => member.name === currentUser) || familyEditionMembers[0];
+  const familySourceMembers = Array.isArray(familyMembers) && familyMembers.length > 0 ? familyMembers : FAMILY_MEMBERS_V110;
+  const activeFamilyMembers = familySourceMembers.filter(member => member.status !== "archived");
+  const familyEditionMembers = familySourceMembers.map(member => {
+    const hasPin = Boolean((securityData?.userPins || {})[member.name]);
+    return {
+      ...member,
+      transactionCount: transactions.filter(t => t.user === member.name).length,
+      walletCount: sumberDanaList.filter(sd => sd.user === member.name).length,
+      isCurrent: member.name === currentUser,
+      pinStatus: hasPin ? "PIN aktif" : "Perlu setup",
+    };
+  });
+  const currentFamilyMember = familyEditionMembers.find(member => member.name === currentUser) || familyEditionMembers[0] || FAMILY_MEMBERS_V110[0];
+  const userFilterNames = [...new Set([...familyEditionMembers.filter(m => m.status !== "archived").map(m => m.name), ...usersWithData])];
   const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
     const permissions = ROLE_PERMISSION_PRESET_V110[role.label] || [];
     return { ...role, permissions, count: permissions.length };
@@ -1156,7 +1307,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 1. Fokus: pondasi role, permission, dan Family Management tanpa merusak production v1.0.4.
+            FinPlan v1.1.0 Family Edition Phase 2. Fokus: CRUD anggota keluarga, role, PIN reset, dan activity log dasar.
           </div>
         </div>
       </div>
@@ -1226,7 +1377,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 1. Backup, Sync, JSON, Family Management, dan Sumber Dana dipusatkan di Settings Center.
+                FinPlan v1.1.0 Family Edition Phase 2. Family Management sudah bisa tambah/edit/arsip anggota dan reset PIN.
               </div>
             </div>
           </div>
@@ -1507,16 +1658,16 @@ export default function App() {
           <div style={{ fontSize: "13px", color: "#555", marginTop: "6px" }}>Siapa yang sedang login?</div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {USERS.map(u => (
-            <button key={u} onClick={() => handleUserSelectForPin(u)} style={{
+          {activeFamilyMembers.map(member => (
+            <button key={member.id} onClick={() => handleUserSelectForPin(member.name)} style={{
               padding: "16px 20px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)",
               background: "rgba(255,255,255,0.05)", color: "#e8e8f0", fontSize: "15px",
               fontWeight: 700, cursor: "pointer", textAlign: "left",
-              display: "flex", justifyContent: "space-between", alignItems: "center",
+              display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px",
             }}>
-              <span>{u} {u === ADMIN_USER ? "\uD83D\uDC51" : ""}</span>
-              <span style={{ fontSize: "12px", color: (securityData?.userPins || {})[u] ? "#34d399" : "#f59e0b" }}>
-                {(securityData?.userPins || {})[u] ? "\uD83D\uDD12 PIN aktif" : "\u26A0 Belum ada PIN"}
+              <span>{member.avatar || "👤"} {member.name} {member.role === "Owner" ? "👑" : ""}</span>
+              <span style={{ fontSize: "12px", color: (securityData?.userPins || {})[member.name] ? "#34d399" : "#f59e0b", whiteSpace: "nowrap" }}>
+                {(securityData?.userPins || {})[member.name] ? "🔒 PIN aktif" : "⚠ Belum ada PIN"}
               </span>
             </button>
           ))}
@@ -1548,7 +1699,7 @@ export default function App() {
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP · v1.0.4 Dashboard Clean</div>
+            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>{APP_VERSION}</div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "\uD83D\uDC51" : "\uD83D\uDC4B"}</div>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
@@ -1562,7 +1713,7 @@ export default function App() {
         </div>
 
         <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-          {["semua", ...usersWithData].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66 Semua" : u}</button>)}
+          {["semua", ...userFilterNames].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
         </div>
 
         <div style={{ padding: "0 20px 16px" }}>
@@ -1637,17 +1788,19 @@ export default function App() {
         {activeTab === "family" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 1</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 2</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
-                Pondasi v1.1.0 sudah disiapkan: anggota keluarga, role, permission matrix, dan arah Wallet v2. Fase ini belum mengubah database transaksi agar production v1.0.4 tetap aman.
+                Phase 2 mengaktifkan tambah/edit/arsip anggota keluarga, role per anggota, reset PIN, dan activity log dasar. Data member disimpan di Firebase tanpa mengubah struktur transaksi lama.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Members</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{familyEditionMembers.length}</div></div>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Roles</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{FAMILY_ROLES_V110.length}</div></div>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Permissions</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{PERMISSIONS_V110.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Total</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{familyEditionMembers.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Activity</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activityLog.length}</div></div>
               </div>
             </div>
+
+            {familyStatus && <div style={{ marginBottom: "12px", padding: "12px", borderRadius: "14px", background: familyStatus.startsWith("✅") ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: "1px solid " + (familyStatus.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"), color: familyStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", fontWeight: 800 }}>{familyStatus}</div>}
 
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
@@ -1657,34 +1810,68 @@ export default function App() {
                 </div>
                 <div style={{ padding: "8px 12px", borderRadius: "999px", background: "rgba(251,191,36,0.12)", color: "#fbbf24", fontSize: "12px", fontWeight: 900 }}>{currentFamilyMember.role}</div>
               </div>
-              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Permission akan dibuat editable oleh Owner pada fase berikutnya.</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Owner dapat menambah anggota, edit role, arsip anggota, dan reset PIN anggota dari halaman ini.</div>
             </div>
 
             <div style={{ marginBottom: "14px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>👨‍👩‍👧‍👦 Anggota Keluarga</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>👨‍👩‍👧‍👦 Anggota Keluarga</div>
+                <button onClick={startAddFamilyMember} style={{ padding: "9px 12px", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>+ Tambah</button>
+              </div>
+
+              {showFamilyForm && (
+                <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.28)" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 900, color: "#c7d2fe", marginBottom: "10px" }}>{editingFamilyMemberId ? "✏️ Edit Anggota" : "➕ Tambah Anggota"}</div>
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    <input value={familyForm.name} onChange={e => setFamilyForm({ ...familyForm, name: e.target.value })} placeholder="Nama anggota" style={inputStyle} />
+                    <div style={{ display: "grid", gridTemplateColumns: "86px 1fr", gap: "8px" }}>
+                      <input value={familyForm.avatar} onChange={e => setFamilyForm({ ...familyForm, avatar: e.target.value })} placeholder="Icon" style={inputStyle} />
+                      <select value={familyForm.role} onChange={e => setFamilyForm({ ...familyForm, role: e.target.value })} style={inputStyle}>
+                        {FAMILY_ROLES_V110.map(role => <option key={role.id} value={role.label}>{role.icon} {role.label}</option>)}
+                      </select>
+                    </div>
+                    <select value={familyForm.status} onChange={e => setFamilyForm({ ...familyForm, status: e.target.value })} style={inputStyle}>
+                      <option value="active">Aktif</option>
+                      <option value="archived">Arsip</option>
+                    </select>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <button onClick={handleSaveFamilyMember} style={{ padding: "12px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#10b981,#059669)", color: "#fff", fontSize: "13px", fontWeight: 900, cursor: "pointer" }}>Simpan</button>
+                      <button onClick={resetFamilyForm} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#e5e7eb", fontSize: "13px", fontWeight: 900, cursor: "pointer" }}>Batal</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {!familyLoaded && <div style={{ padding: "12px", color: "#64748b", fontSize: "12px" }}>Memuat data family...</div>}
               {familyEditionMembers.map(member => {
                 const role = FAMILY_ROLES_V110.find(r => r.label === member.role);
                 return (
-                  <div key={member.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", marginBottom: "9px", borderRadius: "16px", background: member.isCurrent ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.05)", border: "1px solid " + (member.isCurrent ? "rgba(99,102,241,0.32)" : "rgba(255,255,255,0.06)") }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                      <div style={{ width: "38px", height: "38px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.08)", fontSize: "20px" }}>{member.avatar}</div>
-                      <div>
-                        <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{member.name} {member.isCurrent ? "· aktif" : ""}</div>
-                        <div style={{ fontSize: "11px", color: "#94a3b8" }}>{member.transactionCount} transaksi · {member.walletCount} sumber dana</div>
+                  <div key={member.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: member.isCurrent ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.05)", border: "1px solid " + (member.isCurrent ? "rgba(99,102,241,0.32)" : "rgba(255,255,255,0.06)"), opacity: member.status === "archived" ? 0.58 : 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                        <div style={{ width: "38px", height: "38px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.08)", fontSize: "20px" }}>{member.avatar}</div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{member.name} {member.isCurrent ? "· aktif" : ""}</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8" }}>{member.transactionCount} transaksi · {member.walletCount} sumber dana · {member.status === "archived" ? "arsip" : "aktif"}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ fontSize: "12px", fontWeight: 900, color: role?.color || "#e5e7eb" }}>{role?.icon} {member.role}</div>
+                        <div style={{ fontSize: "10px", color: member.pinStatus === "PIN aktif" ? "#34d399" : "#f59e0b" }}>{member.pinStatus}</div>
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: "12px", fontWeight: 900, color: role?.color || "#e5e7eb" }}>{role?.icon} {member.role}</div>
-                      <div style={{ fontSize: "10px", color: "#64748b" }}>{member.pinStatus}</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "7px", marginTop: "11px" }}>
+                      <button onClick={() => startEditFamilyMember(member)} style={{ padding: "9px", borderRadius: "12px", border: "1px solid rgba(99,102,241,0.22)", background: "rgba(99,102,241,0.10)", color: "#c7d2fe", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>✏️ Edit</button>
+                      <button onClick={() => resetMemberPin(member.name)} style={{ padding: "9px", borderRadius: "12px", border: "1px solid rgba(245,158,11,0.22)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>🔑 Reset PIN</button>
+                      <button onClick={() => archiveFamilyMember(member.id)} style={{ padding: "9px", borderRadius: "12px", border: "1px solid rgba(248,113,113,0.22)", background: "rgba(248,113,113,0.08)", color: "#fca5a5", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>{member.status === "archived" ? "↩ Aktif" : "📦 Arsip"}</button>
                     </div>
                   </div>
                 );
               })}
-              <button disabled style={{ width: "100%", padding: "13px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.06)", color: "#a5b4fc", fontSize: "13px", fontWeight: 900, opacity: 0.75 }}>+ Tambah Anggota · aktif di Phase 2</button>
             </div>
 
             <div style={{ marginBottom: "14px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Role & Permission Manager</div>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Role & Permission Manager Preview</div>
               {rolePermissionSummary.map(role => (
                 <div key={role.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
@@ -1700,16 +1887,29 @@ export default function App() {
                   </div>
                 </div>
               ))}
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5 }}>
+                Permission masih preview. Di Phase 3, Owner bisa centang permission dan menyimpannya ke Firebase.
+              </div>
+            </div>
+
+            <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.22)" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#7dd3fc", marginBottom: "8px" }}>📝 Activity Log Dasar</div>
+              {activityLog.length === 0 ? <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada aktivitas Family Edition.</div> : activityLog.slice(0, 6).map(item => (
+                <div key={item.id} style={{ padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 900, color: "#e0f2fe" }}>{item.actor || "System"} · {item.action}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{item.detail}</div>
+                </div>
+              ))}
             </div>
 
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)" }}>
               <div style={{ fontSize: "13px", fontWeight: 900, color: "#fbbf24", marginBottom: "8px" }}>🧭 Roadmap berikutnya</div>
               <div style={{ display: "grid", gap: "8px", fontSize: "12px", color: "#fef3c7", lineHeight: 1.5 }}>
                 <div>✅ Phase 1: UI foundation, roles, permission blueprint.</div>
-                <div>⏭ Phase 2: CRUD anggota keluarga + PIN per anggota.</div>
-                <div>⏭ Phase 3: Permission Manager tersimpan di Firebase.</div>
+                <div>✅ Phase 2: CRUD anggota keluarga, role, reset PIN, activity log dasar.</div>
+                <div>⏭ Phase 3: Permission Manager editable dan tersimpan di Firebase.</div>
                 <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
-                <div>⏭ Phase 5: Activity Log + Recycle Bin 30 hari.</div>
+                <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
             </div>
 
