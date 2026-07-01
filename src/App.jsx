@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.0 Final";
+const APP_VERSION = "FinPlan v1.0.3 Hotfix";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -465,6 +465,10 @@ export default function App() {
     window.addEventListener("click", handleActivity);
     const timer = setInterval(() => {
       if (Date.now() - lastActivity > AUTO_LOCK_MS) {
+        setShowSettingsCenter(false);
+        setSetupMode(null);
+        setTempPin("");
+        setPinConfirm("");
         clearSession();
         setAuthStep("family");
         setPinInput("");
@@ -604,6 +608,33 @@ export default function App() {
       setTempPin("");
       setPinInput("");
     }
+  }
+
+  function lockApp() {
+    setShowSettingsCenter(false);
+    setShowForm(false);
+    setShowInvForm(false);
+    setShowSavingsForm(null);
+    setShowAssetConvert(null);
+    setShowGadaiForm(false);
+    setShowGadaiCalc(false);
+    setShowSDForm(false);
+    setShowUserSelect(false);
+    setSelectedTransaction(null);
+    setSelectedInvestment(null);
+    setSelectedGoal(null);
+    setSelectedCategory(null);
+    setSelectedSD(null);
+    setSetupMode(null);
+    setTempPin("");
+    setPinConfirm("");
+    clearSession();
+    setAuthStep("family");
+    setPinInput("");
+    setPinError("");
+    setCurrentUser("");
+    setWalletFilterUser("");
+    localStorage.removeItem("finplan_user");
   }
 
   function handleUserSelectForPin(name) {
@@ -942,8 +973,8 @@ export default function App() {
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
-  const tabStyle = (key) => ({ flex: "0 0 auto", padding: "8px 10px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
-  const savTabStyle = (key) => ({ padding: "6px 12px", border: "none", cursor: "pointer", borderRadius: "20px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0, background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
+  const tabStyle = (key) => ({ flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
+  const savTabStyle = (key) => ({ padding: "6px 12px", border: "none", cursor: "pointer", borderRadius: "20px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap", flex: "1 1 auto", background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
@@ -1024,6 +1055,65 @@ export default function App() {
     </div>
   );
 
+  const SettingsCenterModal = () => {
+    if (!showSettingsCenter) return null;
+    return (
+      <div onClick={() => setShowSettingsCenter(false)} style={{
+        position: "fixed",
+        inset: 0,
+        background: "rgba(0,0,0,0.72)",
+        zIndex: 99996,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+        padding: "16px",
+        boxSizing: "border-box"
+      }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{
+          width: "100%",
+          maxWidth: "430px",
+          maxHeight: "88vh",
+          overflowY: "auto",
+          overflowX: "hidden",
+          background: "linear-gradient(180deg,#181827,#0f1020)",
+          border: "1px solid rgba(255,255,255,0.12)",
+          borderRadius: "24px 24px 18px 18px",
+          padding: "20px",
+          boxSizing: "border-box",
+          boxShadow: "0 -20px 70px rgba(0,0,0,0.55)",
+          color: "#e8e8f0"
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Settings Center</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Pengaturan FinPlan</div>
+            </div>
+            <button onClick={() => setShowSettingsCenter(false)} style={{
+              width: "40px", height: "40px", borderRadius: "14px",
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: "rgba(255,255,255,0.07)", color: "#fff",
+              fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0
+            }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px" }}>
+            <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👤 Ganti / Pilih User</button>
+            <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔐 Ganti Password Keluarga</button>
+            <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔑 Reset / Ganti PIN User</button>
+            <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>📊 Sync Google Sheets</button>
+            <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>✉️ Kirim Email Report</button>
+            <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>💾 Export Backup JSON</button>
+            <button onClick={lockApp} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🚪 Lock / Logout</button>
+          </div>
+
+          <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
+            FinPlan v1.0.3 Hotfix. Fokus: tombol Settings, Lock, dan UI tanpa scrollbar horizontal.
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const AuthScreen = ({ children }) => (
     <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
       <div style={{ width: "100%", maxWidth: "380px", textAlign: "center" }}>
@@ -1081,19 +1171,11 @@ export default function App() {
                 <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>📊 Sync Google Sheets</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>✉️ Kirim Email Report</button>
                 {typeof exportBackupJSON === "function" && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left" }}>💾 Export Backup JSON</button>}
-                <button onClick={() => {
-                  setShowSettingsCenter(false);
-                  clearSession && clearSession();
-                  setAuthStep("family");
-                  setPinInput("");
-                  setPinError("");
-                  setCurrentUser("");
-                  localStorage.removeItem("finplan_user");
-                }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, textAlign: "left" }}>🚪 Lock / Logout</button>
+                <button onClick={lockApp} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, textAlign: "left" }}>🚪 Lock / Logout</button>
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan V1.0 RC-1. Fokus: stabilitas, sumber dana manual, transaksi harian, backup dasar, dan UI bersih.
+                FinPlan v1.0.3 Hotfix. Fokus: stabilitas tombol, lock, settings, dan UI bersih.
               </div>
             </div>
           </div>
@@ -1409,26 +1491,26 @@ export default function App() {
   if (authStep !== "unlocked") return null;
 
   return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
-      <div style={{ maxWidth: "430px", margin: "0 auto", minHeight: "100vh", position: "relative" }}>
+    <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
+      <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box" }}>
+        <SettingsCenterModal />
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP · v1.0 Final</div>
+            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP · v1.0.3 Hotfix</div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "\uD83D\uDC51" : "\uD83D\uDC4B"}</div>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
             <button onClick={() => setShowSettingsCenter(true)} style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", color: "#e8e8f0", borderRadius: "10px", padding: "8px 12px", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>⚙️</button>
-            <button onClick={() => { clearSession(); setAuthStep("family"); setPinInput(""); setPinError(""); setCurrentUser(""); localStorage.removeItem("finplan_user"); }} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>💰</button>
-            {currentUser === ADMIN_USER && <button onClick={() => handleChangePw("family")} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "#888", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>🔐</button>}
+            <button onClick={lockApp} style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.28)", color: "#fca5a5", borderRadius: "10px", padding: "8px 12px", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>🔐</button>
           </div>
         </div>
 
-        <div style={{ padding: "8px 20px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "8px 20px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
           {MONTHS.map((m, i) => <button key={i} onClick={() => setFilterMonth(i)} style={{ padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "12px", fontWeight: 600, flexShrink: 0, background: filterMonth === i ? "#6366f1" : "rgba(255,255,255,0.07)", color: filterMonth === i ? "#fff" : "#888" }}>{m}</button>)}
         </div>
 
-        <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", overflowX: "auto" }}>
+        <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
           {["semua", ...usersWithData].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "\uD83D\uDC68\u200D\uD83D\uDC69\u200D\uD83D\uDC67\u200D\uD83D\uDC66 Semua" : u}</button>)}
         </div>
 
@@ -1452,7 +1534,7 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "2px", overflowX: "auto" }}>
+        <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
           <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>
           <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>
           <button style={tabStyle("family")} onClick={() => setActiveTab("family")}>👨‍👩‍👧‍👦 Keluarga</button>
@@ -1569,7 +1651,7 @@ export default function App() {
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: "6px", overflowX: "auto", marginBottom: "14px" }}>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "14px" }}>
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
             </div>
 
@@ -1920,7 +2002,7 @@ export default function App() {
               </div>
             </div>
             {/* User filter */}
-            <div style={{ display: "flex", gap: "6px", overflowX: "auto", marginBottom: "16px" }}>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "16px" }}>
               {USERS.map(u => (
                 <button key={u} onClick={() => setWalletFilterUser(u)} style={{
                   padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
