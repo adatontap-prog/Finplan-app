@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.0.3 Hotfix";
+const APP_VERSION = "FinPlan v1.0.4 Dashboard Clean";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -1107,7 +1107,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.0.3 Hotfix. Fokus: tombol Settings, Lock, dan UI tanpa scrollbar horizontal.
+            FinPlan v1.0.4 Dashboard Clean. Fokus: dashboard bersih, backup & sinkronisasi dipusatkan di Settings.
           </div>
         </div>
       </div>
@@ -1175,7 +1175,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.0.3 Hotfix. Fokus: stabilitas tombol, lock, settings, dan UI bersih.
+                FinPlan v1.0.4 Dashboard Clean. Backup, Sync, dan JSON dipusatkan di Settings Center.
               </div>
             </div>
           </div>
@@ -1497,7 +1497,7 @@ export default function App() {
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP · v1.0.3 Hotfix</div>
+            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>💰 FinPlan ADP · v1.0.4 Dashboard Clean</div>
             <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "\uD83D\uDC51" : "\uD83D\uDC4B"}</div>
           </div>
           <div style={{ display: "flex", gap: "6px" }}>
@@ -1522,11 +1522,6 @@ export default function App() {
               <div style={{ display: "flex", gap: "24px" }}>
                 <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📥 Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div></div>
                 <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📤 Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
-              </div>
-              <div style={{ display: "flex", gap: "6px" }}>
-                <button onClick={handleSendReport} disabled={sending} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{sending ? "\uD83D\uDCE4..." : "\uD83D\uDCE7"}</button>
-                <button onClick={handleSyncAll} disabled={syncingSheets} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{syncingSheets ? "\u23F3" : "\uD83D\uDCCA Sync"}</button>
-                <button onClick={exportBackupJSON} style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>💾 JSON</button>
               </div>
             </div>
             {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
