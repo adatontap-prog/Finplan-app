@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.0.4 Dashboard Clean";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 1";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -70,6 +70,41 @@ const CATEGORIES = [
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
 const USERS = ["Bape","Ibu","Aroon","Arunika","Arkaja"];
+
+
+const FAMILY_MEMBERS_V110 = [
+  { id: "bape", name: "Bape", role: "Owner", status: "active", pinStatus: "Aktif", avatar: "👑" },
+  { id: "ibu", name: "Ibu", role: "Admin", status: "active", pinStatus: "Siap", avatar: "🌸" },
+  { id: "aroon", name: "Aroon", role: "Member", status: "active", pinStatus: "Perlu setup", avatar: "📚" },
+  { id: "arunika", name: "Arunika", role: "Member", status: "active", pinStatus: "Perlu setup", avatar: "🎨" },
+  { id: "arkaja", name: "Arkaja", role: "Viewer", status: "active", pinStatus: "Perlu setup", avatar: "🧸" },
+];
+
+const FAMILY_ROLES_V110 = [
+  { id: "owner", label: "Owner", icon: "👑", desc: "Kontrol penuh keluarga, security, backup, dan database.", color: "#fbbf24" },
+  { id: "admin", label: "Admin", icon: "🛡️", desc: "Mengelola transaksi, sumber dana, goal, dan laporan harian.", color: "#60a5fa" },
+  { id: "member", label: "Member", icon: "👤", desc: "Input transaksi dan melihat goal sesuai izin yang diberikan.", color: "#34d399" },
+  { id: "viewer", label: "Viewer", icon: "👁️", desc: "Melihat ringkasan tanpa akses ubah data penting.", color: "#a78bfa" },
+];
+
+const PERMISSIONS_V110 = [
+  { id: "dashboard", label: "Dashboard", icon: "📊" },
+  { id: "transaction_add", label: "Tambah Transaksi", icon: "➕" },
+  { id: "transaction_edit", label: "Edit Transaksi", icon: "✏️" },
+  { id: "transaction_delete", label: "Hapus Transaksi", icon: "🗑️" },
+  { id: "goals", label: "Goal Engine", icon: "🎯" },
+  { id: "wallets", label: "Sumber Dana", icon: "🏦" },
+  { id: "backup", label: "Backup", icon: "💾" },
+  { id: "sync", label: "Sync", icon: "📊" },
+  { id: "settings", label: "Settings", icon: "⚙️" },
+];
+
+const ROLE_PERMISSION_PRESET_V110 = {
+  Owner: ["dashboard", "transaction_add", "transaction_edit", "transaction_delete", "goals", "wallets", "backup", "sync", "settings"],
+  Admin: ["dashboard", "transaction_add", "transaction_edit", "goals", "wallets", "sync"],
+  Member: ["dashboard", "transaction_add", "goals"],
+  Viewer: ["dashboard"],
+};
 
 const SUMBER_DANA_PRESETS = [
   { name: "Cash", icon: "\uD83D\uDCB5" },
@@ -978,6 +1013,18 @@ export default function App() {
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
+  const familyEditionMembers = FAMILY_MEMBERS_V110.map(member => ({
+    ...member,
+    transactionCount: transactions.filter(t => t.user === member.name).length,
+    walletCount: sumberDanaList.filter(sd => sd.user === member.name).length,
+    isCurrent: member.name === currentUser,
+  }));
+  const currentFamilyMember = familyEditionMembers.find(member => member.name === currentUser) || familyEditionMembers[0];
+  const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
+    const permissions = ROLE_PERMISSION_PRESET_V110[role.label] || [];
+    return { ...role, permissions, count: permissions.length };
+  });
+
   function getTransactionIcon(tx) {
     const note = String(tx?.note || "").toLowerCase();
     const cat = CATEGORIES.find(c => c.id === tx?.category) || {};
@@ -1100,6 +1147,8 @@ export default function App() {
             <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👤 Ganti / Pilih User</button>
             <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔐 Ganti Password Keluarga</button>
             <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔑 Reset / Ganti PIN User</button>
+            <button onClick={() => { setShowSettingsCenter(false); setActiveTab("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👨‍👩‍👧 Family Management v1.1</button>
+            <button onClick={() => { setShowSettingsCenter(false); setActiveTab("dompet"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🏦 Sumber Dana / Wallet v2</button>
             <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>📊 Sync Google Sheets</button>
             <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>✉️ Kirim Email Report</button>
             <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>💾 Export Backup JSON</button>
@@ -1107,7 +1156,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.0.4 Dashboard Clean. Fokus: dashboard bersih, backup & sinkronisasi dipusatkan di Settings.
+            FinPlan v1.1.0 Family Edition Phase 1. Fokus: pondasi role, permission, dan Family Management tanpa merusak production v1.0.4.
           </div>
         </div>
       </div>
@@ -1168,6 +1217,8 @@ export default function App() {
                 <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>👤 Ganti / Pilih User</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>
+                <button onClick={() => { setShowSettingsCenter(false); setActiveTab("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>
+                <button onClick={() => { setShowSettingsCenter(false); setActiveTab("dompet"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Sumber Dana / Wallet v2</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>📊 Sync Google Sheets</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>✉️ Kirim Email Report</button>
                 {typeof exportBackupJSON === "function" && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left" }}>💾 Export Backup JSON</button>}
@@ -1175,7 +1226,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.0.4 Dashboard Clean. Backup, Sync, dan JSON dipusatkan di Settings Center.
+                FinPlan v1.1.0 Family Edition Phase 1. Backup, Sync, JSON, Family Management, dan Sumber Dana dipusatkan di Settings Center.
               </div>
             </div>
           </div>
@@ -1585,7 +1636,85 @@ export default function App() {
         {/* FAMILY */}
         {activeTab === "family" && (
           <div style={{ padding: "0 20px" }}>
-            {usersWithData.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>👨‍👩‍👧‍👦</div><div style={{ fontSize: "14px" }}>Belum ada data</div></div>
+            <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 1</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
+              <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
+                Pondasi v1.1.0 sudah disiapkan: anggota keluarga, role, permission matrix, dan arah Wallet v2. Fase ini belum mengubah database transaksi agar production v1.0.4 tetap aman.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Members</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{familyEditionMembers.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Roles</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{FAMILY_ROLES_V110.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Permissions</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{PERMISSIONS_V110.length}</div></div>
+              </div>
+            </div>
+
+            <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "12px" }}>
+                <div>
+                  <div style={{ fontSize: "12px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>Current Session</div>
+                  <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff" }}>{currentFamilyMember.avatar} {currentFamilyMember.name}</div>
+                </div>
+                <div style={{ padding: "8px 12px", borderRadius: "999px", background: "rgba(251,191,36,0.12)", color: "#fbbf24", fontSize: "12px", fontWeight: 900 }}>{currentFamilyMember.role}</div>
+              </div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Permission akan dibuat editable oleh Owner pada fase berikutnya.</div>
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>👨‍👩‍👧‍👦 Anggota Keluarga</div>
+              {familyEditionMembers.map(member => {
+                const role = FAMILY_ROLES_V110.find(r => r.label === member.role);
+                return (
+                  <div key={member.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px", marginBottom: "9px", borderRadius: "16px", background: member.isCurrent ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.05)", border: "1px solid " + (member.isCurrent ? "rgba(99,102,241,0.32)" : "rgba(255,255,255,0.06)") }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div style={{ width: "38px", height: "38px", borderRadius: "14px", display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(255,255,255,0.08)", fontSize: "20px" }}>{member.avatar}</div>
+                      <div>
+                        <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{member.name} {member.isCurrent ? "· aktif" : ""}</div>
+                        <div style={{ fontSize: "11px", color: "#94a3b8" }}>{member.transactionCount} transaksi · {member.walletCount} sumber dana</div>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "12px", fontWeight: 900, color: role?.color || "#e5e7eb" }}>{role?.icon} {member.role}</div>
+                      <div style={{ fontSize: "10px", color: "#64748b" }}>{member.pinStatus}</div>
+                    </div>
+                  </div>
+                );
+              })}
+              <button disabled style={{ width: "100%", padding: "13px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.35)", background: "rgba(99,102,241,0.06)", color: "#a5b4fc", fontSize: "13px", fontWeight: 900, opacity: 0.75 }}>+ Tambah Anggota · aktif di Phase 2</button>
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Role & Permission Manager</div>
+              {rolePermissionSummary.map(role => (
+                <div key={role.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "14px", fontWeight: 900, color: role.color }}>{role.icon} {role.label}</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{role.count}/{PERMISSIONS_V110.length} izin</div>
+                  </div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "8px" }}>{role.desc}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {PERMISSIONS_V110.map(permission => {
+                      const allowed = role.permissions.includes(permission.id);
+                      return <span key={permission.id} style={{ padding: "5px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 800, background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)") }}>{allowed ? "✓" : "–"} {permission.icon} {permission.label}</span>;
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fbbf24", marginBottom: "8px" }}>🧭 Roadmap berikutnya</div>
+              <div style={{ display: "grid", gap: "8px", fontSize: "12px", color: "#fef3c7", lineHeight: 1.5 }}>
+                <div>✅ Phase 1: UI foundation, roles, permission blueprint.</div>
+                <div>⏭ Phase 2: CRUD anggota keluarga + PIN per anggota.</div>
+                <div>⏭ Phase 3: Permission Manager tersimpan di Firebase.</div>
+                <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
+                <div>⏭ Phase 5: Activity Log + Recycle Bin 30 hari.</div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>📊 Ringkasan Bulanan Lama</div>
+            {usersWithData.length === 0 ? <div style={{ textAlign: "center", padding: "28px 0", color: "#444" }}><div style={{ fontSize: "32px", marginBottom: "10px" }}>👨‍👩‍👧‍👦</div><div style={{ fontSize: "14px" }}>Belum ada data transaksi</div></div>
             : usersWithData.map(user => {
               const ut = transactions.filter(t => {
                 const d = getTxnDate(t);
@@ -1596,7 +1725,7 @@ export default function App() {
               return (
                 <div key={user} style={{ padding: "16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{user} {user === ADMIN_USER ? "\uD83D\uDC51" : ""}</div>
+                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{user} {user === ADMIN_USER ? "👑" : ""}</div>
                     <div style={{ fontSize: "13px", fontWeight: 700, color: ui - ue >= 0 ? "#34d399" : "#f87171" }}>{formatRupiah(ui - ue)}</div>
                   </div>
                   <div style={{ display: "flex", gap: "16px" }}>
