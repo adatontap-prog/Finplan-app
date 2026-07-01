@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 3.1";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -1025,6 +1025,10 @@ export default function App() {
   }
 
   async function addTransaction() {
+    if (!hasPermission("transaction_add")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin Tambah Transaksi.");
+      return;
+    }
     const amt = parseAmount(form.amount);
     if (!amt || !form.date || !transactionSDId) return;
     const sd = sumberDanaList.find(s => s.id === transactionSDId);
@@ -1071,10 +1075,15 @@ export default function App() {
   }
 
   async function deleteTransaction(id) {
+    if (!hasPermission("transaction_delete")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin Hapus Transaksi.");
+      return false;
+    }
     await deleteDoc(doc(db, "transactions", id));
     const relatedLedger = sumberDanaLedger.filter(l => l.refType === "transaction" && l.refId === id);
     for (const l of relatedLedger) await deleteDoc(doc(db, "sumberDanaLedger", l.id));
     syncToSheets("deleteTransaction", { id });
+    return true;
   }
   async function deleteInvestment(id) {
     await deleteDoc(doc(db, "investments", id));
@@ -1250,6 +1259,20 @@ export default function App() {
     setShowSettingsCenter(false);
     setEmailStatus("⛔ " + message);
     setTimeout(() => setEmailStatus(""), 4200);
+  }
+
+  function openUserSwitcher() {
+    setShowSettingsCenter(false);
+    setShowForm(false);
+    setSelectedTransaction(null);
+    setSelectedCategory(null);
+    setSetupMode(null);
+    setTempPin("");
+    setPinConfirm("");
+    setPinInput("");
+    setPinError("");
+    setActiveTab("dashboard");
+    setAuthStep("userSelect");
   }
 
   async function saveRolePermissions(nextPermissions, detail) {
@@ -1431,7 +1454,7 @@ export default function App() {
 
           <div style={{ display: "grid", gap: "12px" }}>
             <Section title="Akun & Login">
-              <SettingButton onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }}>👤 Ganti / Pilih User</SettingButton>
+              <SettingButton onClick={openUserSwitcher}>👤 Ganti / Pilih User</SettingButton>
               <SettingButton onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }}>🔑 Ganti PIN Saya</SettingButton>
             </Section>
 
@@ -1460,7 +1483,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 3. Settings dibagi per grup dan akses menu mengikuti Permission Manager yang tersimpan di Firebase.
+            FinPlan v1.1.0 Family Edition Phase 3.1.1. User switcher dan izin transaksi diperketat mengikuti Permission Manager.
           </div>
         </div>
       </div>
@@ -1518,7 +1541,7 @@ export default function App() {
               </div>
 
               <div style={{ display: "grid", gap: "10px" }}>
-                <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>👤 Ganti / Pilih User</button>
+                <button onClick={openUserSwitcher} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>👤 Ganti / Pilih User</button>
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>}
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>}
                 {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>}
@@ -1530,7 +1553,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 3. Family Management dikunci untuk Owner; user lain hanya melihat menu sesuai role.
+                FinPlan v1.1.0 Family Edition Phase 3.1.1. Settings mengikuti role dan user switcher kembali aktif.
               </div>
             </div>
           </div>
@@ -1713,7 +1736,11 @@ export default function App() {
             </div>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || tx.sumberDanaId || "Belum tercatat"}</div></div>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || "Tidak ada catatan"}</div></div>
-            <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini?"); if (!ok) return; await deleteTransaction(tx.id); setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi</button>
+            {hasPermission("transaction_delete") ? (
+              <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini?"); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi</button>
+            ) : (
+              <div style={{ marginTop: "6px", padding: "12px", borderRadius: "14px", border: "1px solid rgba(245,158,11,0.22)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Role {currentRole} tidak punya izin Hapus Transaksi. Permission dapat diubah oleh Owner.</div>
+            )}
           </div>
         </div>
       </div>
@@ -1958,10 +1985,10 @@ export default function App() {
             ) : (
               <>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 3</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 3.1</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
-                Phase 3 menambahkan Permission Manager yang bisa dicentang oleh Owner, menyimpan permission ke Firebase, dan merapikan hirarki Settings Center.
+                Phase 3.1 memperketat Permission Manager, memperbaiki Ganti/Pilih User, dan mengunci hapus transaksi sesuai role.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
@@ -2087,7 +2114,7 @@ export default function App() {
                 <div>✅ Phase 1: UI foundation, roles, permission blueprint.</div>
                 <div>✅ Phase 2: CRUD anggota keluarga, role, reset PIN, activity log dasar.</div>
                 <div>✅ Phase 2.1: Access control awal, relogin ke Home, UI per halaman aktif.</div>
-                <div>✅ Phase 3: Permission Manager editable, Settings dikelompokkan, dan menu mengikuti permission.</div>
+                <div>✅ Phase 3.1: User switcher aktif dan izin tambah/hapus transaksi mengikuti permission.</div>
                 <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
@@ -2543,7 +2570,7 @@ export default function App() {
           </div>
         )}
 
-        {activeTab !== "invest" && activeTab !== "savings" && activeTab !== "dompet" && (
+        {hasPermission("transaction_add") && (activeTab === "dashboard" || activeTab === "history") && (
           <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: "28px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", border: "none", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "28px", boxShadow: "0 8px 32px rgba(99,102,241,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>+</button>
         )}
 
