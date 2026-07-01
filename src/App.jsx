@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 2";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 2.1";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -473,6 +473,8 @@ export default function App() {
       const savedUser = localStorage.getItem("finplan_user") || "Bape";
       setCurrentUser(savedUser);
       setWalletFilterUser(savedUser);
+      setActiveTab("dashboard");
+      setShowSettingsCenter(false);
     }
   }, [authStep, currentUser]);
 
@@ -493,6 +495,7 @@ export default function App() {
         setSecurityLoaded(true);
         saveSession();
         setAuthStep("unlocked");
+        setActiveTab("dashboard");
         const savedUser = localStorage.getItem("finplan_user") || "Bape";
         setCurrentUser(savedUser);
         setWalletFilterUser(savedUser);
@@ -522,6 +525,7 @@ export default function App() {
         setSecurityLoaded(true);
         saveSession();
         setAuthStep("unlocked");
+        setActiveTab("dashboard");
         const savedUser = localStorage.getItem("finplan_user") || "Bape";
         setCurrentUser(savedUser);
         setWalletFilterUser(savedUser);
@@ -547,10 +551,12 @@ export default function App() {
         setTempPin("");
         setPinConfirm("");
         clearSession();
+        setActiveTab("dashboard");
         setAuthStep("family");
         setPinInput("");
         setPinError("");
         setCurrentUser("");
+        setWalletFilterUser("");
         localStorage.removeItem("finplan_user");
       }
     }, 10000); // check every 10 seconds
@@ -614,6 +620,9 @@ export default function App() {
     } else if (hashed === userPins[currentUser]) {
       saveSession();
       setAuthStep("unlocked");
+      setActiveTab("dashboard");
+      setShowSettingsCenter(false);
+      setShowUserSelect(false);
       setPinInput("");
       setPinError("");
       setLastActivity(Date.now());
@@ -668,6 +677,9 @@ export default function App() {
       setSetupMode(null);
       saveSession();
       setAuthStep("unlocked");
+      setActiveTab("dashboard");
+      setShowSettingsCenter(false);
+      setShowUserSelect(false);
       setPinInput("");
       setPinError("");
       setLastActivity(Date.now());
@@ -703,6 +715,7 @@ export default function App() {
     setSelectedCategory(null);
     setSelectedSD(null);
     setSetupMode(null);
+    setActiveTab("dashboard");
     setTempPin("");
     setPinConfirm("");
     clearSession();
@@ -1175,6 +1188,36 @@ export default function App() {
     const permissions = ROLE_PERMISSION_PRESET_V110[role.label] || [];
     return { ...role, permissions, count: permissions.length };
   });
+  const currentRole = currentFamilyMember?.role || "Viewer";
+  const isOwner = currentRole === "Owner";
+  const isAdminOrOwner = currentRole === "Owner" || currentRole === "Admin";
+  const showTimeFilters = activeTab === "dashboard" || activeTab === "history";
+
+  function showAccessNotice(message) {
+    setShowSettingsCenter(false);
+    setEmailStatus("⛔ " + message);
+    setTimeout(() => setEmailStatus(""), 4200);
+  }
+
+  function openFamilyManagement() {
+    if (!isOwner) {
+      showAccessNotice("Family Management hanya bisa diatur oleh Owner.");
+      setActiveTab("dashboard");
+      return;
+    }
+    setShowSettingsCenter(false);
+    setActiveTab("family");
+  }
+
+  function openWalletManager() {
+    if (!isAdminOrOwner) {
+      showAccessNotice("Sumber Dana hanya untuk Owner/Admin.");
+      setActiveTab("dashboard");
+      return;
+    }
+    setShowSettingsCenter(false);
+    setActiveTab("dompet");
+  }
 
   function getTransactionIcon(tx) {
     const note = String(tx?.note || "").toLowerCase();
@@ -1296,18 +1339,19 @@ export default function App() {
 
           <div style={{ display: "grid", gap: "10px" }}>
             <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👤 Ganti / Pilih User</button>
-            <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔐 Ganti Password Keluarga</button>
-            <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔑 Reset / Ganti PIN User</button>
-            <button onClick={() => { setShowSettingsCenter(false); setActiveTab("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👨‍👩‍👧 Family Management v1.1</button>
-            <button onClick={() => { setShowSettingsCenter(false); setActiveTab("dompet"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🏦 Sumber Dana / Wallet v2</button>
-            <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>📊 Sync Google Sheets</button>
-            <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>✉️ Kirim Email Report</button>
-            <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>💾 Export Backup JSON</button>
+            {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔐 Ganti Password Keluarga</button>}
+            {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🔑 Reset / Ganti PIN User</button>}
+            {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>👨‍👩‍👧 Family Management v1.1</button>}
+            {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🏦 Sumber Dana / Wallet v2</button>}
+            {isAdminOrOwner && <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>📊 Sync Google Sheets</button>}
+            {isAdminOrOwner && <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>✉️ Kirim Email Report</button>}
+            {isOwner && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.25)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>💾 Export Backup JSON</button>}
+            {!isAdminOrOwner && <div style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Mode {currentRole}: hanya bisa ganti user dan logout. Pengaturan akses dikelola oleh Owner.</div>}
             <button onClick={lockApp} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>🚪 Lock / Logout</button>
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 2. Fokus: CRUD anggota keluarga, role, PIN reset, dan activity log dasar.
+            FinPlan v1.1.0 Family Edition Phase 2.1. Fokus: akses Owner, relogin ke Home, dan UI hanya menampilkan halaman aktif.
           </div>
         </div>
       </div>
@@ -1366,10 +1410,10 @@ export default function App() {
 
               <div style={{ display: "grid", gap: "10px" }}>
                 <button onClick={() => { setShowSettingsCenter(false); setShowUserSelect(true); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>👤 Ganti / Pilih User</button>
-                <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>
-                <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>
-                <button onClick={() => { setShowSettingsCenter(false); setActiveTab("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>
-                <button onClick={() => { setShowSettingsCenter(false); setActiveTab("dompet"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Sumber Dana / Wallet v2</button>
+                {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>}
+                {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>}
+                {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>}
+                {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Sumber Dana / Wallet v2</button>}
                 <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>📊 Sync Google Sheets</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>✉️ Kirim Email Report</button>
                 {typeof exportBackupJSON === "function" && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left" }}>💾 Export Backup JSON</button>}
@@ -1377,7 +1421,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 2. Family Management sudah bisa tambah/edit/arsip anggota dan reset PIN.
+                FinPlan v1.1.0 Family Edition Phase 2.1. Family Management dikunci untuk Owner; user lain hanya melihat menu sesuai role.
               </div>
             </div>
           </div>
@@ -1708,28 +1752,34 @@ export default function App() {
           </div>
         </div>
 
-        <div style={{ padding: "8px 20px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-          {MONTHS.map((m, i) => <button key={i} onClick={() => setFilterMonth(i)} style={{ padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "12px", fontWeight: 600, flexShrink: 0, background: filterMonth === i ? "#6366f1" : "rgba(255,255,255,0.07)", color: filterMonth === i ? "#fff" : "#888" }}>{m}</button>)}
-        </div>
-
-        <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-          {["semua", ...userFilterNames].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
-        </div>
-
-        <div style={{ padding: "0 20px 16px" }}>
-          <div style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", borderRadius: "20px", padding: "22px", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
-            <div style={{ fontSize: "11px", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px", textTransform: "uppercase" }}>Saldo {filterUser === "semua" ? "Keluarga" : filterUser}</div>
-            <div style={{ fontSize: "30px", fontWeight: 900, color: "#fff", marginBottom: "18px" }}>{balance < 0 ? "-" : ""}{formatFull(Math.abs(balance))}</div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-              <div style={{ display: "flex", gap: "24px" }}>
-                <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📥 Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div></div>
-                <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📤 Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
-              </div>
-            </div>
-            {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
-            {sheetsStatus && <div style={{ marginTop: "6px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{sheetsStatus}</div>}
+        {showTimeFilters && (
+          <div style={{ padding: "8px 20px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
+            {MONTHS.map((m, i) => <button key={i} onClick={() => setFilterMonth(i)} style={{ padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "12px", fontWeight: 600, flexShrink: 0, background: filterMonth === i ? "#6366f1" : "rgba(255,255,255,0.07)", color: filterMonth === i ? "#fff" : "#888" }}>{m}</button>)}
           </div>
-        </div>
+        )}
+
+        {showTimeFilters && (
+          <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
+            {["semua", ...userFilterNames].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
+          </div>
+        )}
+
+        {activeTab === "dashboard" && (
+          <div style={{ padding: "0 20px 16px" }}>
+            <div style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", borderRadius: "20px", padding: "22px", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
+              <div style={{ fontSize: "11px", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px", textTransform: "uppercase" }}>Saldo {filterUser === "semua" ? "Keluarga" : filterUser}</div>
+              <div style={{ fontSize: "30px", fontWeight: 900, color: "#fff", marginBottom: "18px" }}>{balance < 0 ? "-" : ""}{formatFull(Math.abs(balance))}</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                <div style={{ display: "flex", gap: "24px" }}>
+                  <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📥 Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#a5f3c4" }}>{formatRupiah(totalIncome)}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)", marginBottom: "2px" }}>📤 Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 700, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
+                </div>
+              </div>
+              {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
+              {sheetsStatus && <div style={{ marginTop: "6px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{sheetsStatus}</div>}
+            </div>
+          </div>
+        )}
 
         <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
           <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>
@@ -1787,11 +1837,20 @@ export default function App() {
         {/* FAMILY */}
         {activeTab === "family" && (
           <div style={{ padding: "0 20px" }}>
+            {!isOwner ? (
+              <div style={{ padding: "22px", marginBottom: "14px", borderRadius: "20px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.22)", color: "#fef3c7" }}>
+                <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase", marginBottom: "8px" }}>Akses dibatasi</div>
+                <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management hanya untuk Owner</div>
+                <div style={{ fontSize: "13px", lineHeight: 1.6, color: "#fde68a" }}>Role kamu saat ini: <b>{currentRole}</b>. Pengaturan anggota, role, reset PIN, dan permission hanya bisa dikelola oleh Owner.</div>
+                <button onClick={() => setActiveTab("dashboard")} style={{ marginTop: "14px", padding: "12px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, cursor: "pointer" }}>Kembali ke Home</button>
+              </div>
+            ) : (
+              <>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 2</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Family Edition Phase 2.1</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Family Management</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
-                Phase 2 mengaktifkan tambah/edit/arsip anggota keluarga, role per anggota, reset PIN, dan activity log dasar. Data member disimpan di Firebase tanpa mengubah struktur transaksi lama.
+                Phase 2.1 mengunci Family Management untuk Owner, merapikan akses Settings, dan memastikan relogin selalu kembali ke Home. Data member disimpan di Firebase tanpa mengubah struktur transaksi lama.
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
@@ -1907,34 +1966,15 @@ export default function App() {
               <div style={{ display: "grid", gap: "8px", fontSize: "12px", color: "#fef3c7", lineHeight: 1.5 }}>
                 <div>✅ Phase 1: UI foundation, roles, permission blueprint.</div>
                 <div>✅ Phase 2: CRUD anggota keluarga, role, reset PIN, activity log dasar.</div>
+                <div>✅ Phase 2.1: Access control awal, relogin ke Home, UI per halaman aktif.</div>
                 <div>⏭ Phase 3: Permission Manager editable dan tersimpan di Firebase.</div>
                 <div>⏭ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
             </div>
 
-            <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>📊 Ringkasan Bulanan Lama</div>
-            {usersWithData.length === 0 ? <div style={{ textAlign: "center", padding: "28px 0", color: "#444" }}><div style={{ fontSize: "32px", marginBottom: "10px" }}>👨‍👩‍👧‍👦</div><div style={{ fontSize: "14px" }}>Belum ada data transaksi</div></div>
-            : usersWithData.map(user => {
-              const ut = transactions.filter(t => {
-                const d = getTxnDate(t);
-                return d && d.getMonth() === filterMonth && d.getFullYear() === targetYear && t.user === user;
-              });
-              const ui = ut.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
-              const ue = ut.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
-              return (
-                <div key={user} style={{ padding: "16px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-                    <div style={{ fontSize: "15px", fontWeight: 800 }}>{user} {user === ADMIN_USER ? "👑" : ""}</div>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: ui - ue >= 0 ? "#34d399" : "#f87171" }}>{formatRupiah(ui - ue)}</div>
-                  </div>
-                  <div style={{ display: "flex", gap: "16px" }}>
-                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>📥 Masuk</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(ui)}</div></div>
-                    <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>📤 Keluar</div><div style={{ fontSize: "12px", fontWeight: 700, color: "#f87171" }}>{formatRupiah(ue)}</div></div>
-                  </div>
-                </div>
-              );
-            })}
+              </>
+            )}
           </div>
         )}
 
