@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4 Goal Undo + Asset Input Fix";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4.1 Goal Cash Undo";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -1146,6 +1146,48 @@ export default function App() {
     setShowSavingsForm(null); setSavingsInput(""); setSavingsInputDisplay(""); setSavingsSDId("");
   }
 
+
+  async function cancelGoalCashAllocation(goalId, allocationId) {
+    if (!canContributeGoal()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membatalkan alokasi tunai Goal.");
+      return;
+    }
+    const allocation = sumberDanaLedger.find(l => String(l.id) === String(allocationId));
+    if (!allocation || allocation.cancelled || allocation.refType !== "goal_allocation") return;
+    const refundAmount = Math.abs(Number(allocation.amount || 0));
+    if (!refundAmount) return;
+
+    const currentGoalCash = savingsData[goalId] || 0;
+    if (currentGoalCash < refundAmount) {
+      const okEnough = window.confirm("Dana tunai di goal lebih kecil dari alokasi yang akan dibatalkan. Lanjutkan dan set dana tunai goal ke Rp 0?");
+      if (!okEnough) return;
+    }
+
+    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const source = sumberDanaList.find(s => s.id === allocation.sumberDanaId);
+    const ok = window.confirm("Batalkan alokasi tunai " + formatRupiah(refundAmount) + "? Wallet sumber akan dikembalikan dan dana tunai goal akan dikurangi.");
+    if (!ok) return;
+
+    const nextGoalCash = Math.max(currentGoalCash - refundAmount, 0);
+    const newData = { ...savingsData, [goalId]: nextGoalCash };
+    await setDoc(doc(db, "savings", "goals"), newData);
+    setSavingsData(newData);
+
+    await setDoc(doc(db, "sumberDanaLedger", allocation.id), {
+      ...allocation,
+      cancelled: true,
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: currentUser,
+    });
+
+    if (allocation.sumberDanaId) {
+      await logLedger(allocation.sumberDanaId, refundAmount, "Batalkan alokasi tunai dari goal: " + (goal?.label || goalId), "goal_cash_cancel", allocation.id);
+    }
+
+    await addActivityLog("goal_cash_cancelled", currentUser + " membatalkan alokasi tunai " + formatRupiah(refundAmount) + " dari " + (goal?.label || goalId) + (source ? " ke " + source.name : ""));
+    syncToSheets("cancelGoalCash", { goalId, goalLabel: goal?.label || goalId, allocationId, refundAmount, sumberDanaId: allocation.sumberDanaId || "", sumberDanaName: source?.name || "", user: currentUser, createdAt: new Date().toISOString() });
+  }
+
   async function addSavingsAsset(goalId) {
     if (!canContributeGoal()) {
       showAccessNotice("Role " + currentRole + " tidak punya izin alokasi aset ke Goal.");
@@ -1913,7 +1955,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5.4. Input aset diperjelas: total nilai pembelian atau harga per unit, plus pembatalan alokasi aset.
+            FinPlan v1.1.0 Family Edition Phase 5.4.1. Alokasi tunai dan aset Goal bisa dibatalkan dengan pengembalian ke wallet.
           </div>
         </div>
       </div>
@@ -2894,7 +2936,7 @@ export default function App() {
                 <div>✅ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
                 <div>✅ Phase 5.2: Goal UI dibuat sederhana; Activity Log mengikuti permission.</div>
                 <div>✅ Phase 5.3: +Tunai/+Aset Goal aktif, terhubung ke Sumber Dana, dan dicatat di Activity Log.</div>
-                <div>✅ Phase 5.4: Input aset diperjelas dan alokasi aset bisa dibatalkan dengan pengembalian ke wallet.</div>
+                <div>✅ Phase 5.4.1: Alokasi tunai dan aset Goal bisa dibatalkan dengan pengembalian ke wallet.</div>
               </div>
             </div>
             </>}
@@ -2988,6 +3030,9 @@ export default function App() {
                   const currentVal = calcGoalValue(goal.id);
                   const idrCash = savingsData[goal.id] || 0;
                   const holdings = savingsHoldings[goal.id] || [];
+                  const cashAllocations = sumberDanaLedger
+                    .filter(l => l.refType === "goal_allocation" && String(l.refId) === String(goal.id) && Number(l.amount || 0) < 0 && !l.cancelled)
+                    .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
                   const pct = Math.min((currentVal / Math.max(goal.targetAmount, 1)) * 100, 100);
                   const remaining = Math.max(goal.targetAmount - currentVal, 0);
                   const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / Math.max(goal.yearsLeft * 12, 1)) : 0;
@@ -3024,7 +3069,16 @@ export default function App() {
 
                       {(idrCash > 0 || holdings.length > 0) && (
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-                          {idrCash > 0 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>💵 IDR {formatRupiah(idrCash)}</span>}
+                          {idrCash > 0 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>💵 IDR total {formatRupiah(idrCash)}</span>}
+                          {cashAllocations.slice(0, 3).map(a => {
+                            const source = sumberDanaList.find(s => s.id === a.sumberDanaId);
+                            const amount = Math.abs(Number(a.amount || 0));
+                            return <span key={a.id} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "999px", background: "rgba(99,102,241,0.08)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>
+                              <span>💵 {formatRupiah(amount)}{source ? " · " + source.name : ""}</span>
+                              {canContributeGoal() && <button onClick={() => cancelGoalCashAllocation(goal.id, a.id)} title="Batalkan alokasi tunai" style={{ border: "none", background: "rgba(248,113,113,0.14)", color: "#fca5a5", borderRadius: "999px", padding: "2px 5px", cursor: "pointer", fontSize: "9px", fontWeight: 900 }}>Batal</button>}
+                            </span>;
+                          })}
+                          {cashAllocations.length > 3 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "10px", fontWeight: 800 }}>+{cashAllocations.length - 3} alokasi tunai</span>}
                           {holdings.slice(0, 4).map(h => {
                             const at = ASSET_TYPES.find(a => a.id === h.assetType);
                             const val = calcAssetValue(h, marketPrices);
