@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5 Activity Log + Recycle Bin";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.1 Flow + UI Cleanup";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -182,12 +182,16 @@ const SAVINGS_GOALS = [
 ];
 
 const CATEGORY_GROUPS = [
-  { id: "aroon", label: "\uD83D\uDCDA Aroon", color: "#6366f1" },
-  { id: "arunika", label: "\uD83D\uDCDA Arunika", color: "#ec4899" },
-  { id: "arkaja", label: "\uD83D\uDCDA Arkaja", color: "#10b981" },
-  { id: "future", label: "\uD83C\uDFE0 Masa Depan", color: "#f59e0b" },
-  { id: "pension", label: "\uD83D\uDC74 Pensiun", color: "#14b8a6" },
-  { id: "health", label: "\uD83C\uDFE5 Kesehatan", color: "#ef4444" },
+  { id: "education", label: "🎓 Pendidikan", color: "#6366f1" },
+  { id: "future", label: "🏠 Masa Depan", color: "#f59e0b" },
+  { id: "pension", label: "👴 Pensiun", color: "#14b8a6" },
+  { id: "health", label: "🏥 Kesehatan", color: "#ef4444" },
+];
+
+const EDUCATION_CHILDREN = [
+  { id: "aroon", label: "📚 Aroon" },
+  { id: "arunika", label: "📚 Arunika" },
+  { id: "arkaja", label: "📚 Arkaja" },
 ];
 
 function formatRupiah(num) {
@@ -349,7 +353,7 @@ export default function App() {
   const [marketPrices, setMarketPrices] = useState(null);
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
-  const [savingsTab, setSavingsTab] = useState("aroon");
+  const [savingsTab, setSavingsTab] = useState("education");
   const [showForm, setShowForm] = useState(false);
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
@@ -404,6 +408,8 @@ export default function App() {
   const [rolePermissions, setRolePermissions] = useState(ROLE_PERMISSION_PRESET_V110);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [familyPanel, setFamilyPanel] = useState("members");
+  const [familyView, setFamilyView] = useState("overview");
+  const [showActivityLogModal, setShowActivityLogModal] = useState(false);
 
   // ===== SECURITY STATES =====
   const [securityData, setSecurityData] = useState(null);
@@ -1416,8 +1422,19 @@ export default function App() {
       await setDoc(doc(db, "transactions", tx.id), { sumberDanaId: targetId, sumberDanaName: target.name, mergedFromSumberDanaId: sourceId, updatedAt: now }, { merge: true });
     }
 
+    const sourceInitialBalance = Number(source.initialBalance || 0);
+    if (sourceInitialBalance !== 0) {
+      await setDoc(doc(db, "sumberDana", targetId), {
+        initialBalance: Number(target.initialBalance || 0) + sourceInitialBalance,
+        updatedAt: now,
+        updatedBy: currentUser,
+      }, { merge: true });
+    }
+
     await setDoc(doc(db, "sumberDana", sourceId), {
       status: "archived",
+      initialBalance: 0,
+      mergedInitialBalanceMoved: sourceInitialBalance,
       mergedInto: targetId,
       mergedIntoName: target.name,
       mergedAt: now,
@@ -1425,7 +1442,7 @@ export default function App() {
       updatedBy: currentUser,
     }, { merge: true });
 
-    await addActivityLog("wallet_merged", source.name + " → " + target.name + " (" + relatedTransactions.length + " transaksi, " + relatedLedger.length + " ledger)");
+    await addActivityLog("wallet_merged", source.name + " → " + target.name + " (" + relatedTransactions.length + " transaksi, " + relatedLedger.length + " ledger, saldo awal dipindah " + formatRupiah(sourceInitialBalance) + ")");
     setSelectedSD(null);
     setMergeTargetSDId("");
     setShowArchivedWallets(true);
@@ -1594,6 +1611,7 @@ export default function App() {
       return;
     }
     setFamilyPanel(panel);
+    setFamilyView("management");
     setShowSettingsCenter(false);
     setActiveTab("family");
   }
@@ -1651,17 +1669,17 @@ export default function App() {
   const PinPad = ({ onPress, onDelete, onSubmit, disabled }) => {
     const digits = [["1","2","3"],["4","5","6"],["7","8","9"],["","0","\u232B"]];
     return (
-      <div style={{ display: "flex", flexDirection: "column", gap: "12px", width: "100%", maxWidth: "280px", margin: "0 auto" }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%", maxWidth: "240px", margin: "0 auto" }}>
         {digits.map((row, i) => (
-          <div key={i} style={{ display: "flex", gap: "12px", justifyContent: "center" }}>
+          <div key={i} style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
             {row.map((d, j) => (
               <button key={j} onClick={() => d === "\u232B" ? onDelete() : d ? onPress(d) : null}
                 disabled={disabled || (!d && d !== "0")}
                 style={{
-                  width: "76px", height: "76px", borderRadius: "50%", border: "none",
+                  width: "62px", height: "62px", borderRadius: "50%", border: "none",
                   background: d ? "rgba(255,255,255,0.1)" : "transparent",
                   color: "#fff", fontSize: d === "\u232B" ? "22px" : "24px",
-                  fontWeight: 700, cursor: d ? "pointer" : "default",
+                  fontWeight: 800, cursor: d ? "pointer" : "default",
                   transition: "all 0.15s",
                   opacity: (!d && d !== "0") ? 0 : 1,
                 }}>{d}</button>
@@ -1669,10 +1687,10 @@ export default function App() {
           </div>
         ))}
         <button onClick={onSubmit} style={{
-          width: "100%", padding: "16px", borderRadius: "14px", border: "none",
+          width: "100%", padding: "12px", borderRadius: "14px", border: "none",
           background: "linear-gradient(135deg,#6366f1,#7c3aed)",
           color: "#fff", fontSize: "16px", fontWeight: 800,
-          cursor: "pointer", marginTop: "8px",
+          cursor: "pointer", marginTop: "4px",
           opacity: pinInput.length === PIN_DIGITS ? 1 : 0.4,
         }}>Konfirmasi</button>
       </div>
@@ -1680,11 +1698,11 @@ export default function App() {
   };
 
   const PinDots = ({ filled }) => (
-    <div style={{ display: "flex", gap: "16px", justifyContent: "center", margin: "28px 0" }}>
+    <div style={{ display: "flex", gap: "10px", justifyContent: "center", margin: "16px 0" }}>
       {Array.from({ length: PIN_DIGITS }).map((_, i) => (
         <div key={i} style={{
-          width: i < filled ? "16px" : "16px",
-          height: i < filled ? "16px" : "16px",
+          width: i < filled ? "12px" : "12px",
+          height: i < filled ? "12px" : "12px",
           borderRadius: "50%",
           background: i < filled ? "#6366f1" : "rgba(255,255,255,0.2)",
           transition: "all 0.15s",
@@ -1757,6 +1775,7 @@ export default function App() {
             </Section>
 
             <Section title="Sistem & Keamanan Data">
+              {isOwner && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
               {(isOwner || hasPermission("recycle_bin")) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.16)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Data yang dihapus masuk Recycle Bin selama 30 hari. Restore dan hapus permanen dikontrol oleh Owner.
@@ -1769,18 +1788,47 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5. Activity log diperluas dan delete penting masuk Recycle Bin 30 hari.
+            FinPlan v1.1.0 Family Edition Phase 5.1. Alur keluarga, login, activity log, kategori tabungan, dan merge wallet dirapikan.
           </div>
         </div>
       </div>
     );
   };
 
+
+  const ActivityLogModal = () => {
+    if (!showActivityLogModal) return null;
+    if (!isOwner) return null;
+    return (
+      <div onClick={() => setShowActivityLogModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", overflowX: "hidden", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Owner Audit</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Activity Log</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Hanya Owner yang dapat melihat catatan aktivitas.</div>
+            </div>
+            <button onClick={() => setShowActivityLogModal(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+          {activityLog.length === 0 ? (
+            <div style={{ padding: "18px", borderRadius: "18px", background: "rgba(255,255,255,0.04)", color: "#94a3b8", fontSize: "13px" }}>Belum ada aktivitas tercatat.</div>
+          ) : activityLog.slice(0, 50).map(item => (
+            <div key={item.id} style={{ padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#e0f2fe" }}>{item.actor || "System"} · {item.action}</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px", lineHeight: 1.5 }}>{item.detail}</div>
+              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>{item.createdAt ? new Date(item.createdAt).toLocaleString("id-ID") : ""}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
   const AuthScreen = ({ children }) => (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-      <div style={{ width: "100%", maxWidth: "380px", textAlign: "center" }}>
-        <div style={{ fontSize: "48px", marginBottom: "12px" }}>💰</div>
-        <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "4px" }}>FinPlan ADP</div>
+    <div style={{ minHeight: "100dvh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", boxSizing: "border-box", overflow: "hidden" }}>
+      <div style={{ width: "100%", maxWidth: "340px", textAlign: "center" }}>
+        <div style={{ fontSize: "36px", marginBottom: "6px" }}>💰</div>
+        <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff", marginBottom: "2px" }}>FinPlan ADP</div>
         {children}
 
 
@@ -2262,10 +2310,10 @@ export default function App() {
 
   // User Selection Screen (after family password)
   if (authStep === "userSelect") return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+    <div style={{ minHeight: "100dvh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", boxSizing: "border-box", overflow: "hidden" }}>
       <div style={{ width: "100%", maxWidth: "380px" }}>
         <div style={{ textAlign: "center", marginBottom: "32px" }}>
-          <div style={{ fontSize: "48px", marginBottom: "12px" }}>💰</div>
+          <div style={{ fontSize: "36px", marginBottom: "6px" }}>💰</div>
           <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff" }}>FinPlan ADP</div>
           <div style={{ fontSize: "13px", color: "#555", marginTop: "6px" }}>Siapa yang sedang login?</div>
         </div>
@@ -2308,6 +2356,7 @@ export default function App() {
     <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
       <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box" }}>
         <SettingsCenterModal />
+        <ActivityLogModal />
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -2353,7 +2402,7 @@ export default function App() {
           <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
             {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>}
             {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>}
-            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => openFamilyManagement("members")}>👨‍👩‍👧‍👦 Keluarga</button>}
+            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Keluarga</button>}
             {hasPermission("goals") && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
             {hasPermission("investments") && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
             {hasPermission("gadai") && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Gadai</button>}
@@ -2414,6 +2463,40 @@ export default function App() {
                 <div style={{ fontSize: "13px", lineHeight: 1.6, color: "#fde68a" }}>Role kamu saat ini: <b>{currentRole}</b>. Akses halaman ini mengikuti Permission Manager yang dikelola oleh Owner.</div>
                 <button onClick={() => setActiveTab("dashboard")} style={{ marginTop: "14px", padding: "12px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, cursor: "pointer" }}>Kembali ke Home</button>
               </div>
+            ) : familyView === "overview" ? (
+              <>
+                <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
+                  <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Keluarga</div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Log Transaksi per User</div>
+                  <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>Halaman Keluarga sekarang fokus untuk melihat kontribusi dan transaksi setiap anggota. Pengaturan anggota tetap berada di Settings → Family Management.</div>
+                  {isOwner && <button onClick={() => { setShowActivityLogModal(true); }} style={{ marginTop: "12px", padding: "10px 12px", borderRadius: "14px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Buka Activity Log Owner</button>}
+                </div>
+                {activeFamilyMembers.map(member => {
+                  const txns = transactions.filter(t => t.user === member.name).slice(0, 5);
+                  const monthUserTxns = filteredMonthTxns.filter(t => t.user === member.name);
+                  const income = monthUserTxns.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
+                  const expense = monthUserTxns.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
+                  return (
+                    <div key={member.id || member.name} style={{ padding: "16px", marginBottom: "12px", borderRadius: "18px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                        <div>
+                          <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff" }}>{member.avatar || "👤"} {member.name}</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{member.role} · {member.status || "active"}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: "12px", color: "#86efac", fontWeight: 900 }}>+{formatRupiah(income)}</div>
+                          <div style={{ fontSize: "12px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(expense)}</div>
+                        </div>
+                      </div>
+                      {txns.length === 0 ? <div style={{ fontSize: "12px", color: "#64748b" }}>Belum ada transaksi untuk user ini.</div> : txns.map(tx => {
+                        const info = getCategoryInfo(tx.category);
+                        return <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: "12px" }}><span style={{ color: "#cbd5e1" }}>{info.icon} {info.label} · {tx.date}</span><b style={{ color: tx.type === "income" ? "#86efac" : "#fca5a5" }}>{tx.type === "income" ? "+" : "-"}{formatRupiah(tx.amount)}</b></div>;
+                      })}
+                    </div>
+                  );
+                })}
+                <button onClick={() => setActiveTab("dashboard")} style={{ padding: "12px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, cursor: "pointer", width: "100%" }}>← Kembali ke Home</button>
+              </>
             ) : (
               <>
             <div style={{ padding: "18px", marginBottom: "14px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(99,102,241,0.18),rgba(16,185,129,0.10))", border: "1px solid rgba(99,102,241,0.28)" }}>
@@ -2433,7 +2516,7 @@ export default function App() {
               <button onClick={() => setActiveTab("dashboard")} style={{ padding: "10px 12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#e5e7eb", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>← Home</button>
               <button onClick={() => setFamilyPanel("members")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "members" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "members" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>👨‍👩‍👧 Anggota</button>
               {canManagePermissions && <button onClick={() => setFamilyPanel("permissions")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "permissions" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "permissions" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>🛡️ Permission</button>}
-              <button onClick={() => setFamilyPanel("activity")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "activity" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "activity" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Activity</button>
+              {isOwner && <button onClick={() => setFamilyPanel("activity")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "activity" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "activity" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Activity</button>}
             </div>
 
             {familyStatus && <div style={{ marginBottom: "12px", padding: "12px", borderRadius: "14px", background: familyStatus.startsWith("✅") ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: "1px solid " + (familyStatus.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"), color: familyStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", fontWeight: 800 }}>{familyStatus}</div>}
@@ -2529,7 +2612,7 @@ export default function App() {
               </div>
             </div>}
 
-            {familyPanel === "activity" && <>
+            {familyPanel === "activity" && isOwner && <>
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.22)" }}>
               <div style={{ fontSize: "13px", fontWeight: 900, color: "#7dd3fc", marginBottom: "8px" }}>📝 Activity Log Lengkap</div>
               {activityLog.length === 0 ? <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada aktivitas tercatat.</div> : activityLog.slice(0, 12).map(item => (
@@ -2600,8 +2683,19 @@ export default function App() {
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
             </div>
 
+            {savingsTab === "education" && (
+              <div style={{ display: "grid", gap: "8px", marginBottom: "14px" }}>
+                {EDUCATION_CHILDREN.map(child => {
+                  const goals = SAVINGS_GOALS.filter(g => g.category === child.id);
+                  const target = goals.reduce((s,g) => s + g.targetAmount, 0);
+                  const current = goals.reduce((s,g) => s + calcGoalValue(g.id), 0);
+                  return <div key={child.id} style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}><div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>{child.label}</div><div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>SD → SMP → SMA → Kuliah · {formatRupiah(current)} / {formatRupiah(target)}</div></div>;
+                })}
+              </div>
+            )}
+
             {/* Goals */}
-            {SAVINGS_GOALS.filter(g => g.category === savingsTab).map(goal => {
+            {(savingsTab === "education" ? SAVINGS_GOALS.filter(g => ["aroon","arunika","arkaja"].includes(g.category)) : SAVINGS_GOALS.filter(g => g.category === savingsTab)).map(goal => {
               const currentVal = calcGoalValue(goal.id);
               const idrCash = savingsData[goal.id] || 0;
               const holdings = savingsHoldings[goal.id] || [];
