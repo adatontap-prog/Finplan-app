@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.1 Flow + UI Cleanup";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.2 Goal UI + Permission Cleanup";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -103,6 +103,7 @@ const PERMISSIONS_V110 = [
   { id: "sync", label: "Sync Google Sheets", icon: "📊", group: "Backup" },
   { id: "reports", label: "Email Report", icon: "✉️", group: "Backup" },
   { id: "backup", label: "Export Backup", icon: "💾", group: "Backup" },
+  { id: "activity_log", label: "Activity Log", icon: "📝", group: "System" },
   { id: "recycle_bin", label: "Recycle Bin", icon: "♻️", group: "System" },
   { id: "settings", label: "Settings", icon: "⚙️", group: "Core" },
 ];
@@ -114,7 +115,7 @@ const ROLE_PERMISSION_PRESET_V110 = {
   Viewer: ["dashboard", "history", "settings"],
 };
 
-const OWNER_LOCKED_PERMISSIONS_V110 = ["dashboard", "settings", "family_manage", "permission_manage", "security"];
+const OWNER_LOCKED_PERMISSIONS_V110 = ["dashboard", "settings", "family_manage", "permission_manage", "security", "activity_log"];
 
 function normalizePermissionData(data) {
   const allowedIds = new Set(PERMISSIONS_V110.map(p => p.id));
@@ -193,6 +194,30 @@ const EDUCATION_CHILDREN = [
   { id: "arunika", label: "📚 Arunika" },
   { id: "arkaja", label: "📚 Arkaja" },
 ];
+
+function getGoalStageLabel(goal) {
+  const label = String(goal?.label || "").toLowerCase();
+  if (label.includes("nursery 1")) return "Nursery 1";
+  if (label.includes("nursery 2")) return "Nursery 2";
+  if (label.includes("kindergarten 1")) return "Kindergarten 1";
+  if (label.includes("kindergarten 2")) return "Kindergarten 2";
+  if (label.includes("sd")) return "SD";
+  if (label.includes("smp")) return "SMP";
+  if (label.includes("sma")) return "SMA";
+  if (label.includes("kuliah")) return "Kuliah";
+  if (label.includes("darurat")) return "Dana Darurat";
+  if (label.includes("pensiun")) return "Pensiun";
+  if (label.includes("kesehatan")) return "Kesehatan";
+  if (label.includes("asuransi")) return "Asuransi";
+  return goal?.label || "Goal";
+}
+
+function getGoalPriorityLabel(goal) {
+  if (["aroon", "arunika", "arkaja", "health", "pension"].includes(goal?.category)) return "Wajib";
+  if (goal?.id === "emergency") return "Wajib";
+  if (goal?.category === "future") return "Penting";
+  return "Opsional";
+}
 
 function formatRupiah(num) {
   if (!num && num !== 0) return "Rp 0";
@@ -354,6 +379,7 @@ export default function App() {
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [savingsTab, setSavingsTab] = useState("education");
+  const [selectedEducationChild, setSelectedEducationChild] = useState("aroon");
   const [showForm, setShowForm] = useState(false);
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
@@ -1775,7 +1801,7 @@ export default function App() {
             </Section>
 
             <Section title="Sistem & Keamanan Data">
-              {isOwner && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
+              {hasPermission("activity_log") && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
               {(isOwner || hasPermission("recycle_bin")) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.16)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Data yang dihapus masuk Recycle Bin selama 30 hari. Restore dan hapus permanen dikontrol oleh Owner.
@@ -1788,7 +1814,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5.1. Alur keluarga, login, activity log, kategori tabungan, dan merge wallet dirapikan.
+            FinPlan v1.1.0 Family Edition Phase 5.2. Goal UI dibuat lebih sederhana, Activity Log mengikuti permission, dan struktur Financial Engine disiapkan.
           </div>
         </div>
       </div>
@@ -1797,7 +1823,7 @@ export default function App() {
 
 
   const ActivityLogModal = () => {
-    if (!showActivityLogModal) return null;
+    if (!showActivityLogModal || !hasPermission("activity_log")) return null;
     if (!isOwner) return null;
     return (
       <div onClick={() => setShowActivityLogModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
@@ -2469,7 +2495,6 @@ export default function App() {
                   <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Keluarga</div>
                   <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>Log Transaksi per User</div>
                   <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>Halaman Keluarga sekarang fokus untuk melihat kontribusi dan transaksi setiap anggota. Pengaturan anggota tetap berada di Settings → Family Management.</div>
-                  {isOwner && <button onClick={() => { setShowActivityLogModal(true); }} style={{ marginTop: "12px", padding: "10px 12px", borderRadius: "14px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Buka Activity Log Owner</button>}
                 </div>
                 {activeFamilyMembers.map(member => {
                   const txns = transactions.filter(t => t.user === member.name).slice(0, 5);
@@ -2508,7 +2533,7 @@ export default function App() {
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginTop: "14px" }}>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Active</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activeFamilyMembers.length}</div></div>
                 <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Total</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{familyEditionMembers.length}</div></div>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Activity</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{activityLog.length}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(0,0,0,0.18)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Roles</div><div style={{ fontSize: "18px", fontWeight: 900 }}>{FAMILY_ROLES_V110.length}</div></div>
               </div>
             </div>
 
@@ -2516,7 +2541,6 @@ export default function App() {
               <button onClick={() => setActiveTab("dashboard")} style={{ padding: "10px 12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#e5e7eb", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>← Home</button>
               <button onClick={() => setFamilyPanel("members")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "members" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "members" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>👨‍👩‍👧 Anggota</button>
               {canManagePermissions && <button onClick={() => setFamilyPanel("permissions")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "permissions" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "permissions" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>🛡️ Permission</button>}
-              {isOwner && <button onClick={() => setFamilyPanel("activity")} style={{ padding: "10px 12px", borderRadius: "14px", border: "none", background: familyPanel === "activity" ? "#6366f1" : "rgba(255,255,255,0.07)", color: familyPanel === "activity" ? "#fff" : "#94a3b8", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>📝 Activity</button>}
             </div>
 
             {familyStatus && <div style={{ marginBottom: "12px", padding: "12px", borderRadius: "14px", background: familyStatus.startsWith("✅") ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.12)", border: "1px solid " + (familyStatus.startsWith("✅") ? "rgba(16,185,129,0.25)" : "rgba(245,158,11,0.25)"), color: familyStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", fontWeight: 800 }}>{familyStatus}</div>}
@@ -2529,7 +2553,7 @@ export default function App() {
                 </div>
                 <div style={{ padding: "8px 12px", borderRadius: "999px", background: "rgba(251,191,36,0.12)", color: "#fbbf24", fontSize: "12px", fontWeight: 900 }}>{currentFamilyMember.role}</div>
               </div>
-              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Halaman ini sekarang fokus pada panel aktif: Anggota, Permission, atau Activity.</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.5 }}>PIN status: {currentFamilyMember.pinStatus}. Halaman ini sekarang fokus pada panel aktif: Anggota atau Permission. Activity Log dipindahkan ke Settings dan mengikuti permission.</div>
             </div>
 
             {familyPanel === "members" && <div style={{ marginBottom: "14px" }}>
@@ -2633,6 +2657,7 @@ export default function App() {
                 <div>✅ Phase 3.2: Settings dirapikan; Tabungan/Goal dan Investasi keluar dari Settings dan tetap di navigasi utama.</div>
                 <div>✅ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
                 <div>✅ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
+                <div>✅ Phase 5.2: Goal UI dibuat sederhana; Activity Log mengikuti permission.</div>
               </div>
             </div>
             </>}
@@ -2647,142 +2672,143 @@ export default function App() {
           <div style={{ padding: "0 20px" }}>
             {/* Harga pasar mini */}
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "12px", color: "#555" }}>
-                {marketPrices ? "USD " + formatFull(marketPrices.usdIdr) + " | Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga belum dimuat"}
+              <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.4 }}>
+                {marketPrices ? "Nilai pasar: USD " + formatFull(marketPrices.usdIdr) + " · Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga pasar belum dimuat. Tekan refresh untuk update USD/emas."}
               </div>
-              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "\u23F3" : "\uD83D\uDD04"}</button>
+              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
             </div>
 
             {/* Total */}
             <div style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(124,58,237,0.15))", border: "1px solid rgba(99,102,241,0.2)" }}>
-              <div style={{ fontSize: "11px", color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Semua Tabungan {marketPrices ? "(nilai pasar)" : ""}</div>
-              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "2px" }}>{formatRupiah(totalSavingsCurrent)}</div>
-              <div style={{ fontSize: "11px", color: "#555", marginBottom: "8px" }}>dari {formatRupiah(totalSavingsTarget)}</div>
-              <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden" }}>
+              <div style={{ fontSize: "11px", color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Goal Engine Preview · Dana nyata vs target</div>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-end" }}>
+                <div>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginBottom: "2px" }}>{formatRupiah(totalSavingsCurrent)}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8" }}>Dana/aset yang benar-benar dialokasikan</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "13px", fontWeight: 900, color: "#c7d2fe" }}>{((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2)}%</div>
+                  <div style={{ fontSize: "10px", color: "#64748b" }}>dari {formatRupiah(totalSavingsTarget)}</div>
+                </div>
+              </div>
+              <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginTop: "10px" }}>
                 <div style={{ height: "100%", borderRadius: "10px", width: (Math.min((totalSavingsCurrent / totalSavingsTarget) * 100, 100)) + "%", background: "linear-gradient(90deg,#6366f1,#10b981)", transition: "width 0.8s ease" }} />
               </div>
-              <div style={{ fontSize: "11px", color: "#a5b4fc", marginTop: "4px", textAlign: "right" }}>{((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2)}%</div>
-            </div>
-
-            {/* Per anak mini */}
-            <div style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-              {childTotals.map(({ child, target, current }) => (
-                <div key={child} style={{ flex: 1, padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "center" }}>
-                  <div style={{ fontSize: "12px", fontWeight: 800, color: "#e8e8f0", textTransform: "capitalize", marginBottom: "4px" }}>{child}</div>
-                  <div style={{ fontSize: "11px", color: "#34d399", fontWeight: 700 }}>{formatRupiah(current)}</div>
-                  <div style={{ fontSize: "10px", color: "#555" }}>/ {formatRupiah(target)}</div>
-                  <div style={{ height: "3px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginTop: "4px" }}>
-                    <div style={{ height: "100%", borderRadius: "10px", width: (Math.min((current / target) * 100, 100)) + "%", background: "#6366f1" }} />
-                  </div>
-                </div>
-              ))}
+              <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "12px", background: "rgba(0,0,0,0.18)", color: "#cbd5e1", fontSize: "11px", lineHeight: 1.5 }}>
+                Target goal bukan aset. Yang dihitung sebagai modal hanya uang/aset yang sudah dialokasikan ke goal.
+              </div>
             </div>
 
             {/* Tabs */}
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "14px" }}>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "12px" }}>
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
             </div>
 
             {savingsTab === "education" && (
-              <div style={{ display: "grid", gap: "8px", marginBottom: "14px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
                 {EDUCATION_CHILDREN.map(child => {
                   const goals = SAVINGS_GOALS.filter(g => g.category === child.id);
                   const target = goals.reduce((s,g) => s + g.targetAmount, 0);
                   const current = goals.reduce((s,g) => s + calcGoalValue(g.id), 0);
-                  return <div key={child.id} style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}><div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>{child.label}</div><div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>SD → SMP → SMA → Kuliah · {formatRupiah(current)} / {formatRupiah(target)}</div></div>;
+                  const active = selectedEducationChild === child.id;
+                  return <button key={child.id} onClick={() => setSelectedEducationChild(child.id)} style={{ padding: "12px 8px", borderRadius: "14px", border: "1px solid " + (active ? "rgba(99,102,241,0.45)" : "rgba(255,255,255,0.06)"), background: active ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", color: active ? "#fff" : "#cbd5e1", textAlign: "left", cursor: "pointer" }}>
+                    <div style={{ fontSize: "12px", fontWeight: 900 }}>{child.label}</div>
+                    <div style={{ fontSize: "10px", color: active ? "#c7d2fe" : "#64748b", marginTop: "3px" }}>{formatRupiah(current)}</div>
+                    <div style={{ height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginTop: "7px" }}>
+                      <div style={{ height: "100%", width: Math.min((current / Math.max(target, 1)) * 100, 100) + "%", background: "#6366f1" }} />
+                    </div>
+                  </button>;
                 })}
               </div>
             )}
 
-            {/* Goals */}
-            {(savingsTab === "education" ? SAVINGS_GOALS.filter(g => ["aroon","arunika","arkaja"].includes(g.category)) : SAVINGS_GOALS.filter(g => g.category === savingsTab)).map(goal => {
-              const currentVal = calcGoalValue(goal.id);
-              const idrCash = savingsData[goal.id] || 0;
-              const holdings = savingsHoldings[goal.id] || [];
-              const pct = Math.min((currentVal / goal.targetAmount) * 100, 100);
-              const remaining = goal.targetAmount - currentVal;
-              const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / (goal.yearsLeft * 12)) : 0;
+            {(() => {
+              const goalsToShow = savingsTab === "education"
+                ? SAVINGS_GOALS.filter(g => g.category === selectedEducationChild)
+                : SAVINGS_GOALS.filter(g => g.category === savingsTab);
+              const groupTarget = goalsToShow.reduce((s,g) => s + g.targetAmount, 0);
+              const groupCurrent = goalsToShow.reduce((s,g) => s + calcGoalValue(g.id), 0);
+              const groupRemaining = Math.max(groupTarget - groupCurrent, 0);
+              const groupTitle = savingsTab === "education"
+                ? (EDUCATION_CHILDREN.find(c => c.id === selectedEducationChild)?.label || "Pendidikan")
+                : (CATEGORY_GROUPS.find(g => g.id === savingsTab)?.label || "Goals");
 
-              return (
-                <div key={goal.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }} onClick={() => setSelectedGoal(goal.id)}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+              return <>
+                <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
                     <div>
-                      <div style={{ fontSize: "14px", fontWeight: 800 }}>{goal.icon} {goal.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{goal.desc} • {goal.yearsLeft} thn lagi</div>
+                      <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{groupTitle}</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{goalsToShow.length} goal · kurang {formatRupiah(groupRemaining)}</div>
                     </div>
-                    {currentUser === ADMIN_USER && (
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.4)", color: "#a5b4fc", borderRadius: "8px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>💵 Tunai</button>
-                        <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.4)", color: "#34d399", borderRadius: "8px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>🏦 Aset</button>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: "14px", fontWeight: 900, color: "#34d399" }}>{formatRupiah(groupCurrent)}</div>
+                      <div style={{ fontSize: "10px", color: "#64748b" }}>/ {formatRupiah(groupTarget)}</div>
+                    </div>
+                  </div>
+                </div>
+
+                {goalsToShow.map(goal => {
+                  const currentVal = calcGoalValue(goal.id);
+                  const idrCash = savingsData[goal.id] || 0;
+                  const holdings = savingsHoldings[goal.id] || [];
+                  const pct = Math.min((currentVal / Math.max(goal.targetAmount, 1)) * 100, 100);
+                  const remaining = Math.max(goal.targetAmount - currentVal, 0);
+                  const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / Math.max(goal.yearsLeft * 12, 1)) : 0;
+                  const priority = getGoalPriorityLabel(goal);
+                  const stage = getGoalStageLabel(goal);
+
+                  return (
+                    <div key={goal.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "10px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
+                            <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{goal.icon} {stage}</div>
+                            <span style={{ padding: "3px 7px", borderRadius: "999px", background: priority === "Wajib" ? "rgba(239,68,68,0.14)" : "rgba(99,102,241,0.14)", color: priority === "Wajib" ? "#fca5a5" : "#c7d2fe", fontSize: "10px", fontWeight: 900 }}>{priority}</span>
+                          </div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>{goal.desc} · {goal.yearsLeft} thn lagi</div>
+                        </div>
+                        {currentUser === ADMIN_USER && (
+                          <div style={{ display: "grid", gap: "6px", flexShrink: 0 }}>
+                            <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Tunai</button>
+                            <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Aset</button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
 
-                  {/* Progress */}
-                  <div style={{ marginBottom: "8px" }}>
-                    <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "5px" }}>
-                      <div style={{ height: "100%", borderRadius: "10px", width: (pct) + "%", background: "linear-gradient(90deg," + goal.color + "," + goal.color + "99)", transition: "width 0.8s ease" }} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px" }}>
-                      <span style={{ color: "#34d399", fontWeight: 700 }}>{formatRupiah(currentVal)}</span>
-                      <span style={{ color: "#555" }}>{pct.toFixed(1)}% dari {formatRupiah(goal.targetAmount)}</span>
-                    </div>
-                  </div>
+                      <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "7px" }}>
+                        <div style={{ height: "100%", borderRadius: "10px", width: pct + "%", background: "linear-gradient(90deg," + goal.color + "," + goal.color + "99)", transition: "width 0.8s ease" }} />
+                      </div>
 
-                  {/* Breakdown tunai vs aset */}
-                  {(idrCash > 0 || holdings.length > 0) && (
-                    <div style={{ marginBottom: "8px" }}>
-                      {idrCash > 0 && (
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "#666", padding: "4px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                          <span>💵 Tunai IDR</span>
-                          <span style={{ color: "#e8e8f0" }}>{formatRupiah(idrCash)}</span>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "9px" }}>
+                        <div><div style={{ fontSize: "10px", color: "#64748b" }}>Terkumpul</div><div style={{ fontSize: "12px", fontWeight: 900, color: "#86efac" }}>{formatRupiah(currentVal)}</div></div>
+                        <div><div style={{ fontSize: "10px", color: "#64748b" }}>Target</div><div style={{ fontSize: "12px", fontWeight: 900, color: "#e5e7eb" }}>{formatRupiah(goal.targetAmount)}</div></div>
+                        <div><div style={{ fontSize: "10px", color: "#64748b" }}>Kurang</div><div style={{ fontSize: "12px", fontWeight: 900, color: remaining > 0 ? "#fca5a5" : "#86efac" }}>{formatRupiah(remaining)}</div></div>
+                      </div>
+
+                      {(idrCash > 0 || holdings.length > 0) && (
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                          {idrCash > 0 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>💵 IDR {formatRupiah(idrCash)}</span>}
+                          {holdings.slice(0, 4).map(h => {
+                            const at = ASSET_TYPES.find(a => a.id === h.assetType);
+                            const val = calcAssetValue(h, marketPrices);
+                            return <span key={h.id} style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>{at ? at.icon : "🏦"} {h.ticker || (at ? at.label : "Aset")} {formatRupiah(val)}</span>;
+                          })}
+                          {holdings.length > 4 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "10px", fontWeight: 800 }}>+{holdings.length - 4} aset</span>}
                         </div>
                       )}
-                      {holdings.map(h => {
-                        const at = ASSET_TYPES.find(a => a.id === h.assetType);
-                        const val = calcAssetValue(h, marketPrices);
-                        const buyVal = h.assetType === "usd" ? h.qty * h.buyPrice : h.assetType === "lm" ? h.qty * h.buyPrice : h.qty * (h.buyPrice || 0);
-                        const gain = val - buyVal;
-                        const needsManual = (at ? at.manual : false) && !h.manualPrice;
-                        return (
-                          <div key={h.id} style={{ padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <div>
-                                <span style={{ fontSize: "11px", color: "#888" }}>{at ? at.icon : ""} {h.ticker || (at ? at.label : "")} - {h.qty} {(at ? at.unit : "")}</span>
-                                {h.note && <span style={{ fontSize: "10px", color: "#555", marginLeft: "4px" }}>({h.note})</span>}
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                                <div style={{ textAlign: "right" }}>
-                                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#e8e8f0" }}>{formatRupiah(val)}</div>
-                                  {buyVal > 0 && <div style={{ fontSize: "10px", color: gain >= 0 ? "#34d399" : "#f87171" }}>{gain >= 0 ? "+" : ""}{formatRupiah(gain)}</div>}
-                                </div>
-                                {currentUser === ADMIN_USER && (
-                                  <button onClick={() => removeHolding(goal.id, h.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "16px", lineHeight: 1 }}>x</button>
-                                )}
-                              </div>
-                            </div>
-                            {needsManual && currentUser === ADMIN_USER && (
-                              <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
-                                <input placeholder="Update harga/unit sekarang" style={{ ...inputStyle, fontSize: "11px", padding: "6px 10px" }}
-                                  onBlur={e => { if (e.target.value) updateManualPrice(goal.id, h.id, e.target.value); }} />
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
 
-                  {remaining > 0 ? (
-                    <div style={{ background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#888" }}>
-                      ⚠️ Kurang <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(remaining)}</span> • Setor <span style={{ color: "#fff", fontWeight: 700 }}>{formatRupiah(monthlyNeeded)}/bln</span>
+                      {remaining > 0 ? (
+                        <div style={{ background: "rgba(0,0,0,0.18)", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.5 }}>
+                          Butuh alokasi sekitar <b style={{ color: "#fff" }}>{formatRupiah(monthlyNeeded)}/bulan</b>. Nanti Financial Health Engine akan mengecek apakah income cukup sebelum goal opsional diaktifkan.
+                        </div>
+                      ) : (
+                        <div style={{ background: "rgba(16,185,129,0.10)", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", color: "#86efac", fontWeight: 800 }}>✅ Target tercapai dan siap dipakai.</div>
+                      )}
                     </div>
-                  ) : (
-                    <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "8px 10px", fontSize: "11px", color: "#34d399", fontWeight: 700 }}>✅ Target tercapai!</div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </>;
+            })()}
           </div>
         )}
 
