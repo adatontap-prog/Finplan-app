@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.2 Loan Engine Foundation";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3 Loan Repayment & Cancellation";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -414,6 +414,8 @@ export default function App() {
   const [gadaiList, setGadaiList] = useState([]);
   const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   const [gadaiSDId, setGadaiSDId] = useState("");
+  const [loanPaymentLoan, setLoanPaymentLoan] = useState(null);
+  const [loanPaymentForm, setLoanPaymentForm] = useState({ walletId: "", principal: "", fee: "", date: new Date().toISOString().split("T")[0], note: "" });
   const [calcForm, setCalcForm] = useState({ beratGram: "", kadar: "24", tenor: "120" });
   const [sumberDanaList, setSumberDanaList] = useState([]);
   const [sumberDanaLedger, setSumberDanaLedger] = useState([]);
@@ -1464,14 +1466,149 @@ export default function App() {
   async function updateGadaiStatus(id, status) {
     const { updateDoc } = await import("firebase/firestore");
     const item = gadaiList.find(g => g.id === id);
+    if (status === "lunas") {
+      openLoanPayment(item);
+      return;
+    }
     await updateDoc(doc(db, "gadai", id), {
       status,
       updatedAt: new Date().toISOString(),
       updatedBy: currentUser,
-      collateralStatus: status === "lunas" ? "released" : status === "lelang" ? "lost" : "pledged",
+      collateralStatus: status === "lelang" ? "lost" : "pledged",
     });
-    await addActivityLog("loan_status_updated", (item?.namaBarang || id) + " diubah status menjadi " + status + ". Catatan: Phase 6.2 baru mengubah status; pelunasan detail pokok/bunga akan masuk Phase 6.3.");
+    await addActivityLog("loan_status_updated", (item?.namaBarang || id) + " diubah status menjadi " + status + ".");
     syncToSheets("updateGadai", { id, status });
+  }
+
+  function openLoanPayment(loan) {
+    if (!loan) return;
+    const outstanding = Number(loan.outstandingPrincipal ?? loan.uangPinjaman ?? 0);
+    const estimatedFee = Math.max(Number(loan.totalLunas || 0) - Number(loan.uangPinjaman || 0), 0);
+    setLoanPaymentLoan(loan);
+    setLoanPaymentForm({
+      walletId: "",
+      principal: String(outstanding || ""),
+      fee: String(estimatedFee || ""),
+      date: new Date().toISOString().split("T")[0],
+      note: "",
+    });
+  }
+
+  async function repayLoan() {
+    if (!loanPaymentLoan) return;
+    const { updateDoc } = await import("firebase/firestore");
+    const principalPaid = parseAmount(loanPaymentForm.principal) || parseDecimal(loanPaymentForm.principal);
+    const feePaid = parseAmount(loanPaymentForm.fee) || parseDecimal(loanPaymentForm.fee) || 0;
+    const walletId = loanPaymentForm.walletId;
+    if (!walletId) {
+      showAccessNotice("Pilih Sumber Dana untuk pembayaran pinjaman.");
+      return;
+    }
+    if (!principalPaid || principalPaid <= 0) {
+      showAccessNotice("Isi pokok yang dibayar.");
+      return;
+    }
+    const wallet = activeFundingSourceOptions.find(s => s.id === walletId);
+    if (!wallet) {
+      showAccessNotice("Sumber Dana tidak aktif/tidak ditemukan.");
+      return;
+    }
+    const outstandingBefore = Number(loanPaymentLoan.outstandingPrincipal ?? loanPaymentLoan.uangPinjaman ?? 0);
+    const paidPrincipalSafe = Math.min(principalPaid, outstandingBefore);
+    const totalPaid = paidPrincipalSafe + feePaid;
+    if (totalPaid <= 0) return;
+
+    const newOutstanding = Math.max(outstandingBefore - paidPrincipalSafe, 0);
+    const newStatus = newOutstanding <= 0 ? "lunas" : "aktif";
+
+    const paymentData = {
+      loanId: loanPaymentLoan.id,
+      loanType: loanPaymentLoan.loanType || "gadai",
+      title: loanPaymentLoan.namaBarang || "Pinjaman",
+      walletId,
+      walletName: wallet.name || "",
+      amount: totalPaid,
+      principalPaid: paidPrincipalSafe,
+      feePaid,
+      paymentDate: loanPaymentForm.date,
+      note: loanPaymentForm.note || "",
+      createdBy: currentUser,
+      createdAt: new Date().toISOString(),
+      movementType: "loan_repayment",
+    };
+
+    const payRef = await addDoc(collection(db, "loanPayments"), paymentData);
+    await logLedger(walletId, -totalPaid, "Pembayaran pinjaman: " + (loanPaymentLoan.namaBarang || "Pinjaman"), "loan_repayment", payRef.id);
+
+    if (feePaid > 0) {
+      await addDoc(collection(db, "transactions"), {
+        type: "expense",
+        category: "lainnya",
+        amount: feePaid,
+        note: "Bunga/biaya pinjaman: " + (loanPaymentLoan.namaBarang || "Pinjaman"),
+        user: currentUser,
+        date: loanPaymentForm.date,
+        createdAt: new Date().toISOString(),
+        movementType: "fee_interest",
+        refType: "loan_payment",
+        refId: payRef.id,
+      });
+    }
+
+    await updateDoc(doc(db, "gadai", loanPaymentLoan.id), {
+      outstandingPrincipal: newOutstanding,
+      status: newStatus,
+      collateralStatus: newStatus === "lunas" ? "released" : "pledged",
+      lastPaymentAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    });
+
+    await addActivityLog(
+      "loan_repayment",
+      currentUser + " membayar pinjaman " + (loanPaymentLoan.namaBarang || "Pinjaman") + " sebesar " + formatFull(totalPaid) +
+      " dari " + (wallet.name || "Sumber Dana") + ". Pokok: " + formatFull(paidPrincipalSafe) +
+      (feePaid > 0 ? ", bunga/biaya: " + formatFull(feePaid) : "") +
+      (newStatus === "lunas" ? ". Pinjaman lunas dan jaminan dilepas." : ". Sisa pokok: " + formatFull(newOutstanding) + ".")
+    );
+
+    syncToSheets("loanRepayment", { ...paymentData, id: payRef.id, newOutstanding, status: newStatus });
+    setLoanPaymentLoan(null);
+    setLoanPaymentForm({ walletId: "", principal: "", fee: "", date: new Date().toISOString().split("T")[0], note: "" });
+  }
+
+  async function cancelLoanDisbursement(loan) {
+    if (!loan) return;
+    const { updateDoc } = await import("firebase/firestore");
+    const outstanding = Number(loan.outstandingPrincipal ?? loan.uangPinjaman ?? 0);
+    const principal = Number(loan.principal ?? loan.uangPinjaman ?? 0);
+    if (loan.status !== "aktif") {
+      showAccessNotice("Hanya pinjaman aktif yang bisa dibatalkan.");
+      return;
+    }
+    if (outstanding !== principal) {
+      showAccessNotice("Pinjaman sudah pernah dibayar. Gunakan alur pembayaran/pelunasan, bukan batal pencairan.");
+      return;
+    }
+    if (!loan.sumberDanaId) {
+      showAccessNotice("Pinjaman lama tidak punya data wallet pencairan, tidak bisa dibatalkan otomatis.");
+      return;
+    }
+    const ok = window.confirm("Batalkan pencairan pinjaman " + (loan.namaBarang || "Pinjaman") + "? Wallet pencairan akan dikurangi kembali sebesar " + formatFull(principal) + " dan pinjaman ditandai batal.");
+    if (!ok) return;
+
+    await logLedger(loan.sumberDanaId, -principal, "Batalkan pencairan pinjaman gadai: " + (loan.namaBarang || "Pinjaman"), "loan_disbursement_cancel", loan.id);
+    await updateDoc(doc(db, "gadai", loan.id), {
+      status: "dibatalkan",
+      outstandingPrincipal: 0,
+      collateralStatus: "released",
+      cancelledAt: new Date().toISOString(),
+      cancelledBy: currentUser,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    });
+    await addActivityLog("loan_disbursement_cancelled", currentUser + " membatalkan pencairan pinjaman " + (loan.namaBarang || "Pinjaman") + " sebesar " + formatFull(principal) + (loan.sumberDanaName ? " dari " + loan.sumberDanaName : "") + ".");
+    syncToSheets("cancelLoanDisbursement", { id: loan.id, amount: principal, walletId: loan.sumberDanaId, user: currentUser, createdAt: new Date().toISOString() });
   }
 
   async function deleteGadai(id) {
@@ -2663,6 +2800,73 @@ export default function App() {
     );
   };
 
+  const LoanRepaymentModal = () => {
+    if (!loanPaymentLoan) return null;
+    const paymentSources = myFundingSources.length > 0 ? myFundingSources : activeFundingSourceOptions;
+    const principalPaid = parseAmount(loanPaymentForm.principal) || parseDecimal(loanPaymentForm.principal) || 0;
+    const feePaid = parseAmount(loanPaymentForm.fee) || parseDecimal(loanPaymentForm.fee) || 0;
+    const outstanding = Number(loanPaymentLoan.outstandingPrincipal ?? loanPaymentLoan.uangPinjaman ?? 0);
+    const principalSafe = Math.min(principalPaid, outstanding);
+    const totalPaid = principalSafe + feePaid;
+    const remaining = Math.max(outstanding - principalSafe, 0);
+    const willBePaidOff = remaining <= 0 && principalSafe > 0;
+
+    return (
+      <div onClick={() => setLoanPaymentLoan(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.3 · Loan Repayment</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Bayar / Tebus Pinjaman</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>{loanPaymentLoan.namaBarang || "Pinjaman"} · sisa pokok {formatFull(outstanding)}</div>
+            </div>
+            <button onClick={() => setLoanPaymentLoan(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px" }}>
+            <select value={loanPaymentForm.walletId} onChange={e => setLoanPaymentForm(f => ({ ...f, walletId: e.target.value }))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+              <option value="">Pilih wallet sumber pembayaran</option>
+              {paymentSources.map(sd => <option key={sd.id} value={sd.id}>{sd.icon} {sd.name} · saldo {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+            </select>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <input placeholder="Pokok dibayar" value={loanPaymentForm.principal} onChange={e => setLoanPaymentForm(f => ({ ...f, principal: e.target.value }))} style={inputStyle} />
+              <input placeholder="Bunga / biaya" value={loanPaymentForm.fee} onChange={e => setLoanPaymentForm(f => ({ ...f, fee: e.target.value }))} style={inputStyle} />
+            </div>
+
+            <input type="date" value={loanPaymentForm.date} onChange={e => setLoanPaymentForm(f => ({ ...f, date: e.target.value }))} style={inputStyle} />
+            <input placeholder="Catatan opsional" value={loanPaymentForm.note} onChange={e => setLoanPaymentForm(f => ({ ...f, note: e.target.value }))} style={inputStyle} />
+          </div>
+
+          <div style={{ marginTop: "14px", display: "grid", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                <div style={{ fontSize: "10px", color: "#fca5a5", marginBottom: "4px" }}>Wallet Keluar</div>
+                <div style={{ fontSize: "15px", fontWeight: 900, color: "#fca5a5" }}>{formatFull(totalPaid)}</div>
+              </div>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                <div style={{ fontSize: "10px", color: "#86efac", marginBottom: "4px" }}>Sisa Pokok</div>
+                <div style={{ fontSize: "15px", fontWeight: 900, color: "#86efac" }}>{formatFull(remaining)}</div>
+              </div>
+            </div>
+            <div style={{ padding: "12px", borderRadius: "14px", background: willBePaidOff ? "rgba(16,185,129,0.12)" : "rgba(245,158,11,0.10)", color: willBePaidOff ? "#86efac" : "#fbbf24", fontSize: "12px", lineHeight: 1.6, fontWeight: 800 }}>
+              {willBePaidOff ? "✅ Pinjaman akan lunas dan jaminan dilepas." : "⚠️ Pembayaran sebagian. Pinjaman tetap aktif sampai sisa pokok Rp 0."}
+            </div>
+            {feePaid > 0 && (
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(239,68,68,0.08)", color: "#fca5a5", fontSize: "12px", lineHeight: 1.6 }}>
+                Bunga/biaya {formatFull(feePaid)} akan dicatat sebagai expense agar tidak bercampur dengan pokok pinjaman.
+              </div>
+            )}
+          </div>
+
+          <button onClick={repayLoan} disabled={!loanPaymentForm.walletId || !principalPaid} style={{ width: "100%", marginTop: "16px", padding: "14px", borderRadius: "16px", border: "none", background: (!loanPaymentForm.walletId || !principalPaid) ? "rgba(255,255,255,0.10)" : "linear-gradient(135deg,#10b981,#059669)", color: "#fff", fontSize: "15px", fontWeight: 900, cursor: (!loanPaymentForm.walletId || !principalPaid) ? "not-allowed" : "pointer" }}>
+            Simpan Pembayaran
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const TransactionDetailModal = () => {
     if (!selectedTransaction) return null;
     const tx = selectedTransaction;
@@ -3354,15 +3558,15 @@ export default function App() {
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.2</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.3</div>
               <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
-                Gadai sekarang menjadi submodul Pinjaman. Pencairan pinjaman sudah terhubung ke Sumber Dana: wallet bertambah dan kewajiban pinjaman juga tercatat. Pelunasan detail pokok, bunga/biaya, dan jaminan aset akan disempurnakan pada Phase 6.3.
+                Gadai sekarang menjadi submodul Pinjaman. Pencairan, pembayaran pokok, bunga/biaya, pembatalan pencairan, dan pelepasan jaminan mulai terhubung ke Financial Engine agar tidak double count.
               </div>
               <div style={{ marginTop: "12px", display: "grid", gap: "8px" }}>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "12px", fontWeight: 800 }}>✅ Pencairan pinjaman: Wallet naik + Liability naik</div>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(239,68,68,0.10)", color: "#fca5a5", fontSize: "12px", fontWeight: 800 }}>✅ Pelunasan: Wallet turun + Liability turun + bunga/biaya jadi expense</div>
-                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 800 }}>⚠️ Catatan: Phase 6.2 mengaktifkan pencairan ke wallet. Pelunasan detail akan masuk Phase 6.3.</div>
+                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 800 }}>✅ Phase 6.3: tombol Bayar/Tebus mengurangi wallet, mengurangi pokok pinjaman, dan memisahkan bunga/biaya sebagai expense.</div>
               </div>
             </div>
 
@@ -3474,7 +3678,7 @@ export default function App() {
               const { tglJatuh, sisa } = hitungSisaHari(g.tanggalGadai, g.tenor);
               const tglJatuhStr = tglJatuh.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
               const statusColor = g.status === "lunas" ? "#34d399" : g.status === "lelang" ? "#f87171" : sisa <= 7 ? "#f87171" : sisa <= 30 ? "#fbbf24" : "#a5b4fc";
-              const statusLabel = g.status === "lunas" ? "\u2705 Lunas" : g.status === "lelang" ? "\uD83D\uDD34 Dilelang" : sisa <= 0 ? "\u26A0 Jatuh Tempo!" : sisa <= 7 ? "? " + sisa + " hari lagi" : sisa <= 30 ? "? " + sisa + " hari lagi" : "? " + sisa + " hari lagi";
+              const statusLabel = g.status === "lunas" ? "✅ Lunas" : g.status === "lelang" ? "🔴 Dilelang" : g.status === "dibatalkan" ? "↩️ Dibatalkan" : sisa <= 0 ? "⚠️ Jatuh Tempo!" : "⏳ " + sisa + " hari lagi";
 
               return (
                 <div key={g.id} style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid " + (g.status === "aktif" && sisa <= 7 ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.06)") }}>
@@ -3501,6 +3705,7 @@ export default function App() {
                     <div style={{ background: "rgba(16,185,129,0.1)", borderRadius: "8px", padding: "8px" }}>
                       <div style={{ fontSize: "9px", color: "#34d399", marginBottom: "2px" }}>Pinjaman</div>
                       <div style={{ fontSize: "12px", fontWeight: 700, color: "#34d399" }}>{formatRupiah(g.uangPinjaman)}</div>
+                      {g.outstandingPrincipal !== undefined && <div style={{ fontSize: "9px", color: "#86efac", marginTop: "2px" }}>Sisa {formatRupiah(g.outstandingPrincipal)}</div>}
                     </div>
                     <div style={{ background: "rgba(239,68,68,0.1)", borderRadius: "8px", padding: "8px" }}>
                       <div style={{ fontSize: "9px", color: "#f87171", marginBottom: "2px" }}>Total Lunas</div>
@@ -3511,8 +3716,9 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div style={{ fontSize: "11px", color: "#555" }}>Jatuh tempo: <span style={{ color: "#e8e8f0" }}>{tglJatuhStr}</span></div>
                     {currentUser === ADMIN_USER && g.status === "aktif" && (
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button onClick={() => updateGadaiStatus(g.id, "lunas")} style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>✅ Lunas</button>
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <button onClick={() => openLoanPayment(g)} style={{ background: "rgba(16,185,129,0.2)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>💳 Bayar / Tebus</button>
+                        <button onClick={() => cancelLoanDisbursement(g)} style={{ background: "rgba(99,102,241,0.16)", border: "1px solid rgba(99,102,241,0.35)", color: "#c7d2fe", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>↩ Batal</button>
                         <button onClick={() => updateGadaiStatus(g.id, "lelang")} style={{ background: "rgba(239,68,68,0.2)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171", borderRadius: "8px", padding: "5px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>⚠️ Lelang</button>
                       </div>
                     )}
@@ -3615,6 +3821,7 @@ export default function App() {
         {GoalCashFundingModal()}
         {GoalAssetFundingModal()}
         {LoanGadaiModal()}
+        {LoanRepaymentModal()}
         {CategoryDetailModal()}
         {TransactionDetailModal()}
 
