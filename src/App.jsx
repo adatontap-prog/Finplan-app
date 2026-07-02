@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 4 Wallet v2";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5 Activity Log + Recycle Bin";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -103,6 +103,7 @@ const PERMISSIONS_V110 = [
   { id: "sync", label: "Sync Google Sheets", icon: "📊", group: "Backup" },
   { id: "reports", label: "Email Report", icon: "✉️", group: "Backup" },
   { id: "backup", label: "Export Backup", icon: "💾", group: "Backup" },
+  { id: "recycle_bin", label: "Recycle Bin", icon: "♻️", group: "System" },
   { id: "settings", label: "Settings", icon: "⚙️", group: "Core" },
 ];
 
@@ -397,6 +398,9 @@ export default function App() {
   const [familyForm, setFamilyForm] = useState({ name: "", role: "Member", avatar: "👤", status: "active" });
   const [familyStatus, setFamilyStatus] = useState("");
   const [activityLog, setActivityLog] = useState([]);
+  const [recycleBin, setRecycleBin] = useState([]);
+  const [showRecycleBin, setShowRecycleBin] = useState(false);
+  const [recycleStatus, setRecycleStatus] = useState("");
   const [rolePermissions, setRolePermissions] = useState(ROLE_PERMISSION_PRESET_V110);
   const [permissionsLoaded, setPermissionsLoaded] = useState(false);
   const [familyPanel, setFamilyPanel] = useState("members");
@@ -504,9 +508,21 @@ export default function App() {
       collection(db, "activityLog"),
       snap => {
         const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setActivityLog(items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 12));
+        setActivityLog(items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 50));
       },
       err => console.error("activityLog listener error:", err)
+    );
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, "recycleBin"),
+      snap => {
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        setRecycleBin(items.sort((a, b) => String(b.deletedAt || b.createdAt || "").localeCompare(String(a.deletedAt || a.createdAt || ""))));
+      },
+      err => console.error("recycleBin listener error:", err)
     );
     return () => unsub();
   }, []);
@@ -803,6 +819,106 @@ export default function App() {
     }
   }
 
+  function getRecycleExpiryDate(days = 30) {
+    return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  function getRecycleTypeLabel(type) {
+    const labels = {
+      transaction: "Transaksi",
+      investment: "Investasi",
+      gadai: "Gadai",
+      wallet: "Sumber Dana",
+      familyMember: "Anggota Keluarga",
+      goal: "Goal",
+    };
+    return labels[type] || type || "Data";
+  }
+
+  function getRecycleItemTitle(item) {
+    const data = item?.data || {};
+    if (item?.type === "transaction") {
+      const cat = getCategoryInfo(data.category);
+      return (data.type === "income" ? "Pemasukan" : "Pengeluaran") + " · " + (cat.label || "Transaksi") + " · " + formatRupiah(data.amount || 0);
+    }
+    if (item?.type === "investment") return "Investasi " + (data.ticker || data.assetType || data.note || item.originalId || "");
+    if (item?.type === "gadai") return "Gadai " + (data.namaBarang || item.originalId || "");
+    if (item?.type === "wallet") return "Sumber Dana " + (data.name || item.originalId || "");
+    if (item?.type === "familyMember") return "Anggota " + (data.name || item.originalId || "");
+    return getRecycleTypeLabel(item?.type) + " " + (item?.originalId || "");
+  }
+
+  function showRecycleMessage(message) {
+    setRecycleStatus(message || "");
+    if (message) setTimeout(() => setRecycleStatus(""), 4500);
+  }
+
+  async function softDeleteRecord({ type, collectionName, id, data, relatedLedger = [], detail }) {
+    const now = new Date().toISOString();
+    await addDoc(collection(db, "recycleBin"), {
+      type,
+      collectionName,
+      originalId: id,
+      data: data || {},
+      relatedLedger: relatedLedger || [],
+      deletedBy: currentUser || "System",
+      deletedAt: now,
+      expiresAt: getRecycleExpiryDate(30),
+      status: "active",
+    });
+    await deleteDoc(doc(db, collectionName, id));
+    for (const l of relatedLedger || []) await deleteDoc(doc(db, "sumberDanaLedger", l.id));
+    await addActivityLog(type + "_soft_deleted", detail || ("Masuk Recycle Bin: " + id));
+  }
+
+  async function restoreRecycleItem(item) {
+    if (!isOwner && item.deletedBy !== currentUser) {
+      showRecycleMessage("⚠️ Restore hanya bisa dilakukan Owner atau penghapus data.");
+      return;
+    }
+    if (!item?.collectionName || !item?.originalId) return;
+    await setDoc(doc(db, item.collectionName, item.originalId), {
+      ...(item.data || {}),
+      restoredAt: new Date().toISOString(),
+      restoredBy: currentUser || "System",
+    }, { merge: true });
+    for (const l of item.relatedLedger || []) {
+      const ledgerId = l.id || ("restored_" + Date.now());
+      const { id, ...ledgerData } = l;
+      await setDoc(doc(db, "sumberDanaLedger", ledgerId), {
+        ...ledgerData,
+        restoredAt: new Date().toISOString(),
+        restoredBy: currentUser || "System",
+      }, { merge: true });
+    }
+    await deleteDoc(doc(db, "recycleBin", item.id));
+    await addActivityLog(item.type + "_restored", "Restore dari Recycle Bin: " + getRecycleItemTitle(item));
+    showRecycleMessage("✅ Data berhasil direstore.");
+  }
+
+  async function permanentDeleteRecycleItem(item) {
+    if (!isOwner) {
+      showRecycleMessage("⚠️ Hapus permanen hanya bisa dilakukan Owner.");
+      return;
+    }
+    if (!window.confirm("Hapus permanen item ini dari Recycle Bin? Data tidak bisa direstore.")) return;
+    await deleteDoc(doc(db, "recycleBin", item.id));
+    await addActivityLog(item.type + "_permanent_deleted", "Hapus permanen dari Recycle Bin: " + getRecycleItemTitle(item));
+    showRecycleMessage("🗑 Data dihapus permanen dari Recycle Bin.");
+  }
+
+  async function purgeExpiredRecycleItems() {
+    if (!isOwner) {
+      showRecycleMessage("⚠️ Purge expired hanya untuk Owner.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const expired = recycleBin.filter(item => item.expiresAt && item.expiresAt < now);
+    for (const item of expired) await deleteDoc(doc(db, "recycleBin", item.id));
+    await addActivityLog("recycle_bin_purged", "Purge expired Recycle Bin: " + expired.length + " item");
+    showRecycleMessage("✅ " + expired.length + " item expired dibersihkan.");
+  }
+
   function resetFamilyForm() {
     setShowFamilyForm(false);
     setEditingFamilyMemberId(null);
@@ -1039,6 +1155,7 @@ export default function App() {
     await logLedger(transactionSDId, form.type === "income" ? amt : -amt, (form.type === "income" ? "Pemasukan" : "Pengeluaran") + ": " + (form.note || CATEGORIES.find(c=>c.id===form.category)?.label||""), "transaction", docRef.id);
     // Sync ke Google Sheets
     syncToSheets("addTransaction", { ...txData, id: docRef.id });
+    await addActivityLog("transaction_created", (form.type === "income" ? "Tambah pemasukan" : "Tambah pengeluaran") + ": " + formatRupiah(amt));
     setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] }); setAmountDisplay(""); setTransactionSDId("");
   }
 
@@ -1081,14 +1198,29 @@ export default function App() {
       showAccessNotice("Role " + currentRole + " tidak punya izin Hapus Transaksi.");
       return false;
     }
-    await deleteDoc(doc(db, "transactions", id));
+    const tx = transactions.find(t => t.id === id);
+    if (!tx) return false;
     const relatedLedger = sumberDanaLedger.filter(l => l.refType === "transaction" && l.refId === id);
-    for (const l of relatedLedger) await deleteDoc(doc(db, "sumberDanaLedger", l.id));
-    syncToSheets("deleteTransaction", { id });
+    await softDeleteRecord({
+      type: "transaction",
+      collectionName: "transactions",
+      id,
+      data: tx,
+      relatedLedger,
+      detail: "Hapus transaksi ke Recycle Bin: " + formatRupiah(tx.amount || 0),
+    });
+    syncToSheets("deleteTransaction", { id, softDelete: true });
     return true;
   }
   async function deleteInvestment(id) {
-    await deleteDoc(doc(db, "investments", id));
+    if (!isOwner && !hasPermission("investments")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin menghapus investasi.");
+      return false;
+    }
+    const inv = investments.find(i => i.id === id);
+    if (!inv) return false;
+    await softDeleteRecord({ type: "investment", collectionName: "investments", id, data: inv, detail: "Hapus investasi ke Recycle Bin" });
+    return true;
   }
 
   // ===== GADAI FUNCTIONS =====
@@ -1140,7 +1272,16 @@ export default function App() {
     syncToSheets("updateGadai", { id, status });
   }
 
-  async function deleteGadai(id) { await deleteDoc(doc(db, "gadai", id)); }
+  async function deleteGadai(id) {
+    if (!isOwner && !hasPermission("gadai")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin menghapus gadai.");
+      return false;
+    }
+    const item = gadaiList.find(g => g.id === id);
+    if (!item) return false;
+    await softDeleteRecord({ type: "gadai", collectionName: "gadai", id, data: item, detail: "Hapus gadai ke Recycle Bin: " + (item.namaBarang || id) });
+    return true;
+  }
 
   // ===== SUMBER DANA (FUNDING SOURCE) FUNCTIONS =====
   function calcSumberDanaBalance(sdId) {
@@ -1615,13 +1756,20 @@ export default function App() {
               {hasPermission("backup") && <SettingButton onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} tone="amber">💾 Export Backup JSON</SettingButton>}
             </Section>
 
+            <Section title="Sistem & Keamanan Data">
+              {(isOwner || hasPermission("recycle_bin")) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.16)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
+                Data yang dihapus masuk Recycle Bin selama 30 hari. Restore dan hapus permanen dikontrol oleh Owner.
+              </div>
+            </Section>
+
             {!isOwner && <div style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.18)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Mode {currentRole}: menu mengikuti Permission Manager. Akses dapat diubah oleh Owner.</div>}
             {!permissionsLoaded && <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", color: "#c7d2fe", fontSize: "12px", fontWeight: 800 }}>Memuat permission dari Firebase...</div>}
             <SettingButton onClick={lockApp} tone="red">🚪 Lock / Logout</SettingButton>
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 3.2. Settings dirapikan: fitur utama tetap di navigasi utama, pengaturan tetap di Settings.
+            FinPlan v1.1.0 Family Edition Phase 5. Activity log diperluas dan delete penting masuk Recycle Bin 30 hari.
           </div>
         </div>
       </div>
@@ -1702,6 +1850,63 @@ export default function App() {
   );
 
 
+
+
+  const RecycleBinModal = () => {
+    if (!showRecycleBin) return null;
+    const now = new Date().toISOString();
+    const activeItems = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= now);
+    const expiredItems = recycleBin.filter(item => item.expiresAt && item.expiresAt < now);
+    return (
+      <div onClick={() => setShowRecycleBin(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#f59e0b", fontWeight: 900, textTransform: "uppercase" }}>Recycle Bin</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Undo Delete 30 Hari</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>{activeItems.length} aktif · {expiredItems.length} expired</div>
+            </div>
+            <button onClick={() => setShowRecycleBin(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          {recycleStatus && <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.18)", color: "#86efac", fontSize: "12px", fontWeight: 900, marginBottom: "12px" }}>{recycleStatus}</div>}
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "14px" }}>
+            Transaksi, investasi, dan gadai yang dihapus tidak langsung hilang. Data masuk ke Recycle Bin dan bisa direstore sebelum 30 hari.
+          </div>
+
+          {isOwner && expiredItems.length > 0 && <button onClick={purgeExpiredRecycleItems} style={{ width: "100%", padding: "12px", borderRadius: "14px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900, marginBottom: "12px" }}>🧹 Bersihkan item expired</button>}
+
+          {activeItems.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "34px 0", color: "#64748b" }}>
+              <div style={{ fontSize: "42px", marginBottom: "10px" }}>♻️</div>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#94a3b8" }}>Recycle Bin kosong</div>
+              <div style={{ fontSize: "12px", marginTop: "6px" }}>Data yang dihapus akan muncul di sini.</div>
+            </div>
+          ) : activeItems.map(item => {
+            const title = getRecycleItemTitle(item);
+            const deletedDate = item.deletedAt ? new Date(item.deletedAt).toLocaleDateString("id-ID") : "-";
+            const expiresDate = item.expiresAt ? new Date(item.expiresAt).toLocaleDateString("id-ID") : "-";
+            return (
+              <div key={item.id} style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>{getRecycleTypeLabel(item.type)}</div>
+                    <div style={{ fontSize: "14px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>{title}</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Dihapus: {deletedDate} oleh {item.deletedBy || "System"}<br/>Expired: {expiresDate}</div>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: isOwner ? "1fr 1fr" : "1fr", gap: "8px", marginTop: "12px" }}>
+                  <button onClick={() => restoreRecycleItem(item)} style={{ padding: "10px", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900 }}>↩ Restore</button>
+                  {isOwner && <button onClick={() => permanentDeleteRecycleItem(item)} style={{ padding: "10px", borderRadius: "12px", border: "1px solid rgba(248,113,113,0.25)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontWeight: 900 }}>🗑 Permanen</button>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
 
   const AddTransactionModal = () => {
     if (!showForm) return null;
@@ -2326,8 +2531,8 @@ export default function App() {
 
             {familyPanel === "activity" && <>
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.22)" }}>
-              <div style={{ fontSize: "13px", fontWeight: 900, color: "#7dd3fc", marginBottom: "8px" }}>📝 Activity Log Dasar</div>
-              {activityLog.length === 0 ? <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada aktivitas Family Edition.</div> : activityLog.slice(0, 6).map(item => (
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#7dd3fc", marginBottom: "8px" }}>📝 Activity Log Lengkap</div>
+              {activityLog.length === 0 ? <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada aktivitas tercatat.</div> : activityLog.slice(0, 12).map(item => (
                 <div key={item.id} style={{ padding: "9px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ fontSize: "12px", fontWeight: 900, color: "#e0f2fe" }}>{item.actor || "System"} · {item.action}</div>
                   <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{item.detail}</div>
@@ -2344,7 +2549,7 @@ export default function App() {
                 <div>✅ Phase 3.1: User switcher aktif dan izin tambah/hapus transaksi mengikuti permission.</div>
                 <div>✅ Phase 3.2: Settings dirapikan; Tabungan/Goal dan Investasi keluar dari Settings dan tetap di navigasi utama.</div>
                 <div>✅ Phase 4: Wallet v2: Rename, Archive, Merge Sumber Dana.</div>
-                <div>⏭ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
+                <div>✅ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
               </div>
             </div>
             </>}
@@ -2812,6 +3017,7 @@ export default function App() {
         {AddTransactionModal()}
         {SumberDanaModal()}
         {SumberDanaDetailModal()}
+        {RecycleBinModal()}
         {CategoryDetailModal()}
         {TransactionDetailModal()}
 
