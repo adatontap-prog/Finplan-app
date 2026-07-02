@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.1 Financial Engine Foundation";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.2 Loan Engine Foundation";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -413,6 +413,7 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [gadaiList, setGadaiList] = useState([]);
   const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
+  const [gadaiSDId, setGadaiSDId] = useState("");
   const [calcForm, setCalcForm] = useState({ beratGram: "", kadar: "24", tenor: "120" });
   const [sumberDanaList, setSumberDanaList] = useState([]);
   const [sumberDanaLedger, setSumberDanaLedger] = useState([]);
@@ -820,6 +821,7 @@ export default function App() {
     setShowAssetConvert(null);
     setShowGadaiForm(false);
     setShowGadaiCalc(false);
+    setGadaiSDId("");
     setShowSDForm(false);
     setShowUserSelect(false);
     setSelectedTransaction(null);
@@ -1423,24 +1425,52 @@ export default function App() {
     const berat = parseFloat(gadaiForm.beratGram);
     const harga = parseAmount(gadaiForm.hargaEmas) || ((marketPrices ? marketPrices.goldPerGram : 1680000) || 1680000);
     if (!berat || !gadaiForm.namaBarang) return;
+    if (!gadaiSDId) {
+      showAccessNotice("Pilih Sumber Dana tujuan pencairan pinjaman.");
+      return;
+    }
+    const sd = activeFundingSourceOptions.find(s => s.id === gadaiSDId);
+    if (!sd) {
+      showAccessNotice("Sumber Dana tidak aktif/tidak ditemukan.");
+      return;
+    }
     const hasil = hitungGadai(berat, gadaiForm.kadar, harga, parseInt(gadaiForm.tenor));
     const gadaiData = {
-      namaBarang: gadaiForm.namaBarang, beratGram: berat, kadar: gadaiForm.kadar,
+      namaBarang: gadaiForm.namaBarang,
+      loanType: "gadai",
+      movementType: "loan_disbursement",
+      liabilityType: "secured_loan",
+      sumberDanaId: gadaiSDId,
+      sumberDanaName: sd.name,
+      principal: hasil.uangPinjaman,
+      outstandingPrincipal: hasil.uangPinjaman,
+      collateralStatus: "pledged",
+      beratGram: berat, kadar: gadaiForm.kadar,
       hargaEmasGadai: harga, nilaiTaksiran: hasil.nilaiTaksiran,
       uangPinjaman: hasil.uangPinjaman, totalBunga: hasil.totalBunga,
       totalLunas: hasil.totalLunas, tanggalGadai: gadaiForm.tanggalGadai,
       tenor: parseInt(gadaiForm.tenor), catatan: gadaiForm.catatan,
-      status: "aktif", createdAt: new Date().toISOString(),
+      status: "aktif", createdAt: new Date().toISOString(), createdBy: currentUser,
     };
     const docRef = await addDoc(collection(db, "gadai"), gadaiData);
+    await logLedger(gadaiSDId, hasil.uangPinjaman, "Pencairan pinjaman gadai: " + gadaiForm.namaBarang, "loan_disbursement", docRef.id);
+    await addActivityLog("loan_disbursement", currentUser + " mencatat pencairan gadai " + gadaiForm.namaBarang + " sebesar " + formatFull(hasil.uangPinjaman) + " ke " + sd.name + ". Ini dicatat sebagai pinjaman/kewajiban, bukan income.");
     syncToSheets("addGadai", { ...gadaiData, id: docRef.id });
     setShowGadaiForm(false);
+    setGadaiSDId("");
     setGadaiForm({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   }
 
   async function updateGadaiStatus(id, status) {
     const { updateDoc } = await import("firebase/firestore");
-    await updateDoc(doc(db, "gadai", id), { status, updatedAt: new Date().toISOString() });
+    const item = gadaiList.find(g => g.id === id);
+    await updateDoc(doc(db, "gadai", id), {
+      status,
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+      collateralStatus: status === "lunas" ? "released" : status === "lelang" ? "lost" : "pledged",
+    });
+    await addActivityLog("loan_status_updated", (item?.namaBarang || id) + " diubah status menjadi " + status + ". Catatan: Phase 6.2 baru mengubah status; pelunasan detail pokok/bunga akan masuk Phase 6.3.");
     syncToSheets("updateGadai", { id, status });
   }
 
@@ -2547,6 +2577,92 @@ export default function App() {
     );
   };
 
+  const LoanGadaiModal = () => {
+    if (!showGadaiForm) return null;
+    const loanFundingSources = myFundingSources.length > 0 ? myFundingSources : activeFundingSourceOptions;
+    const harga = parseAmount(gadaiForm.hargaEmas) || ((marketPrices ? marketPrices.goldPerGram : 1680000) || 1680000);
+    const berat = parseFloat(gadaiForm.beratGram) || 0;
+    const hasil = berat ? hitungGadai(berat, gadaiForm.kadar, harga, parseInt(gadaiForm.tenor)) : null;
+
+    return (
+      <div onClick={() => setShowGadaiForm(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.2 · Loan Engine</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Catat Pinjaman Gadai</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Pencairan gadai menambah wallet dan menambah kewajiban. Ini bukan pemasukan murni.</div>
+            </div>
+            <button onClick={() => { setShowGadaiForm(false); setGadaiSDId(""); }} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gap: "10px" }}>
+            <input placeholder="Nama barang jaminan, contoh: LM Antam 5gr" value={gadaiForm.namaBarang} onChange={e => setGadaiForm(f => ({ ...f, namaBarang: e.target.value }))} style={inputStyle} />
+
+            <select value={gadaiSDId} onChange={e => setGadaiSDId(e.target.value)} style={{ ...inputStyle, color: "#e8e8f0" }}>
+              <option value="">Pilih wallet tujuan pencairan</option>
+              {loanFundingSources.map(sd => <option key={sd.id} value={sd.id}>{sd.icon} {sd.name} · saldo {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+            </select>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <input placeholder="Berat gram" value={gadaiForm.beratGram} onChange={e => setGadaiForm(f => ({ ...f, beratGram: e.target.value }))} style={inputStyle} />
+              <select value={gadaiForm.kadar} onChange={e => setGadaiForm(f => ({ ...f, kadar: e.target.value }))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                <option value="24">24K</option>
+                <option value="22">22K</option>
+                <option value="18">18K</option>
+                <option value="14">14K</option>
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+              <input placeholder="Harga emas/gram (kosongkan auto)" value={gadaiForm.hargaEmas} onChange={e => setGadaiForm(f => ({ ...f, hargaEmas: e.target.value }))} style={inputStyle} />
+              <select value={gadaiForm.tenor} onChange={e => setGadaiForm(f => ({ ...f, tenor: e.target.value }))} style={{ ...inputStyle, color: "#e8e8f0" }}>
+                <option value="15">15 hari</option>
+                <option value="30">30 hari</option>
+                <option value="60">60 hari</option>
+                <option value="90">90 hari</option>
+                <option value="120">120 hari</option>
+              </select>
+            </div>
+
+            <input type="date" value={gadaiForm.tanggalGadai} onChange={e => setGadaiForm(f => ({ ...f, tanggalGadai: e.target.value }))} style={inputStyle} />
+            <input placeholder="Catatan opsional" value={gadaiForm.catatan} onChange={e => setGadaiForm(f => ({ ...f, catatan: e.target.value }))} style={inputStyle} />
+          </div>
+
+          {hasil && (
+            <div style={{ marginTop: "14px", display: "grid", gap: "8px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Nilai Taksiran</div>
+                  <div style={{ fontSize: "15px", fontWeight: 900 }}>{formatFull(hasil.nilaiTaksiran)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                  <div style={{ fontSize: "10px", color: "#86efac", marginBottom: "4px" }}>Masuk Wallet</div>
+                  <div style={{ fontSize: "15px", fontWeight: 900, color: "#86efac" }}>{formatFull(hasil.uangPinjaman)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.2)" }}>
+                  <div style={{ fontSize: "10px", color: "#fca5a5", marginBottom: "4px" }}>Liability / Pokok</div>
+                  <div style={{ fontSize: "15px", fontWeight: 900, color: "#fca5a5" }}>{formatFull(hasil.uangPinjaman)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                  <div style={{ fontSize: "10px", color: "#fbbf24", marginBottom: "4px" }}>Estimasi Bunga</div>
+                  <div style={{ fontSize: "15px", fontWeight: 900, color: "#fbbf24" }}>{formatFull(hasil.totalBunga)}</div>
+                </div>
+              </div>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.12)", color: "#c7d2fe", fontSize: "12px", lineHeight: 1.6 }}>
+                Net worth tidak otomatis naik karena wallet bertambah diimbangi kewajiban pinjaman. Bunga/biaya akan dihitung terpisah saat pelunasan di Phase 6.3.
+              </div>
+            </div>
+          )}
+
+          <button onClick={addGadai} disabled={!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId} style={{ width: "100%", marginTop: "16px", padding: "14px", borderRadius: "16px", border: "none", background: (!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId) ? "rgba(255,255,255,0.10)" : "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "15px", fontWeight: 900, cursor: (!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId) ? "not-allowed" : "pointer" }}>
+            Catat Pencairan Pinjaman
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   const TransactionDetailModal = () => {
     if (!selectedTransaction) return null;
     const tx = selectedTransaction;
@@ -3238,15 +3354,15 @@ export default function App() {
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.1</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.2</div>
               <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
-                Gadai sekarang diposisikan sebagai bagian dari Pinjaman. Uang dari gadai bukan pemasukan murni: wallet bertambah, tetapi kewajiban juga bertambah. Pada Phase 6 berikutnya, Pinjaman akan memisahkan pokok, bunga/biaya, jaminan aset, dan pelunasan agar tidak terjadi double count.
+                Gadai sekarang menjadi submodul Pinjaman. Pencairan pinjaman sudah terhubung ke Sumber Dana: wallet bertambah dan kewajiban pinjaman juga tercatat. Pelunasan detail pokok, bunga/biaya, dan jaminan aset akan disempurnakan pada Phase 6.3.
               </div>
               <div style={{ marginTop: "12px", display: "grid", gap: "8px" }}>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "12px", fontWeight: 800 }}>✅ Pencairan pinjaman: Wallet naik + Liability naik</div>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(239,68,68,0.10)", color: "#fca5a5", fontSize: "12px", fontWeight: 800 }}>✅ Pelunasan: Wallet turun + Liability turun + bunga/biaya jadi expense</div>
-                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 800 }}>⚠️ Catatan: form di bawah masih submodul Gadai sementara sampai Loan Engine penuh aktif.</div>
+                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 800 }}>⚠️ Catatan: Phase 6.2 mengaktifkan pencairan ke wallet. Pelunasan detail akan masuk Phase 6.3.</div>
               </div>
             </div>
 
@@ -3366,6 +3482,7 @@ export default function App() {
                     <div>
                       <div style={{ fontSize: "15px", fontWeight: 800 }}>{g.namaBarang}</div>
                       <div style={{ fontSize: "11px", color: "#555", marginTop: "2px" }}>{g.beratGram}gr • {g.kadar}K • Digadai {g.tanggalGadai}</div>
+                      {g.sumberDanaName && <div style={{ fontSize: "11px", color: "#86efac", marginTop: "2px" }}>Masuk wallet: {g.sumberDanaName}</div>}
                       {g.catatan && <div style={{ fontSize: "11px", color: "#666", marginTop: "2px" }}>{g.catatan}</div>}
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px" }}>
@@ -3406,7 +3523,7 @@ export default function App() {
 
             {/* Tombol Catat Gadai */}
             {currentUser === ADMIN_USER && (
-              <button onClick={() => setShowGadaiForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Catat Gadai Baru</button>
+              <button onClick={() => setShowGadaiForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Catat Pinjaman Gadai</button>
             )}
           </div>
         )}
@@ -3497,6 +3614,7 @@ export default function App() {
         {RecycleBinModal()}
         {GoalCashFundingModal()}
         {GoalAssetFundingModal()}
+        {LoanGadaiModal()}
         {CategoryDetailModal()}
         {TransactionDetailModal()}
 
