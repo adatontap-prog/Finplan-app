@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4.1 Goal Cash Undo";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4.2 UI Cleanup";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -1955,7 +1955,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5.4.1. Alokasi tunai dan aset Goal bisa dibatalkan dengan pengembalian ke wallet.
+            FinPlan v1.1.0 Family Edition Phase 5.4.2. UI alokasi Goal dan Activity Log dirapikan; pembatalan tunai/aset tetap aktif.
           </div>
         </div>
       </div>
@@ -1963,29 +1963,64 @@ export default function App() {
   };
 
 
+  const getActivityActionMeta = (action) => {
+    const map = {
+      goal_cash_allocated: { label: "Alokasi Tunai Goal", icon: "💵", tone: "green" },
+      goal_cash_cancelled: { label: "Batal Alokasi Tunai", icon: "↩️", tone: "red" },
+      goal_asset_allocated: { label: "Alokasi Aset Goal", icon: "🏦", tone: "green" },
+      goal_asset_cancelled: { label: "Batal Alokasi Aset", icon: "↩️", tone: "red" },
+      permissions_updated: { label: "Permission Diubah", icon: "🛡️", tone: "purple" },
+      wallet_created: { label: "Wallet Dibuat", icon: "🏦", tone: "green" },
+      wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
+      wallet_merged: { label: "Wallet Digabung", icon: "🔄", tone: "amber" },
+      wallet_deleted: { label: "Wallet Dihapus", icon: "🗑️", tone: "red" },
+      transaction_added: { label: "Transaksi Ditambah", icon: "➕", tone: "green" },
+      transaction_deleted: { label: "Transaksi Dihapus", icon: "🗑️", tone: "red" },
+      transaction_restored: { label: "Transaksi Dipulihkan", icon: "♻️", tone: "green" },
+    };
+    const item = map[action] || { label: String(action || "Aktivitas").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()), icon: "📝", tone: "default" };
+    const colors = {
+      green: { bg: "rgba(16,185,129,0.12)", border: "rgba(16,185,129,0.25)", color: "#86efac" },
+      red: { bg: "rgba(248,113,113,0.12)", border: "rgba(248,113,113,0.25)", color: "#fca5a5" },
+      purple: { bg: "rgba(99,102,241,0.14)", border: "rgba(99,102,241,0.28)", color: "#c7d2fe" },
+      amber: { bg: "rgba(245,158,11,0.12)", border: "rgba(245,158,11,0.25)", color: "#fde68a" },
+      default: { bg: "rgba(255,255,255,0.06)", border: "rgba(255,255,255,0.10)", color: "#cbd5e1" },
+    };
+    return { ...item, ...(colors[item.tone] || colors.default) };
+  };
+
   const ActivityLogModal = () => {
     if (!showActivityLogModal || !hasPermission("activity_log")) return null;
-    if (!isOwner) return null;
     return (
       <div onClick={() => setShowActivityLogModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
         <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", overflowX: "hidden", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Owner Audit</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Audit Log</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Activity Log</div>
-              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Ditampilkan sesuai permission Activity Log. Gunakan untuk audit perubahan penting.</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Ditampilkan sesuai permission Activity Log. Gunakan untuk audit perubahan penting.</div>
             </div>
             <button onClick={() => setShowActivityLogModal(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
           </div>
           {activityLog.length === 0 ? (
             <div style={{ padding: "18px", borderRadius: "18px", background: "rgba(255,255,255,0.04)", color: "#94a3b8", fontSize: "13px" }}>Belum ada aktivitas tercatat.</div>
-          ) : activityLog.slice(0, 50).map(item => (
-            <div key={item.id} style={{ padding: "12px 0", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "12px", fontWeight: 900, color: "#e0f2fe" }}>{item.actor || "System"} · {item.action}</div>
-              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px", lineHeight: 1.5 }}>{item.detail}</div>
-              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>{item.createdAt ? new Date(item.createdAt).toLocaleString("id-ID") : ""}</div>
-            </div>
-          ))}
+          ) : activityLog.slice(0, 50).map(item => {
+            const meta = getActivityActionMeta(item.action);
+            return (
+              <div key={item.id} style={{ padding: "12px", marginBottom: "10px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.035)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ padding: "4px 8px", borderRadius: "999px", background: meta.bg, border: "1px solid " + meta.border, color: meta.color, fontSize: "10px", fontWeight: 900 }}>{meta.icon} {meta.label}</span>
+                      <span style={{ color: "#e0f2fe", fontSize: "11px", fontWeight: 900 }}>{item.actor || "System"}</span>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "8px", lineHeight: 1.5 }}>{item.detail}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: "10px", color: "#64748b", marginTop: "8px" }}>{item.createdAt ? new Date(item.createdAt).toLocaleString("id-ID") : ""}</div>
+              </div>
+            );
+          })}
         </div>
       </div>
     );
@@ -2936,7 +2971,7 @@ export default function App() {
                 <div>✅ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
                 <div>✅ Phase 5.2: Goal UI dibuat sederhana; Activity Log mengikuti permission.</div>
                 <div>✅ Phase 5.3: +Tunai/+Aset Goal aktif, terhubung ke Sumber Dana, dan dicatat di Activity Log.</div>
-                <div>✅ Phase 5.4.1: Alokasi tunai dan aset Goal bisa dibatalkan dengan pengembalian ke wallet.</div>
+                <div>✅ Phase 5.4.2: UI Activity Log dan alokasi Goal dirapikan; pembatalan tunai/aset tetap aktif.</div>
               </div>
             </div>
             </>}
@@ -3067,14 +3102,14 @@ export default function App() {
                         <div><div style={{ fontSize: "10px", color: "#64748b" }}>Kurang</div><div style={{ fontSize: "12px", fontWeight: 900, color: remaining > 0 ? "#fca5a5" : "#86efac" }}>{formatRupiah(remaining)}</div></div>
                       </div>
 
-                      {(idrCash > 0 || holdings.length > 0) && (
+                      {(idrCash > 0 || cashAllocations.length > 0 || holdings.length > 0) && (
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-                          {idrCash > 0 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>💵 IDR total {formatRupiah(idrCash)}</span>}
+                          {idrCash > 0 && cashAllocations.length === 0 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>💵 Tunai teralokasi {formatRupiah(idrCash)}</span>}
                           {cashAllocations.slice(0, 3).map(a => {
                             const source = sumberDanaList.find(s => s.id === a.sumberDanaId);
                             const amount = Math.abs(Number(a.amount || 0));
                             return <span key={a.id} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "999px", background: "rgba(99,102,241,0.08)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>
-                              <span>💵 {formatRupiah(amount)}{source ? " · " + source.name : ""}</span>
+                              <span>💵 Tunai {formatRupiah(amount)}{source ? " · " + source.name : ""}</span>
                               {canContributeGoal() && <button onClick={() => cancelGoalCashAllocation(goal.id, a.id)} title="Batalkan alokasi tunai" style={{ border: "none", background: "rgba(248,113,113,0.14)", color: "#fca5a5", borderRadius: "999px", padding: "2px 5px", cursor: "pointer", fontSize: "9px", fontWeight: 900 }}>Batal</button>}
                             </span>;
                           })}
@@ -3083,7 +3118,7 @@ export default function App() {
                             const at = ASSET_TYPES.find(a => a.id === h.assetType);
                             const val = calcAssetValue(h, marketPrices);
                             return <span key={h.id} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>
-                              <span>{at ? at.icon : "🏦"} {h.ticker || (at ? at.label : "Aset")} {formatRupiah(val)}</span>
+                              <span>{at ? at.icon : "🏦"} Aset · {h.ticker || (at ? at.label : "Aset")} {formatRupiah(val)}</span>
                               {canContributeGoal() && h.sumberDanaId && <button onClick={() => cancelGoalAssetAllocation(goal.id, h.id)} title="Batalkan alokasi aset" style={{ border: "none", background: "rgba(248,113,113,0.14)", color: "#fca5a5", borderRadius: "999px", padding: "2px 5px", cursor: "pointer", fontSize: "9px", fontWeight: 900 }}>Batal</button>}
                             </span>;
                           })}
