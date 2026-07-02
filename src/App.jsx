@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.3 Goal Funding Actions";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4 Goal Undo + Asset Input Fix";
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -415,7 +415,7 @@ export default function App() {
   const [invForm, setInvForm] = useState({ type: "usd", amount: "", buyPrice: "", note: "", buyDate: new Date().toISOString().split("T")[0] });
   const [savingsInput, setSavingsInput] = useState("");
   const [savingsInputDisplay, setSavingsInputDisplay] = useState("");
-  const [assetForm, setAssetForm] = useState({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+  const [assetForm, setAssetForm] = useState({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
   const [amountDisplay, setAmountDisplay] = useState("");
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [filterUser, setFilterUser] = useState("semua");
@@ -1152,10 +1152,11 @@ export default function App() {
       return;
     }
     const qty = parseDecimal(assetForm.qty);
-    const buyPrice = parseDecimal(assetForm.buyPrice);
+    const rawPriceInput = parseAmount(assetForm.buyPrice) || parseDecimal(assetForm.buyPrice);
+    const valueMode = assetForm.valueMode || "total";
     if (!qty) return;
-    if (!["idr", "obligasi"].includes(assetForm.assetType) && !buyPrice) {
-      showAccessNotice("Isi harga beli/nilai IDR per unit agar nilai aset goal bisa dihitung dengan benar.");
+    if (!["idr", "obligasi"].includes(assetForm.assetType) && !rawPriceInput) {
+      showAccessNotice("Isi total nilai pembelian atau harga per unit agar nilai aset goal bisa dihitung dengan benar.");
       return;
     }
     if (!assetSDId) {
@@ -1164,7 +1165,12 @@ export default function App() {
     }
 
     const assetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
-    const buyValueIdr = ["idr","obligasi"].includes(assetForm.assetType) ? qty : qty * buyPrice;
+    const buyValueIdr = ["idr","obligasi"].includes(assetForm.assetType)
+      ? qty
+      : (valueMode === "unit" ? qty * rawPriceInput : rawPriceInput);
+    const buyPrice = ["idr","obligasi"].includes(assetForm.assetType)
+      ? 0
+      : (valueMode === "unit" ? rawPriceInput : (qty ? buyValueIdr / qty : 0));
     const source = sumberDanaList.find(s => s.id === assetSDId);
     if (!source || !isSumberDanaActive(source)) {
       showAccessNotice("Sumber Dana tidak aktif atau tidak ditemukan.");
@@ -1205,8 +1211,35 @@ export default function App() {
     syncToSheets("addSavings", { ...newHolding, goalId, goalLabel, unit: assetType?.unit || "" });
 
     setShowAssetConvert(null);
-    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
     setAssetSDId("");
+  }
+
+  async function cancelGoalAssetAllocation(goalId, holdingId) {
+    if (!canContributeGoal()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membatalkan alokasi aset Goal.");
+      return;
+    }
+    const existing = savingsHoldings[goalId] || [];
+    const holding = existing.find(h => String(h.id) === String(holdingId));
+    if (!holding) return;
+    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const assetType = ASSET_TYPES.find(a => a.id === holding.assetType);
+    const sourceId = holding.sumberDanaId;
+    const source = sumberDanaList.find(s => s.id === sourceId);
+    const refundValue = holding.costBasisIdr || (["idr","obligasi"].includes(holding.assetType) ? (holding.idrValue || holding.qty || 0) : ((holding.qty || 0) * (holding.buyPrice || 0)));
+    const ok = window.confirm("Batalkan alokasi aset ini? Wallet sumber akan dikembalikan " + formatRupiah(refundValue) + " dan aset dihapus dari goal.");
+    if (!ok) return;
+
+    const updated = { ...savingsHoldings, [goalId]: existing.filter(h => String(h.id) !== String(holdingId)) };
+    await setDoc(doc(db, "savings", "holdings"), updated);
+    setSavingsHoldings(updated);
+
+    if (sourceId && refundValue) {
+      await logLedger(sourceId, refundValue, "Batalkan alokasi aset " + (assetType?.label || holding.assetType || "Aset") + " dari goal: " + (goal?.label || goalId), "goal_asset_cancel", String(holdingId));
+    }
+    await addActivityLog("goal_asset_cancelled", currentUser + " membatalkan alokasi aset " + (assetType?.label || holding.assetType || "Aset") + " senilai " + formatRupiah(refundValue) + " dari " + (goal?.label || goalId) + (source ? " ke " + source.name : ""));
+    syncToSheets("cancelGoalAsset", { goalId, goalLabel: goal?.label || goalId, holdingId, refundValue, sumberDanaId: sourceId || "", sumberDanaName: source?.name || "", user: currentUser, createdAt: new Date().toISOString() });
   }
 
   async function removeHolding(goalId, holdingId) {
@@ -1270,7 +1303,7 @@ export default function App() {
     // Sync ke Google Sheets
     syncToSheets("addInvestment", { id: docRef.id, assetType: assetForm.assetType, ticker: assetForm.ticker, qty, unit: (at ? at.unit : "") || "", buyPrice, note: assetForm.note, buyDate: new Date().toISOString().split("T")[0] });
     setShowAssetConvert(null);
-    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" });
+    setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
     setAssetSDId("");
   }
 
@@ -1880,7 +1913,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5.3. +Tunai dan +Aset pada Goal aktif sebagai alokasi dana nyata dari Sumber Dana, bukan expense konsumtif.
+            FinPlan v1.1.0 Family Edition Phase 5.4. Input aset diperjelas: total nilai pembelian atau harga per unit, plus pembatalan alokasi aset.
           </div>
         </div>
       </div>
@@ -1898,7 +1931,7 @@ export default function App() {
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#6366f1", fontWeight: 900, textTransform: "uppercase" }}>Owner Audit</div>
               <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Activity Log</div>
-              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Hanya Owner yang dapat melihat catatan aktivitas.</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Ditampilkan sesuai permission Activity Log. Gunakan untuk audit perubahan penting.</div>
             </div>
             <button onClick={() => setShowActivityLogModal(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
           </div>
@@ -2341,8 +2374,11 @@ export default function App() {
     if (!goal) return null;
     const assetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
     const qty = parseDecimal(assetForm.qty);
-    const buyPrice = parseDecimal(assetForm.buyPrice);
-    const estValue = ["idr", "obligasi"].includes(assetForm.assetType) ? qty : qty * buyPrice;
+    const rawPriceInput = parseAmount(assetForm.buyPrice) || parseDecimal(assetForm.buyPrice);
+    const valueMode = assetForm.valueMode || "total";
+    const isCashLikeAsset = ["idr", "obligasi"].includes(assetForm.assetType);
+    const estValue = isCashLikeAsset ? qty : (valueMode === "unit" ? qty * rawPriceInput : rawPriceInput);
+    const unitPricePreview = (!isCashLikeAsset && qty && estValue) ? estValue / qty : 0;
     const selectedSource = sumberDanaList.find(sd => sd.id === assetSDId);
     return (
       <div onClick={() => { setShowAssetConvert(null); setAssetSDId(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
@@ -2376,10 +2412,28 @@ export default function App() {
               </select>
             </div>
 
+            {!isCashLikeAsset && (
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Mode input nilai</div>
+                <select value={valueMode} onChange={(e) => setAssetForm(prev => ({ ...prev, valueMode: e.target.value }))} style={inputStyle}>
+                  <option value="total">Total nilai pembelian aset</option>
+                  <option value="unit">Harga per unit × qty</option>
+                </select>
+              </div>
+            )}
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               <input value={assetForm.qty} onChange={(e) => setAssetForm(prev => ({ ...prev, qty: e.target.value }))} placeholder={assetType?.unit ? "Qty / " + assetType.unit : "Qty"} style={inputStyle} />
-              <input value={assetForm.buyPrice} onChange={(e) => setAssetForm(prev => ({ ...prev, buyPrice: e.target.value }))} placeholder={["idr", "obligasi"].includes(assetForm.assetType) ? "Nilai IDR" : "Harga beli / unit"} style={inputStyle} />
+              <input value={assetForm.buyPrice} onChange={(e) => setAssetForm(prev => ({ ...prev, buyPrice: e.target.value }))} placeholder={isCashLikeAsset ? "Nilai IDR" : (valueMode === "unit" ? "Harga beli per unit" : "Total nilai pembelian")} style={inputStyle} />
             </div>
+
+            {!isCashLikeAsset && (
+              <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.045)", color: "#94a3b8", fontSize: "11px", lineHeight: 1.45 }}>
+                {valueMode === "total"
+                  ? <>Mode total: angka nilai dianggap sebagai total pembelian. Harga/unit estimasi: <b style={{ color: "#fff" }}>{formatRupiah(unitPricePreview)}</b>.</>
+                  : <>Mode unit: total dihitung dari qty × harga per unit = <b style={{ color: "#fff" }}>{formatRupiah(estValue)}</b>.</>}
+              </div>
+            )}
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               <input value={assetForm.ticker} onChange={(e) => setAssetForm(prev => ({ ...prev, ticker: e.target.value }))} placeholder="Ticker/kode opsional" style={inputStyle} />
@@ -2393,7 +2447,7 @@ export default function App() {
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#64748b" }}>Estimasi nilai</div><div style={{ fontSize: "12px", color: "#86efac", fontWeight: 900 }}>{formatRupiah(estValue)}</div></div>
             </div>
 
-            <button onClick={() => addSavingsAsset(goal.id)} disabled={!qty || !assetSDId || (!["idr", "obligasi"].includes(assetForm.assetType) && !buyPrice)} style={{ padding: "15px", borderRadius: "16px", border: "none", background: qty && assetSDId && (["idr", "obligasi"].includes(assetForm.assetType) || buyPrice) ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.06)", color: qty && assetSDId && (["idr", "obligasi"].includes(assetForm.assetType) || buyPrice) ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: qty && assetSDId && (["idr", "obligasi"].includes(assetForm.assetType) || buyPrice) ? "pointer" : "not-allowed" }}>✅ Alokasikan Aset ke Goal</button>
+            <button onClick={() => addSavingsAsset(goal.id)} disabled={!qty || !assetSDId || (!isCashLikeAsset && !rawPriceInput)} style={{ padding: "15px", borderRadius: "16px", border: "none", background: qty && assetSDId && (isCashLikeAsset || rawPriceInput) ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.06)", color: qty && assetSDId && (isCashLikeAsset || rawPriceInput) ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: qty && assetSDId && (isCashLikeAsset || rawPriceInput) ? "pointer" : "not-allowed" }}>✅ Alokasikan Aset ke Goal</button>
           </div>
         </div>
       </div>
@@ -2840,6 +2894,7 @@ export default function App() {
                 <div>✅ Phase 5: Activity Log lengkap + Recycle Bin 30 hari.</div>
                 <div>✅ Phase 5.2: Goal UI dibuat sederhana; Activity Log mengikuti permission.</div>
                 <div>✅ Phase 5.3: +Tunai/+Aset Goal aktif, terhubung ke Sumber Dana, dan dicatat di Activity Log.</div>
+                <div>✅ Phase 5.4: Input aset diperjelas dan alokasi aset bisa dibatalkan dengan pengembalian ke wallet.</div>
               </div>
             </div>
             </>}
@@ -2952,7 +3007,7 @@ export default function App() {
                         {canContributeGoal() && (
                           <div style={{ display: "grid", gap: "6px", flexShrink: 0 }}>
                             <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Tunai</button>
-                            <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Aset</button>
+                            <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Aset</button>
                           </div>
                         )}
                       </div>
@@ -2973,7 +3028,10 @@ export default function App() {
                           {holdings.slice(0, 4).map(h => {
                             const at = ASSET_TYPES.find(a => a.id === h.assetType);
                             const val = calcAssetValue(h, marketPrices);
-                            return <span key={h.id} style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>{at ? at.icon : "🏦"} {h.ticker || (at ? at.label : "Aset")} {formatRupiah(val)}</span>;
+                            return <span key={h.id} style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "10px", fontWeight: 800 }}>
+                              <span>{at ? at.icon : "🏦"} {h.ticker || (at ? at.label : "Aset")} {formatRupiah(val)}</span>
+                              {canContributeGoal() && h.sumberDanaId && <button onClick={() => cancelGoalAssetAllocation(goal.id, h.id)} title="Batalkan alokasi aset" style={{ border: "none", background: "rgba(248,113,113,0.14)", color: "#fca5a5", borderRadius: "999px", padding: "2px 5px", cursor: "pointer", fontSize: "9px", fontWeight: 900 }}>Batal</button>}
+                            </span>;
                           })}
                           {holdings.length > 4 && <span style={{ padding: "5px 8px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "10px", fontWeight: 800 }}>+{holdings.length - 4} aset</span>}
                         </div>
@@ -3064,8 +3122,8 @@ export default function App() {
             {/* Tombol tambah */}
             {currentUser === ADMIN_USER && (
               <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <button onClick={() => { setShowAssetConvert("invest_cash"); setAssetForm({ assetType: "idr", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Tunai</button>
-                <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Aset</button>
+                <button onClick={() => { setShowAssetConvert("invest_cash"); setAssetForm({ assetType: "idr", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Tunai</button>
+                <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Aset</button>
               </div>
             )}
           </div>
