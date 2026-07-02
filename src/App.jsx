@@ -24,7 +24,23 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 5.4.2 UI Cleanup";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.1 Financial Engine Foundation";
+
+const FINANCIAL_MOVEMENT_TYPES = [
+  { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
+  { id: "expense", label: "Pengeluaran", effect: "wallet_decrease", netWorth: "decrease" },
+  { id: "transfer", label: "Transfer Antar Wallet", effect: "wallet_to_wallet", netWorth: "neutral" },
+  { id: "goal_allocation", label: "Alokasi ke Goal", effect: "wallet_to_goal", netWorth: "neutral" },
+  { id: "goal_withdrawal", label: "Tarik dari Goal", effect: "goal_to_wallet", netWorth: "neutral" },
+  { id: "investment_buy", label: "Beli Investasi", effect: "wallet_to_asset", netWorth: "neutral" },
+  { id: "investment_sell", label: "Jual Investasi", effect: "asset_to_wallet", netWorth: "gain_loss" },
+  { id: "existing_asset", label: "Input Aset Sudah Dimiliki", effect: "asset_onboarding", netWorth: "asset_added_no_cashflow" },
+  { id: "asset_to_goal", label: "Pindah Aset ke Goal", effect: "investment_to_goal", netWorth: "neutral" },
+  { id: "loan_disbursement", label: "Pencairan Pinjaman", effect: "wallet_increase_liability_increase", netWorth: "neutral" },
+  { id: "loan_repayment", label: "Pembayaran Pinjaman", effect: "wallet_decrease_liability_decrease", netWorth: "neutral_plus_fee" },
+  { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
+];
+
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -100,7 +116,7 @@ const PERMISSIONS_V110 = [
   { id: "goal_contribute", label: "Alokasi ke Goal", icon: "🎯", group: "Keuangan" },
   { id: "goals", label: "Tabungan / Goal", icon: "🎯", group: "Keuangan" },
   { id: "investments", label: "Investasi", icon: "📈", group: "Keuangan" },
-  { id: "gadai", label: "Gadai", icon: "🏦", group: "Keuangan" },
+  { id: "gadai", label: "Pinjaman / Loan", icon: "🏦", group: "Keuangan" },
   { id: "wallets", label: "Sumber Dana", icon: "👛", group: "Keuangan" },
   { id: "family_manage", label: "Family Management", icon: "👨‍👩‍👧‍👦", group: "Family Admin" },
   { id: "permission_manage", label: "Permission Manager", icon: "🛡️", group: "Family Admin" },
@@ -2743,7 +2759,7 @@ export default function App() {
             {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Keluarga</button>}
             {hasPermission("goals") && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
             {hasPermission("investments") && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
-            {hasPermission("gadai") && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Gadai</button>}
+            {hasPermission("gadai") && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Pinjaman</button>}
             {hasPermission("wallets") && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Sumber Dana</button>}
           </div>
         )}
@@ -3218,14 +3234,26 @@ export default function App() {
           </div>
         )}
 
-        {/* GADAI */}
+        {/* PINJAMAN / LOAN · GADAI SUBMODULE */}
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
+            <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.1</div>
+              <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
+              <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
+                Gadai sekarang diposisikan sebagai bagian dari Pinjaman. Uang dari gadai bukan pemasukan murni: wallet bertambah, tetapi kewajiban juga bertambah. Pada Phase 6 berikutnya, Pinjaman akan memisahkan pokok, bunga/biaya, jaminan aset, dan pelunasan agar tidak terjadi double count.
+              </div>
+              <div style={{ marginTop: "12px", display: "grid", gap: "8px" }}>
+                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "12px", fontWeight: 800 }}>✅ Pencairan pinjaman: Wallet naik + Liability naik</div>
+                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(239,68,68,0.10)", color: "#fca5a5", fontSize: "12px", fontWeight: 800 }}>✅ Pelunasan: Wallet turun + Liability turun + bunga/biaya jadi expense</div>
+                <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 800 }}>⚠️ Catatan: form di bawah masih submodul Gadai sementara sampai Loan Engine penuh aktif.</div>
+              </div>
+            </div>
 
-            {/* Ringkasan Gadai Aktif */}
+            {/* Ringkasan Pinjaman Aktif */}
             {gadaiList.filter(g => g.status === "aktif").length > 0 && (
               <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(245,158,11,0.15),rgba(180,100,0,0.1))", border: "1px solid rgba(245,158,11,0.3)" }}>
-                <div style={{ fontSize: "11px", color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>Gadai Aktif</div>
+                <div style={{ fontSize: "11px", color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>Pinjaman Aktif · Gadai</div>
                 <div style={{ display: "flex", gap: "20px" }}>
                   <div>
                     <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Total Pinjaman</div>
@@ -3318,13 +3346,13 @@ export default function App() {
               )}
             </div>
 
-            {/* Daftar Gadai */}
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Daftar Gadai</div>
+            {/* Daftar Pinjaman / Gadai */}
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Daftar Pinjaman / Gadai</div>
 
             {gadaiList.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div>
-                <div style={{ fontSize: "14px" }}>Belum ada gadai tercatat</div>
+                <div style={{ fontSize: "14px" }}>Belum ada pinjaman/gadai tercatat</div>
               </div>
             ) : gadaiList.map(g => {
               const { tglJatuh, sisa } = hitungSisaHari(g.tanggalGadai, g.tenor);
