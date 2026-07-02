@@ -597,3 +597,344 @@ Immediate next logical steps:
 
 **Roadmap locked by user direction.**  
 All future work should preserve this structure and only improve it unless explicitly instructed otherwise.
+
+---
+
+## 13. Phase 6 Addendum — Existing Assets & Move Asset to Goal
+
+This addendum is locked into the FinPlan roadmap.
+
+### 13.1 Existing Asset Onboarding
+
+FinPlan must support assets the user already owns before entering them into the app.
+
+Example:
+
+```text
+User already owns:
+- LM Antam 10 gram
+- USD 1,000
+- Mutual fund units
+- Stocks
+- Jewelry
+```
+
+If the asset already exists outside FinPlan, inputting it must not reduce any Wallet / Sumber Dana.
+
+Correct behavior:
+
+```text
+Existing asset added
+Wallet balance unchanged
+Cashflow unchanged
+Not counted as new expense
+Not counted as new purchase
+Activity Log records existing asset onboarding
+```
+
+Required input fields:
+
+```text
+Asset type
+Asset name / ticker / note
+Quantity
+Acquisition date
+Cost basis / estimated buy price
+Current value source: market / manual
+Ownership status
+Location / custody note
+Optional attachment or note
+```
+
+Asset destination options:
+
+```text
+General Investment
+Specific Goal
+Collateral for Loan / Gadai
+```
+
+### 13.2 Existing Asset Assigned Directly to Goal
+
+If the user already owns an asset and wants it to fund a goal, FinPlan should allow direct allocation.
+
+Example:
+
+```text
+Existing LM Antam 5 gram
+→ assign to Goal Dana Pendidikan Aroon
+```
+
+Correct behavior:
+
+```text
+Goal receives asset holding
+Goal funded progress increases based on current market value
+Wallet remains unchanged
+No spending transaction is created
+Cost basis is preserved
+Activity Log records assignment
+```
+
+### 13.3 Move Asset from Investment to Goal
+
+If an asset is already recorded in Investasi, it should be movable to a Goal without selling or repurchasing it.
+
+Example:
+
+```text
+General Investment:
+LM Antam 10 gram
+
+Move to Goal:
+3 gram → Dana Darurat
+```
+
+Correct behavior:
+
+```text
+General Investment remaining: 7 gram
+Goal holding: 3 gram
+Wallet unchanged
+Cost basis split proportionally
+Market value tracking continues
+Activity Log records transfer
+```
+
+This should be treated as:
+
+```text
+Asset assignment / earmarking
+```
+
+Not:
+
+```text
+Sale
+Purchase
+Expense
+Income
+```
+
+### 13.4 Goal Asset Input Modes
+
+Goal asset input should support clear modes:
+
+```text
+Buy new asset from wallet
+Move existing asset from investment
+Input existing asset directly
+```
+
+UI labels should prevent misunderstanding:
+
+```text
+Total nilai pembelian aset
+Harga per unit × qty
+Aset sudah dimiliki
+Pindahkan dari Investasi
+```
+
+### 13.5 Financial Engine Rule
+
+Existing assets and asset transfers must not create false cashflow.
+
+Locked rule:
+
+```text
+Only wallet-funded purchases reduce wallet.
+Existing assets do not reduce wallet.
+Moving assets between modules does not change net worth.
+Assigning assets to goals changes purpose/allocation, not total wealth.
+```
+
+This must be implemented during:
+
+```text
+Phase 6 — Financial Engine Cleanup
+```
+
+and refined further in:
+
+```text
+Phase 7 — Financial Health Engine
+Phase 8 — Kai Personal CFO
+```
+
+---
+
+## 14. Consolidated Update — Phase 5.4 to Phase 6 Lock
+
+This section consolidates the latest roadmap refinements so they can be committed in one update.
+
+### 14.1 Phase 5.4 — Goal Allocation Undo
+
+Goal funding actions must support cancellation/undo because +Tunai and +Aset affect both Goal and Wallet / Sumber Dana.
+
+Cash allocation undo:
+
+```text
+Goal cash funding decreases
+Source wallet is restored through a reversal ledger
+Original allocation is marked cancelled
+Activity Log records goal_cash_cancelled
+```
+
+Asset allocation undo:
+
+```text
+Goal asset holding is removed or marked cancelled
+Source wallet is restored when the asset was bought from wallet
+Activity Log records goal_asset_cancelled
+Audit history remains visible
+```
+
+### 14.2 Goal Asset Input UX
+
+Goal asset input must prevent misunderstanding between total purchase value and per-unit price.
+
+Required modes:
+
+```text
+Total nilai pembelian aset
+Harga per unit × qty
+Aset sudah dimiliki
+Pindahkan dari Investasi
+```
+
+Default mode should be:
+
+```text
+Total nilai pembelian aset
+```
+
+Before confirming, FinPlan should show:
+
+```text
+Qty
+Price basis
+Total value
+Wallet impact
+Goal impact
+```
+
+### 14.3 Phase 6 — Gadai Becomes Pinjaman / Loan & Liability
+
+Gadai should be upgraded into:
+
+```text
+Pinjaman / Loan
+├─ Gadai
+├─ Cicilan
+├─ Hutang
+├─ PayLater
+├─ Kartu Kredit
+└─ Pinjaman Lain
+```
+
+Correct behavior:
+
+```text
+Loan disbursement:
+Wallet increases
+Loan/liability increases
+Collateral asset status becomes pledged
+Not counted as income
+
+Repayment / redemption:
+Wallet decreases
+Liability decreases
+Interest/fees recorded as expense
+Collateral asset becomes free again
+```
+
+### 14.4 Phase 6 — Move Asset from Investment to Goal
+
+If an asset is already recorded in Investasi, the user must be able to move part or all of it into a Goal without selling or repurchasing it.
+
+Correct behavior:
+
+```text
+General Investment decreases
+Goal holding increases
+Wallet unchanged
+Cost basis split proportionally
+Market value tracking continues
+Activity Log records transfer
+```
+
+This is asset assignment / earmarking, not sale, purchase, expense, or income.
+
+### 14.5 Phase 6 — Existing Asset Onboarding
+
+FinPlan must support assets the user already owns before entering them into the app.
+
+Correct behavior:
+
+```text
+Wallet unchanged
+Cashflow unchanged
+Not a new expense
+Not a new purchase
+Asset recorded as existing holding
+Activity Log records onboarding
+```
+
+Destination choices:
+
+```text
+General Investment
+Specific Goal
+Collateral for Loan / Gadai
+```
+
+Required input fields:
+
+```text
+Asset type
+Name / ticker / note
+Quantity
+Acquisition date
+Cost basis / estimated purchase price
+Current value source: market / manual
+Ownership status
+Location / custody note
+Optional note
+```
+
+If an existing asset is assigned directly to a Goal:
+
+```text
+Goal receives asset holding
+Goal funded progress increases based on current market value
+Wallet remains unchanged
+No spending transaction is created
+Cost basis is preserved
+Activity Log records assignment
+```
+
+### 14.6 Phase 6 Financial Engine Rule
+
+Locked rule:
+
+```text
+Only wallet-funded purchases reduce wallet.
+Existing assets do not reduce wallet.
+Moving assets between modules does not change net worth.
+Assigning assets to goals changes purpose/allocation, not total wealth.
+Loan proceeds are liabilities, not income.
+Goal target is not an asset.
+```
+
+This consolidated update belongs in:
+
+```text
+Phase 6 — Financial Engine Cleanup
+```
+
+and later supports:
+
+```text
+Phase 7 — Financial Health Engine
+Phase 8 — Kai Personal CFO inside FinPlan
+```
