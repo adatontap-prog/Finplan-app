@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.5 Existing Asset Onboarding";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.6 Move Asset to Goal";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -421,6 +421,8 @@ export default function App() {
   const [showGadaiCalc, setShowGadaiCalc] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedInvestment, setSelectedInvestment] = useState(null);
+  const [assetToGoalInvestment, setAssetToGoalInvestment] = useState(null);
+  const [assetToGoalForm, setAssetToGoalForm] = useState({ goalId: "", qty: "", note: "" });
   const [selectedGoal, setSelectedGoal] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [gadaiList, setGadaiList] = useState([]);
@@ -841,6 +843,7 @@ export default function App() {
     setShowUserSelect(false);
     setSelectedTransaction(null);
     setSelectedInvestment(null);
+    setAssetToGoalInvestment(null);
     setSelectedGoal(null);
     setSelectedCategory(null);
     setSelectedSD(null);
@@ -1130,7 +1133,7 @@ export default function App() {
 
   const invTypeLabel = { usd: "\uD83D\uDCB5 USD", lm: "\uD83E\uDD47 LM Antam", jewelry: "\uD83D\uDC8D Perhiasan" };
   const invTypeUnit = { usd: "USD", lm: "gram", jewelry: "gram" };
-  const invSummary = investments.map(inv => {
+  const invSummary = investments.filter(inv => inv.status !== "moved_to_goal" && Number(inv.qty ?? inv.amount ?? 0) > 0).map(inv => {
     const currentValue = calcAssetValue(inv, marketPrices);
     const buyValue = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0)));
     const profitLoss = currentValue - buyValue;
@@ -1303,12 +1306,38 @@ export default function App() {
     const sourceId = holding.sumberDanaId;
     const source = sumberDanaList.find(s => s.id === sourceId);
     const refundValue = holding.costBasisIdr || (["idr","obligasi"].includes(holding.assetType) ? (holding.idrValue || holding.qty || 0) : ((holding.qty || 0) * (holding.buyPrice || 0)));
-    const ok = window.confirm("Batalkan alokasi aset ini? Wallet sumber akan dikembalikan " + formatRupiah(refundValue) + " dan aset dihapus dari goal.");
+
+    const isFromInvestment = holding.sourceMode === "investment_transfer" && holding.sourceInvestmentId;
+    const confirmText = isFromInvestment
+      ? "Batalkan pemindahan aset ini? Aset akan dikembalikan ke Investasi dan wallet tidak berubah."
+      : "Batalkan alokasi aset ini? Wallet sumber akan dikembalikan " + formatRupiah(refundValue) + " dan aset dihapus dari goal.";
+    const ok = window.confirm(confirmText);
     if (!ok) return;
 
     const updated = { ...savingsHoldings, [goalId]: existing.filter(h => String(h.id) !== String(holdingId)) };
     await setDoc(doc(db, "savings", "holdings"), updated);
     setSavingsHoldings(updated);
+
+    if (isFromInvestment) {
+      const { updateDoc } = await import("firebase/firestore");
+      const inv = investments.find(i => i.id === holding.sourceInvestmentId);
+      if (inv) {
+        const restoredQty = Number(inv.qty ?? inv.amount ?? 0) + Number(holding.qty || 0);
+        const restoredCost = Number(inv.costBasis || 0) + Number(refundValue || 0);
+        await updateDoc(doc(db, "investments", inv.id), {
+          qty: restoredQty,
+          amount: restoredQty,
+          costBasis: restoredCost,
+          status: "active",
+          restoredFromGoalAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser,
+        });
+      }
+      await addActivityLog("asset_to_goal_cancelled", currentUser + " membatalkan pemindahan aset " + (assetType?.label || holding.assetType || "Aset") + " dari Goal " + (goal?.label || goalId) + " kembali ke Investasi. Wallet tidak berubah.");
+      syncToSheets("cancelAssetToGoal", { goalId, goalLabel: goal?.label || goalId, holdingId, sourceInvestmentId: holding.sourceInvestmentId, amount: refundValue, user: currentUser });
+      return;
+    }
 
     if (sourceId && refundValue) {
       await logLedger(sourceId, refundValue, "Batalkan alokasi aset " + (assetType?.label || holding.assetType || "Aset") + " dari goal: " + (goal?.label || goalId), "goal_asset_cancel", String(holdingId));
@@ -1408,6 +1437,88 @@ export default function App() {
     setShowAssetConvert(null);
     setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
     setAssetSDId("");
+  }
+
+  function openMoveAssetToGoal(inv) {
+    if (!hasPermission("investments") || !hasPermission("goal_contribute")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin memindahkan aset ke Goal.");
+      return;
+    }
+    setAssetToGoalInvestment(inv);
+    setAssetToGoalForm({ goalId: "", qty: "", note: "" });
+  }
+
+  async function moveInvestmentAssetToGoal() {
+    if (!assetToGoalInvestment) return;
+    if (!hasPermission("investments") || !hasPermission("goal_contribute")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin memindahkan aset ke Goal.");
+      return;
+    }
+    const goalId = assetToGoalForm.goalId;
+    const moveQty = parseDecimal(assetToGoalForm.qty);
+    if (!goalId || !moveQty || moveQty <= 0) {
+      showAccessNotice("Pilih Goal dan isi qty aset yang akan dipindahkan.");
+      return;
+    }
+
+    const inv = investments.find(i => i.id === assetToGoalInvestment.id) || assetToGoalInvestment;
+    const availableQty = Number(inv.qty ?? inv.amount ?? 0);
+    if (moveQty > availableQty) {
+      showAccessNotice("Qty yang dipindahkan melebihi jumlah aset tersedia.");
+      return;
+    }
+
+    const at = ASSET_TYPES.find(a => a.id === inv.assetType);
+    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const totalCostBasis = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : availableQty * (inv.buyPrice || 0)));
+    const ratio = availableQty ? moveQty / availableQty : 0;
+    const movedCostBasis = Math.round(totalCostBasis * ratio);
+    const remainingQty = Math.max(availableQty - moveQty, 0);
+    const remainingCostBasis = Math.max(totalCostBasis - movedCostBasis, 0);
+    const movedBuyPrice = moveQty ? movedCostBasis / moveQty : Number(inv.buyPrice || 0);
+    const sourceLabel = inv.ticker || at?.label || inv.assetType || "Aset";
+
+    const newHolding = {
+      id: Date.now(),
+      assetType: inv.assetType,
+      qty: moveQty,
+      buyPrice: movedBuyPrice,
+      manualPrice: inv.manualPrice || null,
+      ticker: inv.ticker || null,
+      note: assetToGoalForm.note || ("Dipindahkan dari Investasi: " + sourceLabel),
+      idrValue: ["idr","obligasi"].includes(inv.assetType) ? moveQty : null,
+      sourceMode: "investment_transfer",
+      sourceInvestmentId: inv.id,
+      sourceInvestmentName: sourceLabel,
+      costBasisIdr: movedCostBasis,
+      addedBy: currentUser,
+      addedAt: new Date().toISOString(),
+    };
+
+    const existing = savingsHoldings[goalId] || [];
+    const updatedHoldings = { ...savingsHoldings, [goalId]: [...existing, newHolding] };
+    await setDoc(doc(db, "savings", "holdings"), updatedHoldings);
+    setSavingsHoldings(updatedHoldings);
+
+    const { updateDoc } = await import("firebase/firestore");
+    await updateDoc(doc(db, "investments", inv.id), {
+      qty: remainingQty,
+      amount: remainingQty,
+      costBasis: remainingCostBasis,
+      status: remainingQty <= 0 ? "moved_to_goal" : "active",
+      movedToGoalAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    });
+
+    await addActivityLog(
+      "asset_to_goal",
+      currentUser + " memindahkan " + moveQty + " " + (at?.unit || "unit") + " " + sourceLabel + " dari Investasi ke Goal " + (goal?.label || goalId) + ". Wallet tidak berubah."
+    );
+    syncToSheets("assetToGoal", { investmentId: inv.id, goalId, goalLabel: goal?.label || goalId, qty: moveQty, costBasis: movedCostBasis, sourceLabel, user: currentUser, createdAt: new Date().toISOString() });
+
+    setAssetToGoalInvestment(null);
+    setAssetToGoalForm({ goalId: "", qty: "", note: "" });
   }
 
   async function deleteTransaction(id) {
@@ -2306,7 +2417,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 5.4.2. UI alokasi Goal dan Activity Log dirapikan; pembatalan tunai/aset tetap aktif.
+            FinPlan v1.1.0 Family Edition Phase 6.6. Aset Investasi bisa dipindahkan ke Goal tanpa mengubah wallet.
           </div>
         </div>
       </div>
@@ -2883,6 +2994,75 @@ export default function App() {
             </div>
 
             <button onClick={() => addSavingsCash(goal.id)} disabled={!amount || !savingsSDId} style={{ padding: "15px", borderRadius: "16px", border: "none", background: amount && savingsSDId ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.06)", color: amount && savingsSDId ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: amount && savingsSDId ? "pointer" : "not-allowed" }}>✅ Alokasikan ke Goal</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const AssetToGoalModal = () => {
+    if (!assetToGoalInvestment) return null;
+    const inv = assetToGoalInvestment;
+    const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.assetType || "Aset", unit: "unit" };
+    const qtyAvailable = Number(inv.qty ?? inv.amount ?? 0);
+    const moveQty = parseDecimal(assetToGoalForm.qty) || 0;
+    const costBasis = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : qtyAvailable * (inv.buyPrice || 0)));
+    const movedCost = qtyAvailable ? Math.round(costBasis * Math.min(moveQty, qtyAvailable) / qtyAvailable) : 0;
+    const currentValue = calcAssetValue(inv, marketPrices);
+    const movedCurrentValue = qtyAvailable ? Math.round(currentValue * Math.min(moveQty, qtyAvailable) / qtyAvailable) : 0;
+    const selectedGoal = SAVINGS_GOALS.find(g => g.id === assetToGoalForm.goalId);
+
+    return (
+      <div onClick={() => setAssetToGoalInvestment(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.6 · Asset to Goal</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Pindahkan Aset ke Goal</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.5 }}>Aset tidak dijual dan wallet tidak berubah. Ini hanya mengubah alokasi tujuan aset.</div>
+            </div>
+            <button onClick={() => setAssetToGoalInvestment(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.20)", marginBottom: "14px" }}>
+            <div style={{ fontSize: "15px", fontWeight: 900, color: "#fff" }}>{at.icon} {inv.ticker || at.label}</div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>Tersedia {qtyAvailable} {at.unit} · Modal {formatRupiah(costBasis)} · Nilai pasar {formatRupiah(currentValue)}</div>
+          </div>
+
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Pilih Goal Tujuan</div>
+              <select value={assetToGoalForm.goalId} onChange={(e) => setAssetToGoalForm(prev => ({ ...prev, goalId: e.target.value }))} style={inputStyle}>
+                <option value="">Pilih goal...</option>
+                {SAVINGS_GOALS.map(g => <option key={g.id} value={g.id}>{g.icon} {g.label} · target {formatRupiah(g.targetAmount)}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Qty dipindahkan</div>
+              <input value={assetToGoalForm.qty} onChange={(e) => setAssetToGoalForm(prev => ({ ...prev, qty: e.target.value }))} placeholder={"Maks " + qtyAvailable + " " + at.unit} style={inputStyle} />
+            </div>
+
+            <input value={assetToGoalForm.note} onChange={(e) => setAssetToGoalForm(prev => ({ ...prev, note: e.target.value }))} placeholder="Catatan opsional" style={inputStyle} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+                <div style={{ fontSize: "10px", color: "#64748b" }}>Modal pindah</div>
+                <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>{formatRupiah(movedCost)}</div>
+              </div>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+                <div style={{ fontSize: "10px", color: "#64748b" }}>Nilai pasar pindah</div>
+                <div style={{ fontSize: "12px", color: "#86efac", fontWeight: 900 }}>{formatRupiah(movedCurrentValue)}</div>
+              </div>
+            </div>
+
+            <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.20)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.55, fontWeight: 800 }}>
+              Goal {selectedGoal ? selectedGoal.label : "tujuan"} akan bertambah aset. Investasi umum berkurang. Wallet tidak naik/turun.
+            </div>
+
+            <button onClick={moveInvestmentAssetToGoal} disabled={!assetToGoalForm.goalId || !moveQty || moveQty > qtyAvailable} style={{ padding: "15px", borderRadius: "16px", border: "none", background: assetToGoalForm.goalId && moveQty && moveQty <= qtyAvailable ? "linear-gradient(135deg,#6366f1,#7c3aed)" : "rgba(255,255,255,0.06)", color: assetToGoalForm.goalId && moveQty && moveQty <= qtyAvailable ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: assetToGoalForm.goalId && moveQty && moveQty <= qtyAvailable ? "pointer" : "not-allowed" }}>
+              🎯 Pindahkan ke Goal
+            </button>
           </div>
         </div>
       </div>
@@ -3877,7 +4057,12 @@ export default function App() {
                       <div style={{ fontSize: "10px", color: inv.sourceMode === "existing" ? "#fbbf24" : "#86efac", marginTop: "3px", fontWeight: 800 }}>{inv.sourceMode === "existing" ? "📦 Aset sudah dimiliki · wallet tidak berubah" : "💳 Dibeli dari wallet"}</div>
                       {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
                     </div>
-                    {currentUser === ADMIN_USER && <button onClick={() => deleteInvestment(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>x</button>}
+                    {hasPermission("investments") && (
+                      <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                        <button onClick={(e) => { e.stopPropagation(); openMoveAssetToGoal(inv); }} style={{ background: "rgba(99,102,241,0.14)", border: "1px solid rgba(99,102,241,0.28)", cursor: "pointer", color: "#c7d2fe", fontSize: "10px", borderRadius: "10px", padding: "7px 9px", fontWeight: 900 }}>🎯 Goal</button>
+                        <button onClick={(e) => { e.stopPropagation(); deleteInvestment(inv.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>x</button>
+                      </div>
+                    )}
                   </div>
                   {needsManual && currentUser === ADMIN_USER && (
                     <div style={{ marginBottom: "8px" }}>
@@ -4192,6 +4377,7 @@ export default function App() {
         {SumberDanaDetailModal()}
         {RecycleBinModal()}
         {GoalCashFundingModal()}
+        {AssetToGoalModal()}
         {InvestmentAssetModal()}
         {GoalAssetFundingModal()}
         {LoanGadaiModal()}
