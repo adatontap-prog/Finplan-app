@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.2 Family Wallet Transfer";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.2b Wallet Creation Permission";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -118,8 +118,14 @@ const PERMISSIONS_V110 = [
 
   { id: "wallet_view_own", label: "Lihat Wallet Sendiri", icon: "👛", group: "Wallet" },
   { id: "wallet_view_all", label: "Lihat Semua Wallet", icon: "🏦", group: "Wallet" },
+  { id: "wallet_create_own", label: "Buat Wallet Sendiri", icon: "➕", group: "Wallet" },
+  { id: "wallet_create_member", label: "Buat Wallet Member", icon: "👨‍👩‍👧‍👦", group: "Wallet" },
+  { id: "wallet_create_family", label: "Buat Wallet Family/Main", icon: "🏠", group: "Wallet" },
   { id: "wallet_manage_own", label: "Kelola Wallet Sendiri", icon: "🛠️", group: "Wallet" },
   { id: "wallet_manage_all", label: "Kelola Semua Wallet", icon: "🧰", group: "Wallet" },
+  { id: "wallet_adjust", label: "Penyesuaian Saldo Wallet", icon: "🧭", group: "Wallet" },
+  { id: "wallet_merge", label: "Merge Wallet", icon: "🔀", group: "Wallet" },
+  { id: "wallet_archive", label: "Arsip/Nonaktif Wallet", icon: "📦", group: "Wallet" },
 
   { id: "goal_view_public", label: "Lihat Goal Public", icon: "🎯", group: "Goal" },
   { id: "goal_view_sensitive", label: "Lihat Goal Sensitif", icon: "🔒", group: "Goal" },
@@ -161,7 +167,7 @@ const ROLE_PERMISSION_PRESET_V110 = {
   Admin: [
     "dashboard", "history", "settings",
     "transaction_add", "transaction_view_own", "transaction_view_all", "transaction_edit_own", "transaction_edit_all", "transaction_delete_own",
-    "wallet_view_own", "wallet_view_all", "wallet_manage_own",
+    "wallet_view_own", "wallet_view_all", "wallet_create_member", "wallet_manage_own", "wallet_adjust", "wallet_archive",
     "goal_view_public", "goal_view_sensitive", "goal_contribute",
     "investment_view", "loan_view", "financial_summary_view", "financial_health_view",
     "sync", "reports"
@@ -169,7 +175,7 @@ const ROLE_PERMISSION_PRESET_V110 = {
   Member: [
     "dashboard", "history", "settings",
     "transaction_add", "transaction_view_own", "transaction_edit_own",
-    "wallet_view_own", "wallet_manage_own",
+    "wallet_view_own",
     "goal_view_public"
   ],
   Viewer: ["dashboard", "history", "settings"],
@@ -177,7 +183,7 @@ const ROLE_PERMISSION_PRESET_V110 = {
 
 const OWNER_LOCKED_PERMISSIONS_V110 = [
   "dashboard", "settings", "family_manage", "permission_manage", "security",
-  "activity_log_view", "financial_summary_view", "wallet_view_all", "wallet_manage_all"
+  "activity_log_view", "financial_summary_view", "wallet_view_all", "wallet_create_own", "wallet_create_member", "wallet_create_family", "wallet_manage_all", "wallet_adjust", "wallet_merge", "wallet_archive"
 ];
 
 function expandLegacyPermissions(roleLabel, permissionIds) {
@@ -198,9 +204,20 @@ function expandLegacyPermissions(roleLabel, permissionIds) {
 
   if (has("wallets")) {
     set.add("wallet_view_own");
-    set.add("wallet_manage_own");
-    if (roleLabel === "Owner" || roleLabel === "Admin") set.add("wallet_view_all");
-    if (roleLabel === "Owner") set.add("wallet_manage_all");
+    if (roleLabel === "Owner" || roleLabel === "Admin") {
+      set.add("wallet_view_all");
+      set.add("wallet_manage_own");
+      set.add("wallet_adjust");
+      set.add("wallet_archive");
+    }
+    if (roleLabel === "Admin") set.add("wallet_create_member");
+    if (roleLabel === "Owner") {
+      set.add("wallet_create_own");
+      set.add("wallet_create_member");
+      set.add("wallet_create_family");
+      set.add("wallet_manage_all");
+      set.add("wallet_merge");
+    }
   }
 
   if (has("goals")) {
@@ -1959,7 +1976,7 @@ export default function App() {
 
   async function adjustWalletToTarget(sd) {
     if (!sd) return;
-    if (!canManageOwnWallets && !canManageAllWallets) {
+    if (!canAdjustWallets) {
       showAccessNotice("Role " + currentRole + " tidak punya izin penyesuaian saldo wallet.");
       return;
     }
@@ -2184,33 +2201,70 @@ export default function App() {
   }
 
   async function addSumberDana() {
-    if (!hasPermission("wallets")) {
-      showAccessNotice("Role " + currentRole + " tidak punya izin mengelola Sumber Dana.");
+    const targetUser = canViewAllWallets ? (walletFilterUser || currentUser) : currentUser;
+    if (!canCreateWalletForUser(targetUser)) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membuat wallet untuk " + targetUser + ".");
       return;
     }
     if (!sdForm.name) return;
     const initBal = parseAmount(sdForm.initialBalance);
     await addDoc(collection(db, "sumberDana"), {
-      user: currentUser,
+      user: targetUser,
       name: sdForm.name.trim(),
       icon: sdForm.icon || "💵",
       color: sdForm.color || "#6366f1",
       initialBalance: initBal,
       status: "active",
+      walletScope: targetUser === currentUser ? "own" : "member",
+      visibility: targetUser === currentUser ? "private" : "member_private_owner_audit",
       createdAt: new Date().toISOString(),
       createdBy: currentUser,
     });
-    await addActivityLog("wallet_created", "Tambah Sumber Dana: " + sdForm.name.trim());
+    await addActivityLog("wallet_created", currentUser + " membuat wallet " + sdForm.name.trim() + " untuk " + targetUser + ".");
     resetSumberDanaForm();
   }
 
+  async function createDefaultWalletForMember(memberName, selectAsDestination = false) {
+    if (!memberName) return null;
+    if (!canCreateWalletForUser(memberName)) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membuat wallet untuk " + memberName + ".");
+      return null;
+    }
+    const existingActive = sumberDanaList.find(sd => sd.user === memberName && isSumberDanaActive(sd));
+    if (existingActive) {
+      if (selectAsDestination) setWalletTransferForm(prev => ({ ...prev, destinationWalletId: existingActive.id }));
+      return existingActive.id;
+    }
+    const member = activeFamilyMembers.find(m => m.name === memberName);
+    const walletName = "Wallet " + memberName;
+    const docRef = await addDoc(collection(db, "sumberDana"), {
+      user: memberName,
+      name: walletName,
+      icon: member?.avatar || "💵",
+      color: "#10b981",
+      initialBalance: 0,
+      status: "active",
+      walletScope: memberName === currentUser ? "own" : "member",
+      visibility: "member_private_owner_audit",
+      createdAt: new Date().toISOString(),
+      createdBy: currentUser,
+      autoCreated: true,
+      purpose: "allowance_wallet",
+    });
+    await addActivityLog("wallet_created", currentUser + " membuat wallet member " + walletName + " untuk " + memberName + ".");
+    syncToSheets("createMemberWallet", { id: docRef.id, user: memberName, name: walletName, createdBy: currentUser, createdAt: new Date().toISOString() });
+    if (selectAsDestination) setWalletTransferForm(prev => ({ ...prev, destinationWalletId: docRef.id }));
+    return docRef.id;
+  }
+
   async function saveSumberDanaChanges(id) {
-    if (!hasPermission("wallets")) {
-      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah Sumber Dana.");
+    const sd = sumberDanaList.find(s => s.id === id);
+    if (!sd) return;
+    if (!(canManageAllWallets || (sd.user === currentUser && canManageOwnWallets))) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah Sumber Dana ini.");
       return;
     }
-    const sd = sumberDanaList.find(s => s.id === id);
-    if (!sd || !sdForm.name.trim()) return;
+    if (!sdForm.name.trim()) return;
     const initBal = parseAmount(sdForm.initialBalance);
     await setDoc(doc(db, "sumberDana", id), {
       name: sdForm.name.trim(),
@@ -2234,12 +2288,12 @@ export default function App() {
   }
 
   async function setSumberDanaStatus(id, status) {
-    if (!hasPermission("wallets")) {
-      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah status Sumber Dana.");
-      return;
-    }
     const sd = sumberDanaList.find(s => s.id === id);
     if (!sd) return;
+    if (!(canArchiveWallets || canManageAllWallets || (sd.user === currentUser && canManageOwnWallets))) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengubah status Sumber Dana ini.");
+      return;
+    }
     await setDoc(doc(db, "sumberDana", id), {
       status,
       updatedAt: new Date().toISOString(),
@@ -2250,7 +2304,7 @@ export default function App() {
   }
 
   async function mergeSumberDana(sourceId, targetId) {
-    if (!hasPermission("wallets")) {
+    if (!canMergeWallets) {
       showAccessNotice("Role " + currentRole + " tidak punya izin merge Sumber Dana.");
       return;
     }
@@ -2419,9 +2473,16 @@ export default function App() {
   const canViewOwnTransactions = isOwner || hasPermission("transaction_view_own") || hasPermission("history");
   const canViewOwnWallets = isOwner || hasPermission("wallet_view_own") || hasPermission("wallets");
   const canViewAllWallets = isOwner || hasPermission("wallet_view_all") || (currentRole === "Admin" && hasPermission("wallets"));
-  const canManageOwnWallets = isOwner || hasPermission("wallet_manage_own") || hasPermission("wallets");
+  const canCreateOwnWallets = isOwner || hasPermission("wallet_create_own");
+  const canCreateMemberWallets = isOwner || hasPermission("wallet_create_member");
+  const canCreateFamilyWallets = isOwner || hasPermission("wallet_create_family");
+  const canManageOwnWallets = isOwner || hasPermission("wallet_manage_own") || (currentRole === "Admin" && hasPermission("wallets"));
   const canManageAllWallets = isOwner || hasPermission("wallet_manage_all");
+  const canAdjustWallets = isOwner || hasPermission("wallet_adjust");
+  const canMergeWallets = isOwner || hasPermission("wallet_merge");
+  const canArchiveWallets = isOwner || hasPermission("wallet_archive");
   const canAccessWallets = canViewOwnWallets || canViewAllWallets;
+  const canCreateWalletForUser = (name) => name === currentUser ? canCreateOwnWallets : canCreateMemberWallets;
   const canViewGoals = isOwner || hasPermission("goal_view_public") || hasPermission("goal_view_sensitive") || hasPermission("goals");
   const canViewSensitiveGoals = isOwner || hasPermission("goal_view_sensitive");
   const canViewInvestments = isOwner || hasPermission("investment_view") || (currentRole === "Admin" && hasPermission("investments"));
@@ -2690,7 +2751,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.2. Uang Saku / Transfer Wallet aktif sebagai transfer internal keluarga, bukan expense.
+            FinPlan v1.1.0 Family Edition Phase 6.7.2b. Wallet creation permission dan auto-create wallet member untuk Uang Saku aktif.
           </div>
         </div>
       </div>
@@ -2709,6 +2770,7 @@ export default function App() {
       wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
       wallet_merged: { label: "Wallet Digabung", icon: "🔄", tone: "amber" },
       wallet_deleted: { label: "Wallet Dihapus", icon: "🗑️", tone: "red" },
+      wallet_created: { label: "Wallet Dibuat", icon: "👛", tone: "green" },
       allowance_transfer: { label: "Uang Saku", icon: "💸", tone: "green" },
       wallet_transfer: { label: "Transfer Wallet", icon: "🔁", tone: "purple" },
       transaction_added: { label: "Transaksi Ditambah", icon: "➕", tone: "green" },
@@ -3089,6 +3151,10 @@ export default function App() {
     const activeWallets = sumberDanaList.filter(sd => isSumberDanaActive(sd));
     const sourceOptions = activeWallets.filter(sd => canManageAllWallets || sd.user === currentUser);
     const destinationOptions = activeWallets.filter(sd => sd.id !== walletTransferForm.sourceWalletId);
+    const membersWithoutActiveWallet = activeFamilyMembers
+      .filter(member => member.status !== "archived")
+      .filter(member => !activeWallets.some(sd => sd.user === member.name))
+      .filter(member => canCreateWalletForUser(member.name));
     const amount = parseAmount(walletTransferForm.amount);
     const source = sumberDanaList.find(sd => sd.id === walletTransferForm.sourceWalletId);
     const destination = sumberDanaList.find(sd => sd.id === walletTransferForm.destinationWalletId);
@@ -3150,9 +3216,21 @@ export default function App() {
               {isAllowance ? "💸 Kirim Uang Saku" : "🔁 Simpan Transfer"}
             </button>
 
-            {destinationOptions.length === 0 && (
+            {membersWithoutActiveWallet.length > 0 && (
+              <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5 }}>
+                <div style={{ fontWeight: 900, marginBottom: "8px" }}>Member tanpa wallet aktif</div>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {membersWithoutActiveWallet.map(member => (
+                    <button key={member.name} onClick={() => createDefaultWalletForMember(member.name, true)} style={{ padding: "10px", borderRadius: "12px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(15,23,42,0.55)", color: "#fff", fontWeight: 900, textAlign: "left", cursor: "pointer" }}>
+                      ➕ Buat Wallet {member.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {destinationOptions.length === 0 && membersWithoutActiveWallet.length === 0 && (
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
-                Belum ada wallet tujuan aktif. Buat wallet member dulu di Sumber Dana.
+                Belum ada wallet tujuan aktif atau kamu tidak punya izin membuat wallet tujuan.
               </div>
             )}
           </div>
@@ -4229,7 +4307,7 @@ export default function App() {
                 </div>
               ))}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5 }}>
-                Permission tersimpan di Firebase. Sensitive data hidden by default: Member hanya own-wallet/own-transaction; Admin akses sensitif hanya jika Owner memberi izin; permission inti Owner dikunci.
+                Permission tersimpan di Firebase. Sensitive data hidden by default. Pembuatan wallet dipisah: own wallet, member wallet, family/main wallet, adjustment, merge, dan archive punya izin masing-masing.
               </div>
             </div>}
 
@@ -4781,9 +4859,13 @@ export default function App() {
             })}
 
             {/* Tombol tambah - hanya untuk diri sendiri */}
-            {(canManageAllWallets || ((canViewAllWallets ? walletFilterUser : currentUser) === currentUser && canManageOwnWallets)) && (
-              <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
-            )}
+            {(() => {
+              const targetWalletUser = canViewAllWallets ? walletFilterUser : currentUser;
+              const canCreateForTarget = canCreateWalletForUser(targetWalletUser);
+              return canCreateForTarget ? (
+                <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Wallet untuk {targetWalletUser}</button>
+              ) : null;
+            })()}
           </div>
         )}
 
