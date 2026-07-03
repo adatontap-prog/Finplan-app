@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3.2 Wallet UI Polish";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.4 Net Position & Wallet Adjustment";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -437,6 +437,7 @@ export default function App() {
   const [selectedSD, setSelectedSD] = useState(null);
   const [mergeTargetSDId, setMergeTargetSDId] = useState("");
   const [showArchivedWallets, setShowArchivedWallets] = useState(false);
+  const [walletAdjustForm, setWalletAdjustForm] = useState({ targetBalance: "", note: "" });
   const [transactionSDId, setTransactionSDId] = useState("");
   const [savingsSDId, setSavingsSDId] = useState("");
   const [assetSDId, setAssetSDId] = useState("");
@@ -1654,6 +1655,58 @@ export default function App() {
     return (sd.initialBalance || 0) + ledgerSum;
   }
 
+  function calcTotalWalletBalanceForUser(userName, includeArchived = false) {
+    return sumberDanaList
+      .filter(sd => sd.user === userName && (includeArchived || getSumberDanaStatus(sd) !== "archived"))
+      .reduce((sum, sd) => sum + calcSumberDanaBalance(sd.id), 0);
+  }
+
+  function getActiveLoansForUser(userName) {
+    return gadaiList.filter(g =>
+      g.status === "aktif" &&
+      (g.createdBy === userName || (!g.createdBy && userName === currentUser))
+    );
+  }
+
+  function calcOutstandingLoanForUser(userName) {
+    return getActiveLoansForUser(userName).reduce((sum, g) => sum + Number(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0);
+  }
+
+  function calcNetPositionForUser(userName) {
+    return calcTotalWalletBalanceForUser(userName) - calcOutstandingLoanForUser(userName);
+  }
+
+  async function adjustWalletToTarget(sd) {
+    if (!sd) return;
+    if (!hasPermission("wallets")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin penyesuaian saldo wallet.");
+      return;
+    }
+    const target = parseAmount(walletAdjustForm.targetBalance);
+    if (walletAdjustForm.targetBalance === "" || Number.isNaN(target)) {
+      showAccessNotice("Isi saldo akhir yang benar.");
+      return;
+    }
+    const current = calcSumberDanaBalance(sd.id);
+    const delta = target - current;
+    if (delta === 0) {
+      showAccessNotice("Saldo sudah sesuai, tidak ada koreksi.");
+      return;
+    }
+    const ok = window.confirm("Sesuaikan saldo " + (sd.name || "wallet") + " dari " + formatFull(current) + " menjadi " + formatFull(target) + "? Sistem akan membuat ledger koreksi sebesar " + (delta >= 0 ? "+" : "-") + formatFull(Math.abs(delta)) + ".");
+    if (!ok) return;
+    await logLedger(
+      sd.id,
+      delta,
+      "Penyesuaian saldo wallet ke " + formatFull(target) + (walletAdjustForm.note ? " · " + walletAdjustForm.note : ""),
+      "wallet_adjustment",
+      sd.id
+    );
+    await addActivityLog("wallet_adjustment", currentUser + " menyesuaikan saldo " + (sd.name || "wallet") + " dari " + formatFull(current) + " menjadi " + formatFull(target) + ".");
+    syncToSheets("walletAdjustment", { sumberDanaId: sd.id, targetBalance: target, delta, note: walletAdjustForm.note || "", user: currentUser, createdAt: new Date().toISOString() });
+    setWalletAdjustForm({ targetBalance: "", note: "" });
+  }
+
   async function logLedger(sumberDanaId, amount, note, refType, refId) {
     if (!sumberDanaId) return;
     await addDoc(collection(db, "sumberDanaLedger"), {
@@ -1735,6 +1788,7 @@ export default function App() {
     if (!sd) return;
     setSelectedSD(sd.id);
     setMergeTargetSDId("");
+    setWalletAdjustForm({ targetBalance: "", note: "" });
     setSdForm({
       name: sd.name || "",
       icon: sd.icon || "💵",
@@ -1748,6 +1802,7 @@ export default function App() {
     setShowSDForm(false);
     setSelectedSD(null);
     setMergeTargetSDId("");
+    setWalletAdjustForm({ targetBalance: "", note: "" });
     setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" });
   }
 
@@ -2692,6 +2747,26 @@ export default function App() {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+
+          {balance < 0 && (
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.22)", color: "#fca5a5", fontSize: "12px", lineHeight: 1.55, marginBottom: "14px", fontWeight: 800 }}>
+              ⚠️ Saldo wallet negatif. Ini bisa terjadi karena biaya pinjaman, koreksi, atau data test. Gunakan Penyesuaian Saldo jika saldo real wallet berbeda.
+            </div>
+          )}
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)", marginBottom: "14px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>🧭 Penyesuaian Saldo</div>
+            <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "10px" }}>
+              Gunakan hanya jika saldo real wallet berbeda dari saldo FinPlan. Sistem akan membuat ledger koreksi, bukan menghapus histori.
+            </div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              <input value={walletAdjustForm.targetBalance} inputMode="numeric" onChange={(e) => setWalletAdjustForm(prev => ({ ...prev, targetBalance: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Saldo akhir real, contoh: 1000000" style={inputStyle} />
+              <input value={walletAdjustForm.note} onChange={(e) => setWalletAdjustForm(prev => ({ ...prev, note: e.target.value }))} placeholder="Catatan koreksi, opsional" style={inputStyle} />
+              <button onClick={() => adjustWalletToTarget(sd)} disabled={!walletAdjustForm.targetBalance} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(16,185,129,0.25)", background: walletAdjustForm.targetBalance ? "rgba(16,185,129,0.16)" : "rgba(255,255,255,0.05)", color: walletAdjustForm.targetBalance ? "#86efac" : "#64748b", fontWeight: 900, cursor: walletAdjustForm.targetBalance ? "pointer" : "not-allowed" }}>
+                Buat Ledger Koreksi
+              </button>
             </div>
           </div>
 
@@ -3716,10 +3791,10 @@ export default function App() {
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.3</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.4</div>
               <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
-                Gadai sekarang menjadi submodul Pinjaman. Pencairan, pembayaran pokok, bunga/biaya, pembatalan pencairan, dan pelepasan jaminan mulai terhubung ke Financial Engine agar tidak double count.
+                Gadai menjadi submodul Pinjaman. Wallet, pinjaman aktif, dan net position mulai dipisahkan agar saldo kas tidak disalahartikan sebagai kekayaan bersih.
               </div>
               <div style={{ marginTop: "12px", display: "grid", gap: "8px" }}>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "12px", fontWeight: 800 }}>✅ Pencairan pinjaman: Wallet naik + Liability naik</div>
@@ -3734,11 +3809,11 @@ export default function App() {
                 <div style={{ fontSize: "11px", color: "#fbbf24", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "8px" }}>Pinjaman Aktif · Gadai</div>
                 <div style={{ display: "flex", gap: "20px" }}>
                   <div>
-                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Total Pinjaman</div>
-                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff" }}>{formatRupiah(gadaiList.filter(g => g.status === "aktif").reduce((s, g) => s + g.uangPinjaman, 0))}</div>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Sisa Pokok Aktif</div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#fff" }}>{formatRupiah(gadaiList.filter(g => g.status === "aktif").reduce((s, g) => s + Number(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0))}</div>
                   </div>
                   <div>
-                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Total Lunas</div>
+                    <div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Estimasi Tebus</div>
                     <div style={{ fontSize: "16px", fontWeight: 800, color: "#f87171" }}>{formatRupiah(gadaiList.filter(g => g.status === "aktif").reduce((s, g) => s + g.totalLunas, 0))}</div>
                   </div>
                   <div>
@@ -3919,15 +3994,28 @@ export default function App() {
               {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif/nonaktif"}
             </button>
 
-            {/* Total saldo */}
+            {/* Total saldo + net position */}
             {(() => {
               const userSDs = sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived"));
               const totalBalance = userSDs.reduce((s, sd) => s + calcSumberDanaBalance(sd.id), 0);
+              const outstandingLoan = calcOutstandingLoanForUser(walletFilterUser);
+              const netPosition = totalBalance - outstandingLoan;
               return (
-                <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
-                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Saldo {walletFilterUser}</div>
+                <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
+                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Financial Position · {walletFilterUser}</div>
                   <div style={{ fontSize: "26px", fontWeight: 900, color: "#fff" }}>{formatFull(totalBalance)}</div>
-                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.6)", marginTop: "4px" }}>{userSDs.length} sumber dana</div>
+                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.68)", marginTop: "4px" }}>Total Wallet / kas · {userSDs.length} sumber dana</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "12px" }}>
+                    <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.28)" }}>
+                      <div style={{ fontSize: "10px", color: "#c7d2fe", fontWeight: 800 }}>Pinjaman Aktif</div>
+                      <div style={{ fontSize: "14px", fontWeight: 900, color: outstandingLoan > 0 ? "#fca5a5" : "#86efac" }}>{formatFull(outstandingLoan)}</div>
+                    </div>
+                    <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.28)" }}>
+                      <div style={{ fontSize: "10px", color: "#c7d2fe", fontWeight: 800 }}>Net Position</div>
+                      <div style={{ fontSize: "14px", fontWeight: 900, color: netPosition >= 0 ? "#86efac" : "#fca5a5" }}>{formatFull(netPosition)}</div>
+                    </div>
+                  </div>
+                  {totalBalance < 0 && <div style={{ marginTop: "10px", padding: "9px", borderRadius: "12px", background: "rgba(239,68,68,0.14)", color: "#fecaca", fontSize: "11px", fontWeight: 800 }}>⚠️ Total wallet negatif. Cek Log Wallet dan lakukan penyesuaian jika saldo real berbeda.</div>}
                 </div>
               );
             })()}
