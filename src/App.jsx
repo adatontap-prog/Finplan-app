@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3 Loan Repayment & Cancellation";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3.1 Wallet Ledger Audit Fix";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1618,7 +1618,19 @@ export default function App() {
     }
     const item = gadaiList.find(g => g.id === id);
     if (!item) return false;
-    await softDeleteRecord({ type: "gadai", collectionName: "gadai", id, data: item, detail: "Hapus gadai ke Recycle Bin: " + (item.namaBarang || id) });
+    const relatedLedger = sumberDanaLedger.filter(l =>
+      (l.refType === "loan_disbursement" && l.refId === id) ||
+      (l.refType === "loan_disbursement_cancel" && l.refId === id) ||
+      (l.refType === "orphan_loan_disbursement_reversal" && l.refId === id)
+    );
+    await softDeleteRecord({
+      type: "gadai",
+      collectionName: "gadai",
+      id,
+      data: item,
+      relatedLedger,
+      detail: "Hapus pinjaman/gadai ke Recycle Bin: " + (item.namaBarang || id) + (relatedLedger.length ? " · ledger wallet ikut diamankan" : ""),
+    });
     return true;
   }
 
@@ -1636,6 +1648,66 @@ export default function App() {
       sumberDanaId, amount, note: note || "", refType, refId: refId || null,
       createdAt: new Date().toISOString(),
     });
+  }
+
+  function getLedgerTypeLabel(refType) {
+    const labels = {
+      transaction: "Transaksi",
+      investment: "Investasi",
+      goal_allocation: "Alokasi Goal",
+      goal_cash_cancel: "Batal Alokasi Goal",
+      goal_asset_purchase: "Aset Goal",
+      goal_asset_cancel: "Batal Aset Goal",
+      loan_disbursement: "Pencairan Pinjaman",
+      loan_repayment: "Pembayaran Pinjaman",
+      loan_disbursement_cancel: "Batal Pencairan Pinjaman",
+      orphan_loan_disbursement_reversal: "Koreksi Pinjaman Lama",
+      wallet_merge_in: "Merge Masuk",
+      wallet_merge_out: "Merge Keluar",
+      wallet_adjustment: "Penyesuaian Wallet",
+    };
+    return labels[refType] || refType || "Ledger";
+  }
+
+  function getWalletLedgerSorted(sdId) {
+    return sumberDanaLedger
+      .filter(l => l.sumberDanaId === sdId)
+      .slice()
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+  }
+
+  function getOrphanLoanDisbursementLedgers(sdId) {
+    const loanIds = new Set(gadaiList.map(g => g.id));
+    const reversedIds = new Set(
+      sumberDanaLedger
+        .filter(l => l.refType === "orphan_loan_disbursement_reversal" && l.refId)
+        .map(l => l.refId)
+    );
+    return sumberDanaLedger.filter(l =>
+      l.sumberDanaId === sdId &&
+      l.refType === "loan_disbursement" &&
+      Number(l.amount || 0) > 0 &&
+      l.refId &&
+      !loanIds.has(l.refId) &&
+      !reversedIds.has(l.id)
+    );
+  }
+
+  async function reverseOrphanLoanDisbursement(ledger) {
+    if (!ledger) return;
+    const amount = Math.abs(Number(ledger.amount || 0));
+    if (!amount) return;
+    const ok = window.confirm("Koreksi pencairan pinjaman lama sebesar " + formatFull(amount) + "? Saldo wallet akan dikurangi kembali dengan ledger pembalik. Audit lama tetap disimpan.");
+    if (!ok) return;
+    await logLedger(
+      ledger.sumberDanaId,
+      -amount,
+      "Koreksi ledger pinjaman lama/orphan: " + (ledger.note || ledger.refId || ""),
+      "orphan_loan_disbursement_reversal",
+      ledger.id
+    );
+    await addActivityLog("wallet_ledger_repaired", currentUser + " melakukan koreksi wallet atas pencairan pinjaman lama sebesar " + formatFull(amount) + ".");
+    syncToSheets("walletLedgerRepair", { ledgerId: ledger.id, sumberDanaId: ledger.sumberDanaId, amount: -amount, user: currentUser, createdAt: new Date().toISOString() });
   }
 
   function getSumberDanaStatus(sd) {
@@ -2503,6 +2575,8 @@ export default function App() {
     const balance = calcSumberDanaBalance(sd.id);
     const walletTransactions = transactions.filter(t => t.sumberDanaId === sd.id);
     const walletLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id);
+    const walletLedgerSorted = getWalletLedgerSorted(sd.id);
+    const orphanLoanLedgers = getOrphanLoanDisbursementLedgers(sd.id);
     const mergeTargets = sumberDanaList.filter(item => item.user === sd.user && item.id !== sd.id && getSumberDanaStatus(item) !== "archived");
     return (
       <div onClick={() => setSelectedSD(null)} style={{
@@ -2532,6 +2606,46 @@ export default function App() {
             <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Saldo Awal</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{formatRupiah(sd.initialBalance || 0)}</div></div>
             <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Transaksi</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{walletTransactions.length}</div></div>
             <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Ledger</div><div style={{ fontSize: "13px", fontWeight: 900 }}>{walletLedger.length}</div></div>
+          </div>
+
+          {orphanLoanLedgers.length > 0 && (
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.26)", marginBottom: "14px" }}>
+              <div style={{ fontSize: "12px", color: "#fbbf24", fontWeight: 900, marginBottom: "6px" }}>⚠️ Koreksi saldo dari pinjaman lama</div>
+              <div style={{ fontSize: "11px", color: "#fde68a", lineHeight: 1.55, marginBottom: "10px" }}>
+                Ada ledger pencairan pinjaman yang dokumen pinjamannya sudah tidak aktif/terhapus dari versi lama. Gunakan koreksi ini untuk membuat ledger pembalik, bukan menghapus audit lama.
+              </div>
+              <div style={{ display: "grid", gap: "8px" }}>
+                {orphanLoanLedgers.slice(0, 3).map(l => (
+                  <button key={l.id} onClick={() => reverseOrphanLoanDisbursement(l)} style={{ textAlign: "left", padding: "10px", borderRadius: "12px", border: "1px solid rgba(245,158,11,0.30)", background: "rgba(15,23,42,0.55)", color: "#fff", fontWeight: 800 }}>
+                    Koreksi {formatFull(Math.abs(l.amount || 0))} · {l.note || "Pencairan pinjaman lama"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.20)", marginBottom: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>📜 Log Wallet</div>
+              <div style={{ fontSize: "11px", color: "#a5b4fc", fontWeight: 800 }}>{walletLedgerSorted.length} item</div>
+            </div>
+            <div style={{ display: "grid", gap: "8px", maxHeight: "240px", overflowY: "auto", paddingRight: "4px" }}>
+              {walletLedgerSorted.length === 0 && <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada pergerakan wallet.</div>}
+              {walletLedgerSorted.slice(0, 30).map(l => (
+                <div key={l.id} style={{ padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900 }}>{getLedgerTypeLabel(l.refType)}</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "3px" }}>{l.note || "-"}</div>
+                      <div style={{ fontSize: "10px", color: "#64748b", marginTop: "5px" }}>{l.createdAt ? new Date(l.createdAt).toLocaleString("id-ID") : ""}</div>
+                    </div>
+                    <div style={{ fontSize: "13px", fontWeight: 900, color: Number(l.amount || 0) >= 0 ? "#34d399" : "#f87171", whiteSpace: "nowrap" }}>
+                      {Number(l.amount || 0) >= 0 ? "+" : "-"}{formatRupiah(Math.abs(l.amount || 0))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div style={{ display: "grid", gap: "10px" }}>
