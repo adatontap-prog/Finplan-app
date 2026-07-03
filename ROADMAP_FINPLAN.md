@@ -938,3 +938,254 @@ and later supports:
 Phase 7 — Financial Health Engine
 Phase 8 — Kai Personal CFO inside FinPlan
 ```
+
+---
+
+## 15. Phase 6.7 Addendum — Family Permission, Allowance Transfer, and Goal Usage Log
+
+This section locks the next Family Financial OS refinements into the FinPlan roadmap.
+
+### 15.1 Phase 6.7.1 — Sensitive Permission Scope Fix
+
+Sensitive financial data must be hidden by default unless the user has explicit permission.
+
+Sensitive data includes:
+
+```text
+Main wallet
+Family wallet
+Investment
+Savings / Goals
+Loans / Pinjaman
+Debt / liability
+Net worth
+Financial Health
+Financial Engine Summary
+Activity Log
+Recycle Bin
+Backup / Export
+Security Settings
+```
+
+Default role behavior:
+
+```text
+Owner:
+- Full access
+- Can view and manage all wallets, goals, investment, loans, members, permissions, logs, and backup
+
+Admin:
+- Limited trusted access
+- Can access sensitive modules only if Owner grants permission
+- Should not automatically have delete/export/security authority
+
+Member:
+- Can view own wallet
+- Can input own transaction if allowed
+- Can view own transaction history
+- Can view selected/public goals only if allowed
+- Cannot view family net worth, investment, loans, main wallet, backup, or owner logs by default
+
+Viewer:
+- Read-only limited access
+- No sensitive data by default
+```
+
+Required permission scopes:
+
+```text
+wallet_view_own
+wallet_view_all
+wallet_manage_own
+wallet_manage_all
+transaction_add
+transaction_view_own
+transaction_view_all
+transaction_edit_own
+transaction_edit_all
+transaction_delete_own
+transaction_delete_all
+investment_view
+investment_manage
+goal_view_public
+goal_view_sensitive
+goal_contribute
+goal_manage
+loan_view
+loan_manage
+financial_summary_view
+financial_health_view
+activity_log_view
+recycle_bin_view
+backup_export
+settings_security
+```
+
+Locked rule:
+
+```text
+Sensitive data is hidden by default.
+Access is explicitly granted by Owner.
+Member access is own-scope first.
+Admin access is permission-based, not automatically full.
+```
+
+### 15.2 Phase 6.7.2 — Family Wallet Transfer / Uang Saku
+
+Owner/Admin should be able to transfer or relocate money from an allowed wallet to a member wallet.
+
+Use cases:
+
+```text
+Bape gives allowance to Arkaja
+Bape gives allowance to Aroon
+Ibu transfers family money to child wallet
+Owner moves money from main wallet to member wallet
+```
+
+Correct behavior:
+
+```text
+Source wallet decreases
+Destination wallet increases
+Family net worth unchanged
+Not counted as consumption expense
+Ledger records both sides
+Activity Log records the transfer
+Owner/Admin can monitor member wallet and transactions based on permission
+```
+
+Recommended label:
+
+```text
+Uang Saku / Allowance Transfer
+```
+
+or:
+
+```text
+Relokasi Dana Keluarga
+```
+
+Required fields:
+
+```text
+Source wallet
+Destination user/member
+Destination wallet
+Amount
+Date
+Purpose/category
+Note
+Created by
+```
+
+Example activity log:
+
+```text
+Bape mengirim uang saku Rp 100.000 dari Bank BCA ke Wallet Arkaja.
+```
+
+Member visibility:
+
+```text
+Member can see incoming allowance in their own wallet.
+Member cannot see source main wallet unless granted.
+Owner/Admin can audit the transfer and member spending.
+```
+
+### 15.3 Phase 6.7.3 — Goal Usage Log / Pakai Dana Goal
+
+If money or assets allocated to a Goal are used, FinPlan must record what the funds were used for.
+
+Use cases:
+
+```text
+Use Dana Pendidikan Aroon for school registration
+Use Dana Darurat for medical bill
+Use Goal asset for real-world need
+Use savings to pay planned family expense
+```
+
+Correct behavior:
+
+```text
+Goal balance decreases
+Goal holding may decrease if asset is used/sold/released
+Wallet movement is recorded if money moves through a wallet
+Spending purpose is mandatory
+Goal Activity Log records usage
+Global Activity Log records usage
+Financial Engine keeps audit trail
+```
+
+Required fields:
+
+```text
+Goal
+Amount / asset quantity
+Used for what
+Category
+Wallet source or destination
+Date
+User
+Note
+Optional attachment/reference
+```
+
+Example log:
+
+```text
+Bape memakai Rp 2.000.000 dari Goal Pendidikan Aroon untuk uang pangkal sekolah.
+```
+
+Locked rule:
+
+```text
+Goal funds cannot disappear silently.
+Every use of Goal funds must explain what it was used for.
+```
+
+### 15.4 Recommended Implementation Order
+
+```text
+Phase 6.7.1 — Sensitive Permission Scope Fix
+Phase 6.7.2 — Family Wallet Transfer / Uang Saku
+Phase 6.7.3 — Goal Usage Log / Pakai Dana Goal
+Phase 6.8 — CFO Console UI Polish
+Phase 7 — Financial Health Engine
+Phase 8 — Kai Personal CFO inside FinPlan
+```
+
+### 15.5 Family Financial OS Principle
+
+FinPlan should support this family operating flow:
+
+```text
+Owner/Admin earns or receives income
+↓
+Money enters selected wallet
+↓
+Owner/Admin allocates money to:
+- household spending
+- member allowance
+- goals
+- investment
+- loan repayment
+↓
+Member can spend from own wallet
+↓
+Owner/Admin can audit member spending based on permission
+↓
+Goal usage is logged clearly when goal funds are actually used
+```
+
+This keeps FinPlan honest:
+
+```text
+No false income
+No hidden sensitive data
+No disappearing goal funds
+No confusing wallet-to-wallet transfer as expense
+No member access to family-wide sensitive finances by default
+```
