@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.1 Sensitive Permission Scope";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.1 Hotfix Viewer Login";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -2323,10 +2323,19 @@ export default function App() {
   const canViewLoans = isOwner || hasPermission("loan_view") || (currentRole === "Admin" && hasPermission("gadai"));
   const canManageLoans = isOwner || hasPermission("loan_manage") || (currentRole === "Admin" && hasPermission("gadai"));
   const canViewFinancialSummary = isOwner || hasPermission("financial_summary_view");
-  const canViewActivityLog = isOwner || hasPermission("activity_log_view") || canViewActivityLog;
-  const canViewRecycleBin = isOwner || hasPermission("recycle_bin_view") || canViewRecycleBin;
+  const canViewActivityLog = isOwner || hasPermission("activity_log_view") || hasPermission("activity_log");
+  const canViewRecycleBin = isOwner || hasPermission("recycle_bin_view") || hasPermission("recycle_bin");
   const canBackupExport = isOwner || hasPermission("backup_export") || hasPermission("backup");
   const canAccessSelectedWalletUser = (name) => canViewAllWallets || name === currentUser;
+
+  useEffect(() => {
+    if (!canViewAllTransactions && filterUser !== currentUser) {
+      setFilterUser(currentUser);
+    }
+    if (!canViewAllWallets && walletFilterUser !== currentUser) {
+      setWalletFilterUser(currentUser);
+    }
+  }, [canViewAllTransactions, canViewAllWallets, currentUser, filterUser, walletFilterUser]);
 
   const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
     const permissions = permissionsForRole(role.label);
