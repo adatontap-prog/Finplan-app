@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.4 Net Position & Wallet Adjustment";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.5 Existing Asset Onboarding";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1132,11 +1132,11 @@ export default function App() {
   const invTypeUnit = { usd: "USD", lm: "gram", jewelry: "gram" };
   const invSummary = investments.map(inv => {
     const currentValue = calcAssetValue(inv, marketPrices);
-    const buyValue = ["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0);
+    const buyValue = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0)));
     const profitLoss = currentValue - buyValue;
     return { ...inv, currentValue, profitLoss, pct: buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0 };
   });
-  const totalInvBuy = investments.reduce((s, i) => s + (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0)), 0);
+  const totalInvBuy = investments.reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
 
   const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
@@ -1353,30 +1353,58 @@ export default function App() {
   }
 
   async function addInvestmentAsset(type) {
+    if (!hasPermission("investments")) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengelola investasi.");
+      return;
+    }
     const qty = parseDecimal(assetForm.qty);
-    const buyPrice = parseDecimal(assetForm.buyPrice);
+    const rawValue = parseAmount(assetForm.buyPrice) || parseDecimal(assetForm.buyPrice);
     if (!qty) return;
-    const idrValue = ["idr","obligasi"].includes(assetForm.assetType) ? qty : null;
     const at = ASSET_TYPES.find(a => a.id === assetForm.assetType);
+    const isCashLike = ["idr","obligasi"].includes(assetForm.assetType);
+    const sourceMode = showAssetConvert === "invest_existing" ? "existing" : "wallet";
+    const valueMode = assetForm.valueMode || "total";
+    const costBasis = isCashLike ? qty : (valueMode === "unit" ? qty * rawValue : rawValue);
+    const unitBuyPrice = isCashLike ? 1 : (qty && costBasis ? costBasis / qty : rawValue);
+    if (!isCashLike && !costBasis) {
+      showAccessNotice("Isi nilai aset atau harga beli.");
+      return;
+    }
+    if (sourceMode === "wallet" && !assetSDId) {
+      showAccessNotice("Pilih Sumber Dana jika aset dibeli dari wallet.");
+      return;
+    }
+    const sourceWallet = assetSDId ? activeFundingSourceOptions.find(s => s.id === assetSDId) : null;
+    if (sourceMode === "wallet" && !sourceWallet) {
+      showAccessNotice("Sumber Dana tidak aktif/tidak ditemukan.");
+      return;
+    }
+    const idrValue = isCashLike ? qty : null;
     const docRef = await addDoc(collection(db, "investments"), {
       assetType: assetForm.assetType,
       qty,
       amount: qty,
-      buyPrice,
+      buyPrice: unitBuyPrice,
+      costBasis,
       manualPrice: assetForm.manualPrice ? parseDecimal(assetForm.manualPrice) : null,
       ticker: assetForm.ticker || null,
       note: assetForm.note || null,
       idrValue,
       buyDate: new Date().toISOString().split("T")[0],
       type: assetForm.assetType,
+      sourceMode,
+      movementType: sourceMode === "existing" ? "existing_asset" : "investment_buy",
+      createdBy: currentUser,
       createdAt: new Date().toISOString(),
     });
-    if (assetSDId) {
-      const buyValueIdr = idrValue !== null ? qty : qty * buyPrice;
-      await logLedger(assetSDId, -buyValueIdr, "Beli investasi: " + (assetForm.ticker || (at ? at.label : "")||""), "investment", docRef.id);
+    if (sourceMode === "wallet") {
+      await logLedger(assetSDId, -costBasis, "Beli investasi: " + (assetForm.ticker || (at ? at.label : "")||""), "investment", docRef.id);
+      await addActivityLog("investment_buy", currentUser + " membeli aset investasi " + (assetForm.ticker || (at ? at.label : assetForm.assetType)) + " senilai " + formatFull(costBasis) + " dari " + (sourceWallet?.name || "Sumber Dana") + ".");
+    } else {
+      await addActivityLog("existing_asset_onboarded", currentUser + " mencatat aset yang sudah dimiliki: " + (assetForm.ticker || (at ? at.label : assetForm.assetType)) + " senilai/modal " + formatFull(costBasis) + ". Wallet tidak berubah.");
     }
     // Sync ke Google Sheets
-    syncToSheets("addInvestment", { id: docRef.id, assetType: assetForm.assetType, ticker: assetForm.ticker, qty, unit: (at ? at.unit : "") || "", buyPrice, note: assetForm.note, buyDate: new Date().toISOString().split("T")[0] });
+    syncToSheets("addInvestment", { id: docRef.id, assetType: assetForm.assetType, ticker: assetForm.ticker, qty, unit: (at ? at.unit : "") || "", buyPrice: unitBuyPrice, costBasis, sourceMode, note: assetForm.note, buyDate: new Date().toISOString().split("T")[0] });
     setShowAssetConvert(null);
     setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
     setAssetSDId("");
@@ -2861,6 +2889,104 @@ export default function App() {
     );
   };
 
+  const InvestmentAssetModal = () => {
+    if (!showAssetConvert || !String(showAssetConvert).startsWith("invest_")) return null;
+    const isExisting = showAssetConvert === "invest_existing";
+    const assetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
+    const qty = parseDecimal(assetForm.qty);
+    const rawValueInput = parseAmount(assetForm.buyPrice) || parseDecimal(assetForm.buyPrice);
+    const valueMode = assetForm.valueMode || "total";
+    const isCashLikeAsset = ["idr", "obligasi"].includes(assetForm.assetType);
+    const estValue = isCashLikeAsset ? qty : (valueMode === "unit" ? qty * rawValueInput : rawValueInput);
+    const unitPricePreview = (!isCashLikeAsset && qty && estValue) ? estValue / qty : 0;
+    const selectedSource = activeFundingSourceOptions.find(sd => sd.id === assetSDId);
+
+    return (
+      <div onClick={() => { setShowAssetConvert(null); setAssetSDId(""); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: isExisting ? "#fbbf24" : "#34d399", fontWeight: 900, textTransform: "uppercase" }}>{isExisting ? "Existing Asset Onboarding" : "Investment Buy"}</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>{isExisting ? "Input Aset Sudah Dimiliki" : "Beli Aset Investasi"}</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.5 }}>
+                {isExisting ? "Aset ini sudah kamu miliki sebelumnya. Wallet tidak berubah dan tidak dicatat sebagai pengeluaran baru." : "Aset dibeli dari Sumber Dana. Wallet berkurang, investasi bertambah. Bukan expense konsumtif."}
+              </div>
+            </div>
+            <button onClick={() => { setShowAssetConvert(null); setAssetSDId(""); }} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: isExisting ? "rgba(245,158,11,0.10)" : "rgba(16,185,129,0.10)", border: isExisting ? "1px solid rgba(245,158,11,0.22)" : "1px solid rgba(16,185,129,0.22)", color: isExisting ? "#fbbf24" : "#86efac", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "14px" }}>
+            {isExisting ? "Mode aset sudah dimiliki: gunakan untuk mencatat LM, USD, saham, reksa dana, atau aset lain yang sudah ada sebelum masuk FinPlan. Tidak ada perubahan saldo wallet." : "Mode beli dari wallet: sumber dana wajib dipilih dan saldo wallet akan berkurang sesuai cost basis."}
+          </div>
+
+          <div style={{ display: "grid", gap: "12px" }}>
+            {!isExisting && (
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Sumber Dana Pembelian</div>
+                <select value={assetSDId} onChange={(e) => setAssetSDId(e.target.value)} style={inputStyle}>
+                  <option value="">Pilih sumber dana aktif...</option>
+                  {activeFundingSourceOptions.map(sd => <option key={sd.id} value={sd.id}>{sd.icon || "💵"} {sd.name} · {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Jenis Aset</div>
+              <select value={assetForm.assetType} onChange={(e) => setAssetForm(prev => ({ ...prev, assetType: e.target.value }))} style={inputStyle}>
+                {ASSET_TYPES.map(a => <option key={a.id} value={a.id}>{a.icon} {a.label}</option>)}
+              </select>
+            </div>
+
+            {!isCashLikeAsset && (
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Mode input nilai</div>
+                <select value={valueMode} onChange={(e) => setAssetForm(prev => ({ ...prev, valueMode: e.target.value }))} style={inputStyle}>
+                  <option value="total">Total nilai / modal aset</option>
+                  <option value="unit">Harga per unit × qty</option>
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <input value={assetForm.qty} onChange={(e) => setAssetForm(prev => ({ ...prev, qty: e.target.value }))} placeholder={assetType?.unit ? "Qty / " + assetType.unit : "Qty"} style={inputStyle} />
+              <input value={assetForm.buyPrice} onChange={(e) => setAssetForm(prev => ({ ...prev, buyPrice: e.target.value }))} placeholder={isCashLikeAsset ? "Nilai IDR" : (valueMode === "unit" ? "Harga beli per unit" : "Total nilai/modal")} style={inputStyle} />
+            </div>
+
+            {!isCashLikeAsset && (
+              <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.045)", color: "#94a3b8", fontSize: "11px", lineHeight: 1.45 }}>
+                {valueMode === "total"
+                  ? <>Mode total: angka dianggap total nilai/modal aset. Harga/unit estimasi: <b style={{ color: "#fff" }}>{formatRupiah(unitPricePreview)}</b>.</>
+                  : <>Mode unit: total dihitung dari qty × harga per unit = <b style={{ color: "#fff" }}>{formatRupiah(estValue)}</b>.</>}
+              </div>
+            )}
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <input value={assetForm.ticker} onChange={(e) => setAssetForm(prev => ({ ...prev, ticker: e.target.value }))} placeholder="Ticker/nama aset" style={inputStyle} />
+              <input value={assetForm.manualPrice} onChange={(e) => setAssetForm(prev => ({ ...prev, manualPrice: e.target.value }))} placeholder="Harga pasar manual" style={inputStyle} />
+            </div>
+
+            <input value={assetForm.note} onChange={(e) => setAssetForm(prev => ({ ...prev, note: e.target.value }))} placeholder="Catatan aset / lokasi penyimpanan" style={inputStyle} />
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+                <div style={{ fontSize: "10px", color: "#64748b" }}>{isExisting ? "Sumber" : "Wallet"}</div>
+                <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>{isExisting ? "Aset sudah dimiliki" : (selectedSource ? selectedSource.name : "-")}</div>
+              </div>
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+                <div style={{ fontSize: "10px", color: "#64748b" }}>Cost Basis</div>
+                <div style={{ fontSize: "12px", color: "#86efac", fontWeight: 900 }}>{formatRupiah(estValue)}</div>
+              </div>
+            </div>
+
+            <button onClick={() => addInvestmentAsset(isExisting ? "existing" : "wallet")} disabled={!qty || (!isCashLikeAsset && !rawValueInput) || (!isExisting && !assetSDId)} style={{ padding: "15px", borderRadius: "16px", border: "none", background: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.06)", color: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "pointer" : "not-allowed" }}>
+              {isExisting ? "✅ Simpan Aset Existing" : "✅ Beli & Catat Investasi"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const GoalAssetFundingModal = () => {
     if (!showAssetConvert || String(showAssetConvert).startsWith("invest_")) return null;
     const goal = SAVINGS_GOALS.find(g => g.id === showAssetConvert);
@@ -3747,7 +3873,8 @@ export default function App() {
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 700 }}>{at.icon} {inv.ticker || at.label}</div>
-                      <div style={{ fontSize: "11px", color: "#555" }}>{inv.qty || inv.amount} {at.unit} • beli {formatRupiah(inv.buyPrice)} per {at.unit} - {inv.buyDate || "-"}</div>
+                      <div style={{ fontSize: "11px", color: "#555" }}>{inv.qty || inv.amount} {at.unit} • modal {formatRupiah(inv.costBasis ?? ((inv.qty || inv.amount || 0) * (inv.buyPrice || 0)))} - {inv.buyDate || "-"}</div>
+                      <div style={{ fontSize: "10px", color: inv.sourceMode === "existing" ? "#fbbf24" : "#86efac", marginTop: "3px", fontWeight: 800 }}>{inv.sourceMode === "existing" ? "📦 Aset sudah dimiliki · wallet tidak berubah" : "💳 Dibeli dari wallet"}</div>
                       {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
                     </div>
                     {currentUser === ADMIN_USER && <button onClick={() => deleteInvestment(inv.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>x</button>}
@@ -3778,10 +3905,10 @@ export default function App() {
             })}
 
             {/* Tombol tambah */}
-            {currentUser === ADMIN_USER && (
-              <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                <button onClick={() => { setShowAssetConvert("invest_cash"); setAssetForm({ assetType: "idr", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Tunai</button>
-                <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ flex: 1, padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 700 }}>? + Aset</button>
+            {hasPermission("investments") && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
+                <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); setAssetSDId(""); }} style={{ padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>💳 Beli dari Wallet</button>
+                <button onClick={() => { setShowAssetConvert("invest_existing"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); setAssetSDId(""); }} style={{ padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.45)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>📦 Aset Sudah Dimiliki</button>
               </div>
             )}
           </div>
@@ -4065,6 +4192,7 @@ export default function App() {
         {SumberDanaDetailModal()}
         {RecycleBinModal()}
         {GoalCashFundingModal()}
+        {InvestmentAssetModal()}
         {GoalAssetFundingModal()}
         {LoanGadaiModal()}
         {LoanRepaymentModal()}
