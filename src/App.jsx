@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.1 Hotfix Viewer Login";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.2 Family Wallet Transfer";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -532,6 +532,15 @@ export default function App() {
   const [mergeTargetSDId, setMergeTargetSDId] = useState("");
   const [showArchivedWallets, setShowArchivedWallets] = useState(false);
   const [walletAdjustForm, setWalletAdjustForm] = useState({ targetBalance: "", note: "" });
+  const [showWalletTransfer, setShowWalletTransfer] = useState(false);
+  const [walletTransferForm, setWalletTransferForm] = useState({
+    sourceWalletId: "",
+    destinationWalletId: "",
+    amount: "",
+    purpose: "uang_saku",
+    note: "",
+    date: new Date().toISOString().split("T")[0],
+  });
   const [transactionSDId, setTransactionSDId] = useState("");
   const [savingsSDId, setSavingsSDId] = useState("");
   const [assetSDId, setAssetSDId] = useState("");
@@ -936,6 +945,7 @@ export default function App() {
     setSelectedTransaction(null);
     setSelectedInvestment(null);
     setAssetToGoalInvestment(null);
+    setShowWalletTransfer(false);
     setSelectedGoal(null);
     setSelectedCategory(null);
     setSelectedSD(null);
@@ -1949,7 +1959,7 @@ export default function App() {
 
   async function adjustWalletToTarget(sd) {
     if (!sd) return;
-    if (!hasPermission("wallets")) {
+    if (!canManageOwnWallets && !canManageAllWallets) {
       showAccessNotice("Role " + currentRole + " tidak punya izin penyesuaian saldo wallet.");
       return;
     }
@@ -1978,6 +1988,98 @@ export default function App() {
     setWalletAdjustForm({ targetBalance: "", note: "" });
   }
 
+  function resetWalletTransferForm() {
+    setWalletTransferForm({
+      sourceWalletId: "",
+      destinationWalletId: "",
+      amount: "",
+      purpose: "uang_saku",
+      note: "",
+      date: new Date().toISOString().split("T")[0],
+    });
+  }
+
+  async function executeWalletTransfer() {
+    if (!canManageAllWallets) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin transfer antar wallet keluarga.");
+      return;
+    }
+
+    const source = sumberDanaList.find(sd => sd.id === walletTransferForm.sourceWalletId);
+    const destination = sumberDanaList.find(sd => sd.id === walletTransferForm.destinationWalletId);
+    const amount = parseAmount(walletTransferForm.amount);
+
+    if (!source || !destination) {
+      showAccessNotice("Pilih wallet asal dan wallet tujuan.");
+      return;
+    }
+    if (source.id === destination.id) {
+      showAccessNotice("Wallet asal dan tujuan tidak boleh sama.");
+      return;
+    }
+    if (!isSumberDanaActive(source) || !isSumberDanaActive(destination)) {
+      showAccessNotice("Transfer hanya bisa memakai wallet aktif.");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      showAccessNotice("Isi nominal transfer yang benar.");
+      return;
+    }
+
+    const isAllowance = walletTransferForm.purpose === "uang_saku";
+    const purposeLabel = isAllowance ? "Uang Saku" : "Transfer Antar Wallet";
+    const ok = window.confirm(
+      purposeLabel + " sebesar " + formatFull(amount) + "\n" +
+      "Dari: " + source.name + " (" + source.user + ")\n" +
+      "Ke: " + destination.name + " (" + destination.user + ")\n\n" +
+      "Ini adalah transfer internal, bukan expense konsumtif."
+    );
+    if (!ok) return;
+
+    const transferData = {
+      type: isAllowance ? "allowance_transfer" : "wallet_transfer",
+      purpose: walletTransferForm.purpose,
+      amount,
+      sourceWalletId: source.id,
+      sourceWalletName: source.name,
+      sourceUser: source.user,
+      destinationWalletId: destination.id,
+      destinationWalletName: destination.name,
+      destinationUser: destination.user,
+      date: walletTransferForm.date || new Date().toISOString().split("T")[0],
+      note: walletTransferForm.note || "",
+      createdBy: currentUser,
+      createdAt: new Date().toISOString(),
+      movementType: "wallet_to_wallet",
+      netWorthEffect: "neutral",
+    };
+
+    const transferRef = await addDoc(collection(db, "walletTransfers"), transferData);
+    await logLedger(
+      source.id,
+      -amount,
+      purposeLabel + " ke " + destination.user + " · " + destination.name + (walletTransferForm.note ? " · " + walletTransferForm.note : ""),
+      isAllowance ? "allowance_transfer_out" : "wallet_transfer_out",
+      transferRef.id
+    );
+    await logLedger(
+      destination.id,
+      amount,
+      purposeLabel + " dari " + source.user + " · " + source.name + (walletTransferForm.note ? " · " + walletTransferForm.note : ""),
+      isAllowance ? "allowance_transfer_in" : "wallet_transfer_in",
+      transferRef.id
+    );
+
+    await addActivityLog(
+      isAllowance ? "allowance_transfer" : "wallet_transfer",
+      currentUser + " mengirim " + (isAllowance ? "uang saku " : "transfer wallet ") + formatFull(amount) + " dari " + source.name + " (" + source.user + ") ke " + destination.name + " (" + destination.user + ")."
+    );
+
+    syncToSheets("walletTransfer", { ...transferData, id: transferRef.id });
+    resetWalletTransferForm();
+    setShowWalletTransfer(false);
+  }
+
   async function logLedger(sumberDanaId, amount, note, refType, refId) {
     if (!sumberDanaId) return;
     await addDoc(collection(db, "sumberDanaLedger"), {
@@ -2002,6 +2104,10 @@ export default function App() {
       wallet_merge_in: "Merge Masuk",
       wallet_merge_out: "Merge Keluar",
       wallet_adjustment: "Penyesuaian Wallet",
+      allowance_transfer_out: "Uang Saku Keluar",
+      allowance_transfer_in: "Uang Saku Masuk",
+      wallet_transfer_out: "Transfer Wallet Keluar",
+      wallet_transfer_in: "Transfer Wallet Masuk",
     };
     return labels[refType] || refType || "Ledger";
   }
@@ -2558,6 +2664,7 @@ export default function App() {
 
             <Section title="Keuangan Settings">
               {canAccessWallets && <SettingButton onClick={openWalletManager} tone="green">🏦 Kelola Sumber Dana / Wallet v2</SettingButton>}
+              {canManageAllWallets && <SettingButton onClick={() => { setShowSettingsCenter(false); resetWalletTransferForm(); setShowWalletTransfer(true); }} tone="green">💸 Uang Saku / Transfer Wallet</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.16)", color: "#a7f3d0", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Settings hanya untuk konfigurasi keuangan. Tabungan / Goal dan Investasi tetap berada di navigasi utama agar tidak tercampur dengan pengaturan.
               </div>
@@ -2583,7 +2690,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.6. Aset Investasi bisa dipindahkan ke Goal tanpa mengubah wallet.
+            FinPlan v1.1.0 Family Edition Phase 6.7.2. Uang Saku / Transfer Wallet aktif sebagai transfer internal keluarga, bukan expense.
           </div>
         </div>
       </div>
@@ -2602,6 +2709,8 @@ export default function App() {
       wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
       wallet_merged: { label: "Wallet Digabung", icon: "🔄", tone: "amber" },
       wallet_deleted: { label: "Wallet Dihapus", icon: "🗑️", tone: "red" },
+      allowance_transfer: { label: "Uang Saku", icon: "💸", tone: "green" },
+      wallet_transfer: { label: "Transfer Wallet", icon: "🔁", tone: "purple" },
       transaction_added: { label: "Transaksi Ditambah", icon: "➕", tone: "green" },
       transaction_deleted: { label: "Transaksi Dihapus", icon: "🗑️", tone: "red" },
       transaction_restored: { label: "Transaksi Dipulihkan", icon: "♻️", tone: "green" },
@@ -2968,6 +3077,84 @@ export default function App() {
               width: "100%", padding: "15px", borderRadius: "16px", border: "none",
               background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900, fontSize: "15px", marginTop: "8px"
             }}>Simpan Sumber Dana</button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const WalletTransferModal = () => {
+    if (!showWalletTransfer) return null;
+
+    const activeWallets = sumberDanaList.filter(sd => isSumberDanaActive(sd));
+    const sourceOptions = activeWallets.filter(sd => canManageAllWallets || sd.user === currentUser);
+    const destinationOptions = activeWallets.filter(sd => sd.id !== walletTransferForm.sourceWalletId);
+    const amount = parseAmount(walletTransferForm.amount);
+    const source = sumberDanaList.find(sd => sd.id === walletTransferForm.sourceWalletId);
+    const destination = sumberDanaList.find(sd => sd.id === walletTransferForm.destinationWalletId);
+    const isAllowance = walletTransferForm.purpose === "uang_saku";
+
+    return (
+      <div onClick={() => setShowWalletTransfer(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#86efac", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.7.2 · Family Transfer</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Uang Saku / Transfer Wallet</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.5 }}>
+                Transfer antar wallet keluarga. Wallet asal berkurang, wallet tujuan bertambah, net worth keluarga tidak berubah.
+              </div>
+            </div>
+            <button onClick={() => setShowWalletTransfer(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+            <button onClick={() => setWalletTransferForm(prev => ({ ...prev, purpose: "uang_saku" }))} style={{ padding: "12px", borderRadius: "14px", border: "1px solid " + (isAllowance ? "rgba(16,185,129,0.45)" : "rgba(255,255,255,0.08)"), background: isAllowance ? "rgba(16,185,129,0.16)" : "rgba(255,255,255,0.05)", color: isAllowance ? "#86efac" : "#94a3b8", fontWeight: 900, cursor: "pointer" }}>💸 Uang Saku</button>
+            <button onClick={() => setWalletTransferForm(prev => ({ ...prev, purpose: "transfer_wallet" }))} style={{ padding: "12px", borderRadius: "14px", border: "1px solid " + (!isAllowance ? "rgba(99,102,241,0.45)" : "rgba(255,255,255,0.08)"), background: !isAllowance ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.05)", color: !isAllowance ? "#c7d2fe" : "#94a3b8", fontWeight: 900, cursor: "pointer" }}>🔁 Transfer</button>
+          </div>
+
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Wallet asal</div>
+              <select value={walletTransferForm.sourceWalletId} onChange={(e) => setWalletTransferForm(prev => ({ ...prev, sourceWalletId: e.target.value, destinationWalletId: prev.destinationWalletId === e.target.value ? "" : prev.destinationWalletId }))} style={inputStyle}>
+                <option value="">Pilih wallet asal...</option>
+                {sourceOptions.map(sd => <option key={sd.id} value={sd.id}>{sd.icon || "💵"} {sd.name} · {sd.user} · {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Wallet tujuan</div>
+              <select value={walletTransferForm.destinationWalletId} onChange={(e) => setWalletTransferForm(prev => ({ ...prev, destinationWalletId: e.target.value }))} style={inputStyle}>
+                <option value="">Pilih wallet tujuan/member...</option>
+                {destinationOptions.map(sd => <option key={sd.id} value={sd.id}>{sd.icon || "💵"} {sd.name} · {sd.user} · {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <input value={walletTransferForm.amount} inputMode="numeric" onChange={(e) => setWalletTransferForm(prev => ({ ...prev, amount: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Nominal" style={inputStyle} />
+              <input type="date" value={walletTransferForm.date} onChange={(e) => setWalletTransferForm(prev => ({ ...prev, date: e.target.value }))} style={inputStyle} />
+            </div>
+
+            <input value={walletTransferForm.note} onChange={(e) => setWalletTransferForm(prev => ({ ...prev, note: e.target.value }))} placeholder={isAllowance ? "Catatan, contoh: uang saku minggu ini" : "Catatan transfer"} style={inputStyle} />
+
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.22)" }}>
+              <div style={{ fontSize: "12px", color: "#c7d2fe", fontWeight: 900, marginBottom: "8px" }}>Preview efek ledger</div>
+              <div style={{ display: "grid", gap: "6px", fontSize: "12px", color: "#cbd5e1" }}>
+                <div>Wallet asal: <b style={{ color: "#fca5a5" }}>{source ? source.name + " -" + formatFull(amount || 0) : "-"}</b></div>
+                <div>Wallet tujuan: <b style={{ color: "#86efac" }}>{destination ? destination.name + " +" + formatFull(amount || 0) : "-"}</b></div>
+                <div>Net worth keluarga: <b style={{ color: "#fff" }}>tetap / netral</b></div>
+              </div>
+            </div>
+
+            <button onClick={executeWalletTransfer} disabled={!walletTransferForm.sourceWalletId || !walletTransferForm.destinationWalletId || !amount} style={{ padding: "15px", borderRadius: "16px", border: "none", background: walletTransferForm.sourceWalletId && walletTransferForm.destinationWalletId && amount ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.06)", color: walletTransferForm.sourceWalletId && walletTransferForm.destinationWalletId && amount ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: walletTransferForm.sourceWalletId && walletTransferForm.destinationWalletId && amount ? "pointer" : "not-allowed" }}>
+              {isAllowance ? "💸 Kirim Uang Saku" : "🔁 Simpan Transfer"}
+            </button>
+
+            {destinationOptions.length === 0 && (
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
+                Belum ada wallet tujuan aktif. Buat wallet member dulu di Sumber Dana.
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -4511,7 +4698,7 @@ export default function App() {
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
                 1. Tambahkan sumber dana sesuai kebutuhan: Cash, BCA, Mandiri, DANA, Owner Draw, atau lainnya.<br />
                 2. Setiap transaksi wajib memilih sumber dana aktif agar saldo dompet akurat.<br />
-                3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.
+                3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.<br />4. Gunakan Uang Saku / Transfer Wallet untuk memindahkan dana internal keluarga tanpa dianggap expense.
               </div>
             </div>
             {/* User filter */}
@@ -4525,9 +4712,14 @@ export default function App() {
                 }}>{member.avatar || "👤"} {u} {u === currentUser ? "(saya)" : ""}</button>
               );})}
             </div>
-            <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "14px" }}>
+            <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "10px" }}>
               {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif/nonaktif"}
             </button>
+            {canManageAllWallets && (
+              <button onClick={() => { resetWalletTransferForm(); setShowWalletTransfer(true); }} style={{ width: "100%", padding: "12px", borderRadius: "14px", border: "1px solid rgba(16,185,129,0.26)", background: "rgba(16,185,129,0.11)", color: "#86efac", fontSize: "13px", fontWeight: 900, marginBottom: "14px", cursor: "pointer" }}>
+                💸 Uang Saku / Transfer Wallet
+              </button>
+            )}
             {!canViewAllWallets && (
               <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "14px" }}>
                 🔒 Mode own-wallet aktif. Role {currentRole} hanya melihat wallet dan transaksi milik sendiri.
@@ -4603,6 +4795,7 @@ export default function App() {
 
         {AddTransactionModal()}
         {SumberDanaModal()}
+        {WalletTransferModal()}
         {SumberDanaDetailModal()}
         {RecycleBinModal()}
         {GoalCashFundingModal()}
