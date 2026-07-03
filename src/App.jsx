@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.6 Move Asset to Goal";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7 Financial Engine Summary";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1144,6 +1144,31 @@ export default function App() {
 
   const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
   const totalSavingsCurrent = SAVINGS_GOALS.reduce((s, g) => s + calcGoalValue(g.id), 0);
+
+  const financialScopeUser = filterUser === "semua" ? null : filterUser;
+  const financialWallets = sumberDanaList.filter(sd =>
+    (!financialScopeUser || sd.user === financialScopeUser) &&
+    getSumberDanaStatus(sd) !== "archived"
+  );
+  const financialWalletTotal = financialWallets.reduce((sum, sd) => sum + calcSumberDanaBalance(sd.id), 0);
+  const financialInvestmentTotal = invSummary
+    .filter(inv => !financialScopeUser || inv.createdBy === financialScopeUser || (!inv.createdBy && financialScopeUser === currentUser))
+    .reduce((sum, inv) => sum + Number(inv.currentValue || 0), 0);
+  const financialGoalTotal = financialScopeUser ? 0 : totalSavingsCurrent;
+  const financialLoanItems = gadaiList.filter(g =>
+    g.status === "aktif" &&
+    (!financialScopeUser || g.createdBy === financialScopeUser || (!g.createdBy && financialScopeUser === currentUser))
+  );
+  const financialLoanTotal = financialLoanItems.reduce((sum, g) => sum + Number(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0);
+  const financialGrossAssets = financialWalletTotal + financialGoalTotal + financialInvestmentTotal;
+  const financialNetWorth = financialGrossAssets - financialLoanTotal;
+  const financialDebtRatio = financialGrossAssets > 0 ? (financialLoanTotal / financialGrossAssets) * 100 : (financialLoanTotal > 0 ? 100 : 0);
+  const financialScore = Math.max(0, Math.min(100, Math.round(100 - (financialDebtRatio * 1.2) - (financialWalletTotal < 0 ? 15 : 0))));
+  const financialStatus =
+    financialScore >= 80 ? { label: "Sehat", color: "#34d399", bg: "rgba(16,185,129,0.14)" } :
+    financialScore >= 60 ? { label: "Aman", color: "#a3e635", bg: "rgba(163,230,53,0.12)" } :
+    financialScore >= 40 ? { label: "Waspada", color: "#fbbf24", bg: "rgba(245,158,11,0.13)" } :
+    { label: "Bahaya", color: "#f87171", bg: "rgba(239,68,68,0.14)" };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = SAVINGS_GOALS.filter(g => g.category === child);
@@ -3608,6 +3633,53 @@ export default function App() {
               {emailStatus && <div style={{ marginTop: "10px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{emailStatus}</div>}
               {sheetsStatus && <div style={{ marginTop: "6px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{sheetsStatus}</div>}
             </div>
+
+            <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
+                <div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.7</div>
+                  <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman</div>
+                </div>
+                <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
+                  {financialScore}/100 · {financialStatus.label}
+                </div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+                <div style={{ padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Total Wallet</div>
+                  <div style={{ fontSize: "15px", color: financialWalletTotal >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900, marginTop: "4px" }}>{formatFull(financialWalletTotal)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Pinjaman Aktif</div>
+                  <div style={{ fontSize: "15px", color: financialLoanTotal > 0 ? "#fca5a5" : "#86efac", fontWeight: 900, marginTop: "4px" }}>{formatFull(financialLoanTotal)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Goal Funded</div>
+                  <div style={{ fontSize: "15px", color: "#c7d2fe", fontWeight: 900, marginTop: "4px" }}>{financialScopeUser ? "Family" : formatFull(financialGoalTotal)}</div>
+                </div>
+                <div style={{ padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.055)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Investasi Aktif</div>
+                  <div style={{ fontSize: "15px", color: "#34d399", fontWeight: 900, marginTop: "4px" }}>{formatFull(financialInvestmentTotal)}</div>
+                </div>
+              </div>
+
+              <div style={{ padding: "13px", borderRadius: "16px", background: financialNetWorth >= 0 ? "rgba(16,185,129,0.10)" : "rgba(239,68,68,0.10)", border: financialNetWorth >= 0 ? "1px solid rgba(16,185,129,0.20)" : "1px solid rgba(239,68,68,0.20)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", letterSpacing: "1px", textTransform: "uppercase", fontWeight: 900 }}>Net Position</div>
+                    <div style={{ fontSize: "20px", color: financialNetWorth >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{formatFull(financialNetWorth)}</div>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Debt Ratio</div>
+                    <div style={{ fontSize: "14px", color: financialDebtRatio > 35 ? "#fca5a5" : "#c7d2fe", fontWeight: 900 }}>{financialDebtRatio.toFixed(1)}%</div>
+                  </div>
+                </div>
+                {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Cek Log Wallet dan Penyesuaian Saldo jika saldo real berbeda.</div>}
+                {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
+              </div>
+            </div>
           </div>
         )}
 
@@ -4103,10 +4175,10 @@ export default function App() {
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.4</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.7</div>
               <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
-                Gadai menjadi submodul Pinjaman. Wallet, pinjaman aktif, dan net position mulai dipisahkan agar saldo kas tidak disalahartikan sebagai kekayaan bersih.
+                Gadai menjadi submodul Pinjaman. Wallet, Goal, Investasi, Pinjaman, dan Net Position mulai diringkas dalam Financial Engine agar saldo kas tidak disalahartikan sebagai kekayaan bersih.
               </div>
               <div style={{ marginTop: "12px", display: "grid", gap: "8px" }}>
                 <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "12px", fontWeight: 800 }}>✅ Pencairan pinjaman: Wallet naik + Liability naik</div>
