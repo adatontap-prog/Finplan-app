@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3.1 Wallet Ledger Audit Fix";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.3.2 Wallet UI Polish";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -162,6 +162,18 @@ const SUMBER_DANA_PRESETS = [
   { name: "DANA", icon: "\uD83D\uDD35" },
   { name: "ShopeePay", icon: "\uD83D\uDFE0" },
   { name: "Lainnya", icon: "\uD83D\uDCB3" },
+];
+
+const WALLET_COLOR_PRESETS = [
+  { name: "Indigo", value: "#6366f1" },
+  { name: "Biru", value: "#3b82f6" },
+  { name: "Cyan", value: "#06b6d4" },
+  { name: "Hijau", value: "#10b981" },
+  { name: "Kuning", value: "#f59e0b" },
+  { name: "Merah", value: "#ef4444" },
+  { name: "Pink", value: "#ec4899" },
+  { name: "Ungu", value: "#8b5cf6" },
+  { name: "Slate", value: "#64748b" },
 ];
 
 const ASSET_TYPES = [
@@ -1654,10 +1666,11 @@ export default function App() {
     const labels = {
       transaction: "Transaksi",
       investment: "Investasi",
-      goal_allocation: "Alokasi Goal",
-      goal_cash_cancel: "Batal Alokasi Goal",
-      goal_asset_purchase: "Aset Goal",
-      goal_asset_cancel: "Batal Aset Goal",
+      goal_allocation: "Alokasi Tunai Goal",
+      goal_cash_cancel: "Batal Alokasi Tunai",
+      goal_asset_allocation: "Alokasi Aset Goal",
+      goal_asset_purchase: "Beli Aset Goal",
+      goal_asset_cancel: "Batal Alokasi Aset",
       loan_disbursement: "Pencairan Pinjaman",
       loan_repayment: "Pembayaran Pinjaman",
       loan_disbursement_cancel: "Batal Pencairan Pinjaman",
@@ -2506,6 +2519,43 @@ export default function App() {
     );
   };
 
+  const WalletColorSelector = ({ value, onChange }) => {
+    const selected = value || "#6366f1";
+    return (
+      <div>
+        <div style={{ fontSize: "12px", color: "#888", marginBottom: "8px" }}>Warna Label</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(9, 1fr)", gap: "7px", marginBottom: "10px" }}>
+          {WALLET_COLOR_PRESETS.map(c => {
+            const active = selected.toLowerCase() === c.value.toLowerCase();
+            return (
+              <button
+                key={c.value}
+                type="button"
+                title={c.name}
+                onClick={(e) => { e.stopPropagation(); onChange(c.value); }}
+                style={{
+                  height: "34px",
+                  borderRadius: "999px",
+                  border: active ? "3px solid #fff" : "1px solid rgba(255,255,255,0.14)",
+                  background: c.value,
+                  boxShadow: active ? "0 0 0 3px rgba(99,102,241,0.45)" : "none",
+                  cursor: "pointer",
+                }}
+              />
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.08)" }}>
+          <div style={{ width: "34px", height: "34px", borderRadius: "12px", background: selected, border: "1px solid rgba(255,255,255,0.16)" }} />
+          <div>
+            <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>Preview warna wallet</div>
+            <div style={{ fontSize: "10px", color: "#94a3b8" }}>{selected}</div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const SumberDanaModal = () => {
     if (!showSDForm) return null;
     const presets = SUMBER_DANA_PRESETS || [];
@@ -2543,10 +2593,7 @@ export default function App() {
               <input value={sdForm.initialBalance} inputMode="numeric" onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setSdForm(prev => ({ ...prev, initialBalance: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Contoh: 1000000" style={inputStyle} />
             </div>
 
-            <div>
-              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Warna Label</div>
-              <input type="color" value={sdForm.color || "#6366f1"} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setSdForm(prev => ({ ...prev, color: e.target.value }))} style={{ width: "100%", height: "46px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "6px", boxSizing: "border-box" }} />
-            </div>
+            <WalletColorSelector value={sdForm.color || "#6366f1"} onChange={(color) => setSdForm(prev => ({ ...prev, color }))} />
 
             <div>
               <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Preset cepat</div>
@@ -2663,10 +2710,7 @@ export default function App() {
                 <input value={sdForm.initialBalance} inputMode="numeric" onChange={(e) => setSdForm(prev => ({ ...prev, initialBalance: e.target.value.replace(/[^0-9]/g, "") }))} style={inputStyle} />
               </div>
             </div>
-            <div>
-              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Warna Label</div>
-              <input type="color" value={sdForm.color || sd.color || "#6366f1"} onChange={(e) => setSdForm(prev => ({ ...prev, color: e.target.value }))} style={{ width: "100%", height: "46px", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "6px", boxSizing: "border-box" }} />
-            </div>
+            <WalletColorSelector value={sdForm.color || sd.color || "#6366f1"} onChange={(color) => setSdForm(prev => ({ ...prev, color }))} />
             <button onClick={() => saveSumberDanaChanges(sd.id)} style={{ padding: "14px", borderRadius: "16px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontWeight: 900 }}>💾 Simpan Perubahan</button>
 
             <div style={{ height: "1px", background: "rgba(255,255,255,0.08)", margin: "4px 0" }} />
