@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7 Financial Engine Summary";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.1 Sensitive Permission Scope";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -106,44 +106,136 @@ const FAMILY_ROLES_V110 = [
 const PERMISSIONS_V110 = [
   { id: "dashboard", label: "Dashboard", icon: "📊", group: "Core" },
   { id: "history", label: "Riwayat", icon: "📋", group: "Core" },
+  { id: "settings", label: "Settings", icon: "⚙️", group: "Core" },
+
   { id: "transaction_add", label: "Tambah Transaksi", icon: "➕", group: "Transaksi" },
-  { id: "transaction_edit", label: "Edit Transaksi", icon: "✏️", group: "Transaksi" },
-  { id: "transaction_delete", label: "Hapus Transaksi", icon: "🗑️", group: "Transaksi" },
+  { id: "transaction_view_own", label: "Lihat Transaksi Sendiri", icon: "👤", group: "Transaksi" },
+  { id: "transaction_view_all", label: "Lihat Semua Transaksi", icon: "👥", group: "Transaksi" },
   { id: "transaction_edit_own", label: "Edit Transaksi Sendiri", icon: "✏️", group: "Transaksi" },
   { id: "transaction_edit_all", label: "Edit Semua Transaksi", icon: "📝", group: "Transaksi" },
   { id: "transaction_delete_own", label: "Hapus Transaksi Sendiri", icon: "🗑️", group: "Transaksi" },
   { id: "transaction_delete_all", label: "Hapus Semua Transaksi", icon: "🔥", group: "Transaksi" },
-  { id: "goal_contribute", label: "Alokasi ke Goal", icon: "🎯", group: "Keuangan" },
-  { id: "goals", label: "Tabungan / Goal", icon: "🎯", group: "Keuangan" },
-  { id: "investments", label: "Investasi", icon: "📈", group: "Keuangan" },
-  { id: "gadai", label: "Pinjaman / Loan", icon: "🏦", group: "Keuangan" },
-  { id: "wallets", label: "Sumber Dana", icon: "👛", group: "Keuangan" },
+
+  { id: "wallet_view_own", label: "Lihat Wallet Sendiri", icon: "👛", group: "Wallet" },
+  { id: "wallet_view_all", label: "Lihat Semua Wallet", icon: "🏦", group: "Wallet" },
+  { id: "wallet_manage_own", label: "Kelola Wallet Sendiri", icon: "🛠️", group: "Wallet" },
+  { id: "wallet_manage_all", label: "Kelola Semua Wallet", icon: "🧰", group: "Wallet" },
+
+  { id: "goal_view_public", label: "Lihat Goal Public", icon: "🎯", group: "Goal" },
+  { id: "goal_view_sensitive", label: "Lihat Goal Sensitif", icon: "🔒", group: "Goal" },
+  { id: "goal_contribute", label: "Alokasi ke Goal", icon: "➕", group: "Goal" },
+  { id: "goal_manage", label: "Kelola Goal", icon: "🧭", group: "Goal" },
+
+  { id: "investment_view", label: "Lihat Investasi", icon: "📈", group: "Sensitif" },
+  { id: "investment_manage", label: "Kelola Investasi", icon: "🧰", group: "Sensitif" },
+  { id: "loan_view", label: "Lihat Pinjaman", icon: "🏦", group: "Sensitif" },
+  { id: "loan_manage", label: "Kelola Pinjaman", icon: "💳", group: "Sensitif" },
+  { id: "financial_summary_view", label: "Lihat Net Worth / Financial Summary", icon: "🧠", group: "Sensitif" },
+  { id: "financial_health_view", label: "Lihat Financial Health", icon: "❤️‍🩹", group: "Sensitif" },
+
   { id: "family_manage", label: "Family Management", icon: "👨‍👩‍👧‍👦", group: "Family Admin" },
   { id: "permission_manage", label: "Permission Manager", icon: "🛡️", group: "Family Admin" },
   { id: "security", label: "Security / PIN", icon: "🔐", group: "Family Admin" },
+
   { id: "sync", label: "Sync Google Sheets", icon: "📊", group: "Backup" },
   { id: "reports", label: "Email Report", icon: "✉️", group: "Backup" },
-  { id: "backup", label: "Export Backup", icon: "💾", group: "Backup" },
-  { id: "activity_log", label: "Activity Log", icon: "📝", group: "System" },
-  { id: "recycle_bin", label: "Recycle Bin", icon: "♻️", group: "System" },
-  { id: "settings", label: "Settings", icon: "⚙️", group: "Core" },
+  { id: "backup_export", label: "Backup / Export", icon: "💾", group: "Backup" },
+
+  { id: "activity_log_view", label: "Activity Log", icon: "📝", group: "System" },
+  { id: "recycle_bin_view", label: "Recycle Bin", icon: "♻️", group: "System" },
+
+  // Legacy aliases kept so old Firestore permissions do not break during migration.
+  { id: "transaction_edit", label: "Legacy: Edit Transaksi", icon: "✏️", group: "Legacy" },
+  { id: "transaction_delete", label: "Legacy: Hapus Transaksi", icon: "🗑️", group: "Legacy" },
+  { id: "goals", label: "Legacy: Tabungan / Goal", icon: "🎯", group: "Legacy" },
+  { id: "investments", label: "Legacy: Investasi", icon: "📈", group: "Legacy" },
+  { id: "gadai", label: "Legacy: Pinjaman / Loan", icon: "🏦", group: "Legacy" },
+  { id: "wallets", label: "Legacy: Sumber Dana", icon: "👛", group: "Legacy" },
+  { id: "backup", label: "Legacy: Export Backup", icon: "💾", group: "Legacy" },
+  { id: "activity_log", label: "Legacy: Activity Log", icon: "📝", group: "Legacy" },
+  { id: "recycle_bin", label: "Legacy: Recycle Bin", icon: "♻️", group: "Legacy" },
 ];
 
 const ROLE_PERMISSION_PRESET_V110 = {
   Owner: PERMISSIONS_V110.map(p => p.id),
-  Admin: ["dashboard", "history", "transaction_add", "transaction_edit", "transaction_edit_all", "goal_contribute", "goals", "investments", "gadai", "wallets", "sync", "reports", "settings"],
-  Member: ["dashboard", "history", "transaction_add", "transaction_edit_own", "goal_contribute", "goals", "settings"],
+  Admin: [
+    "dashboard", "history", "settings",
+    "transaction_add", "transaction_view_own", "transaction_view_all", "transaction_edit_own", "transaction_edit_all", "transaction_delete_own",
+    "wallet_view_own", "wallet_view_all", "wallet_manage_own",
+    "goal_view_public", "goal_view_sensitive", "goal_contribute",
+    "investment_view", "loan_view", "financial_summary_view", "financial_health_view",
+    "sync", "reports"
+  ],
+  Member: [
+    "dashboard", "history", "settings",
+    "transaction_add", "transaction_view_own", "transaction_edit_own",
+    "wallet_view_own", "wallet_manage_own",
+    "goal_view_public"
+  ],
   Viewer: ["dashboard", "history", "settings"],
 };
 
-const OWNER_LOCKED_PERMISSIONS_V110 = ["dashboard", "settings", "family_manage", "permission_manage", "security", "activity_log"];
+const OWNER_LOCKED_PERMISSIONS_V110 = [
+  "dashboard", "settings", "family_manage", "permission_manage", "security",
+  "activity_log_view", "financial_summary_view", "wallet_view_all", "wallet_manage_all"
+];
+
+function expandLegacyPermissions(roleLabel, permissionIds) {
+  const set = new Set(permissionIds || []);
+  const has = (id) => set.has(id);
+
+  if (has("history")) set.add("transaction_view_own");
+  if (roleLabel === "Owner" || roleLabel === "Admin") {
+    if (has("history")) set.add("transaction_view_all");
+  }
+
+  if (has("transaction_edit")) {
+    set.add(roleLabel === "Member" ? "transaction_edit_own" : "transaction_edit_all");
+  }
+  if (has("transaction_delete")) {
+    set.add(roleLabel === "Member" ? "transaction_delete_own" : "transaction_delete_all");
+  }
+
+  if (has("wallets")) {
+    set.add("wallet_view_own");
+    set.add("wallet_manage_own");
+    if (roleLabel === "Owner" || roleLabel === "Admin") set.add("wallet_view_all");
+    if (roleLabel === "Owner") set.add("wallet_manage_all");
+  }
+
+  if (has("goals")) {
+    set.add("goal_view_public");
+    if (roleLabel === "Owner" || roleLabel === "Admin") set.add("goal_view_sensitive");
+    if (roleLabel !== "Viewer") set.add("goal_contribute");
+  }
+
+  if (has("investments")) {
+    if (roleLabel === "Owner" || roleLabel === "Admin") set.add("investment_view");
+    if (roleLabel === "Owner") set.add("investment_manage");
+  }
+
+  if (has("gadai")) {
+    if (roleLabel === "Owner" || roleLabel === "Admin") set.add("loan_view");
+    if (roleLabel === "Owner") set.add("loan_manage");
+  }
+
+  if (has("backup")) set.add("backup_export");
+  if (has("activity_log")) set.add("activity_log_view");
+  if (has("recycle_bin")) set.add("recycle_bin_view");
+  if (roleLabel === "Owner" || roleLabel === "Admin") {
+    if (has("investments") || has("gadai") || has("wallets")) set.add("financial_summary_view");
+  }
+
+  return [...set];
+}
 
 function normalizePermissionData(data) {
   const allowedIds = new Set(PERMISSIONS_V110.map(p => p.id));
   const normalized = {};
   FAMILY_ROLES_V110.forEach(role => {
     const base = Array.isArray(data?.[role.label]) ? data[role.label] : (ROLE_PERMISSION_PRESET_V110[role.label] || []);
-    const clean = base.filter(id => allowedIds.has(id));
+    const expanded = expandLegacyPermissions(role.label, base);
+    const clean = expanded.filter(id => allowedIds.has(id));
     normalized[role.label] = role.label === "Owner"
       ? [...new Set([...clean, ...OWNER_LOCKED_PERMISSIONS_V110])]
       : [...new Set(clean)];
@@ -1104,7 +1196,20 @@ export default function App() {
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  const userTxns = transactions.filter(t => filterUser === "semua" || t.user === filterUser);
+  const earlyFamilyMembersForScope = Array.isArray(familyMembers) && familyMembers.length > 0 ? familyMembers : FAMILY_MEMBERS_V110;
+  const earlyCurrentMemberForScope = earlyFamilyMembersForScope.find(member => member.name === currentUser) || FAMILY_MEMBERS_V110[0];
+  const earlyCurrentRoleForScope = earlyCurrentMemberForScope?.role || "Viewer";
+  const earlyIsOwnerForScope = earlyCurrentRoleForScope === "Owner";
+  const earlyPermissionsForScope = normalizePermissionData(rolePermissions)?.[earlyCurrentRoleForScope] || ROLE_PERMISSION_PRESET_V110[earlyCurrentRoleForScope] || [];
+  const earlyHasPermission = (id) => earlyPermissionsForScope.includes(id);
+  const canViewAllTransactionsNow = earlyIsOwnerForScope || earlyHasPermission("transaction_view_all");
+  const canViewFinancialSummaryNow = earlyIsOwnerForScope || earlyHasPermission("financial_summary_view");
+  const canViewInvestmentsNow = earlyIsOwnerForScope || earlyHasPermission("investment_view");
+  const canViewLoansNow = earlyIsOwnerForScope || earlyHasPermission("loan_view");
+  const canViewSensitiveGoalsNow = earlyIsOwnerForScope || earlyHasPermission("goal_view_sensitive");
+  const effectiveFilterUser = canViewAllTransactionsNow ? filterUser : currentUser;
+
+  const userTxns = transactions.filter(t => effectiveFilterUser === "semua" || t.user === effectiveFilterUser);
   const yearsForSelectedMonth = userTxns
     .map(t => getTxnDate(t))
     .filter(d => d && d.getMonth() === filterMonth)
@@ -1122,7 +1227,7 @@ export default function App() {
   // Recovery fallback: if selected month has no data but Firestore has transactions,
   // show latest transactions instead of empty screen.
   const monthTxns = filteredMonthTxns.length > 0 ? filteredMonthTxns : userTxns.slice(0, 50);
-  const displayTxns = monthTxns.length > 0 ? monthTxns : transactions.slice(0, 50);
+  const displayTxns = monthTxns.length > 0 ? monthTxns : userTxns.slice(0, 50);
   const totalIncome = filteredMonthTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const totalExpense = filteredMonthTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
   const balance = totalIncome - totalExpense;
@@ -1145,20 +1250,22 @@ export default function App() {
   const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
   const totalSavingsCurrent = SAVINGS_GOALS.reduce((s, g) => s + calcGoalValue(g.id), 0);
 
-  const financialScopeUser = filterUser === "semua" ? null : filterUser;
+  const financialScopeUser = canViewAllTransactionsNow
+    ? (filterUser === "semua" ? null : filterUser)
+    : currentUser;
   const financialWallets = sumberDanaList.filter(sd =>
     (!financialScopeUser || sd.user === financialScopeUser) &&
     getSumberDanaStatus(sd) !== "archived"
   );
-  const financialWalletTotal = financialWallets.reduce((sum, sd) => sum + calcSumberDanaBalance(sd.id), 0);
-  const financialInvestmentTotal = invSummary
+  const financialWalletTotal = canViewFinancialSummaryNow ? financialWallets.reduce((sum, sd) => sum + calcSumberDanaBalance(sd.id), 0) : 0;
+  const financialInvestmentTotal = (canViewFinancialSummaryNow && canViewInvestmentsNow) ? invSummary
     .filter(inv => !financialScopeUser || inv.createdBy === financialScopeUser || (!inv.createdBy && financialScopeUser === currentUser))
-    .reduce((sum, inv) => sum + Number(inv.currentValue || 0), 0);
-  const financialGoalTotal = financialScopeUser ? 0 : totalSavingsCurrent;
-  const financialLoanItems = gadaiList.filter(g =>
+    .reduce((sum, inv) => sum + Number(inv.currentValue || 0), 0) : 0;
+  const financialGoalTotal = (canViewFinancialSummaryNow && canViewSensitiveGoalsNow && !financialScopeUser) ? totalSavingsCurrent : 0;
+  const financialLoanItems = (canViewFinancialSummaryNow && canViewLoansNow) ? gadaiList.filter(g =>
     g.status === "aktif" &&
     (!financialScopeUser || g.createdBy === financialScopeUser || (!g.createdBy && financialScopeUser === currentUser))
-  );
+  ) : [];
   const financialLoanTotal = financialLoanItems.reduce((sum, g) => sum + Number(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0);
   const financialGrossAssets = financialWalletTotal + financialGoalTotal + financialInvestmentTotal;
   const financialNetWorth = financialGrossAssets - financialLoanTotal;
@@ -1407,7 +1514,7 @@ export default function App() {
   }
 
   async function addInvestmentAsset(type) {
-    if (!hasPermission("investments")) {
+    if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin mengelola investasi.");
       return;
     }
@@ -1465,7 +1572,7 @@ export default function App() {
   }
 
   function openMoveAssetToGoal(inv) {
-    if (!hasPermission("investments") || !hasPermission("goal_contribute")) {
+    if (!canManageInvestments || !hasPermission("goal_contribute")) {
       showAccessNotice("Role " + currentRole + " tidak punya izin memindahkan aset ke Goal.");
       return;
     }
@@ -1475,7 +1582,7 @@ export default function App() {
 
   async function moveInvestmentAssetToGoal() {
     if (!assetToGoalInvestment) return;
-    if (!hasPermission("investments") || !hasPermission("goal_contribute")) {
+    if (!canManageInvestments || !hasPermission("goal_contribute")) {
       showAccessNotice("Role " + currentRole + " tidak punya izin memindahkan aset ke Goal.");
       return;
     }
@@ -1566,7 +1673,7 @@ export default function App() {
     return true;
   }
   async function deleteInvestment(id) {
-    if (!isOwner && !hasPermission("investments")) {
+    if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin menghapus investasi.");
       return false;
     }
@@ -1789,8 +1896,8 @@ export default function App() {
   }
 
   async function deleteGadai(id) {
-    if (!isOwner && !hasPermission("gadai")) {
-      showAccessNotice("Role " + currentRole + " tidak punya izin menghapus gadai.");
+    if (!canManageLoans) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin menghapus pinjaman.");
       return false;
     }
     const item = gadaiList.find(g => g.id === id);
@@ -2179,7 +2286,7 @@ export default function App() {
     return permissionsForRole(roleLabel).includes(permissionId);
   }
   function canContributeGoal() {
-    return isOwner || hasPermission("goal_contribute") || hasPermission("goals");
+    return isOwner || hasPermission("goal_contribute");
   }
   function canEditTransaction(tx) {
     if (!tx) return false;
@@ -2197,6 +2304,30 @@ export default function App() {
   const canManagePermissions = isOwner;
   const canAccessFamilyPage = canManageFamily || canManagePermissions;
   const isAdminOrOwner = currentRole === "Owner" || currentRole === "Admin";
+
+  function hasAnyPermission(ids) {
+    return ids.some(id => hasPermission(id));
+  }
+
+  const canViewAllTransactions = isOwner || hasPermission("transaction_view_all");
+  const canViewOwnTransactions = isOwner || hasPermission("transaction_view_own") || hasPermission("history");
+  const canViewOwnWallets = isOwner || hasPermission("wallet_view_own") || hasPermission("wallets");
+  const canViewAllWallets = isOwner || hasPermission("wallet_view_all") || (currentRole === "Admin" && hasPermission("wallets"));
+  const canManageOwnWallets = isOwner || hasPermission("wallet_manage_own") || hasPermission("wallets");
+  const canManageAllWallets = isOwner || hasPermission("wallet_manage_all");
+  const canAccessWallets = canViewOwnWallets || canViewAllWallets;
+  const canViewGoals = isOwner || hasPermission("goal_view_public") || hasPermission("goal_view_sensitive") || hasPermission("goals");
+  const canViewSensitiveGoals = isOwner || hasPermission("goal_view_sensitive");
+  const canViewInvestments = isOwner || hasPermission("investment_view") || (currentRole === "Admin" && hasPermission("investments"));
+  const canManageInvestments = isOwner || hasPermission("investment_manage") || (currentRole === "Admin" && hasPermission("investments"));
+  const canViewLoans = isOwner || hasPermission("loan_view") || (currentRole === "Admin" && hasPermission("gadai"));
+  const canManageLoans = isOwner || hasPermission("loan_manage") || (currentRole === "Admin" && hasPermission("gadai"));
+  const canViewFinancialSummary = isOwner || hasPermission("financial_summary_view");
+  const canViewActivityLog = isOwner || hasPermission("activity_log_view") || canViewActivityLog;
+  const canViewRecycleBin = isOwner || hasPermission("recycle_bin_view") || canViewRecycleBin;
+  const canBackupExport = isOwner || hasPermission("backup_export") || hasPermission("backup");
+  const canAccessSelectedWalletUser = (name) => canViewAllWallets || name === currentUser;
+
   const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
     const permissions = permissionsForRole(role.label);
     return { ...role, permissions, count: permissions.length };
@@ -2280,11 +2411,12 @@ export default function App() {
   }
 
   function openWalletManager() {
-    if (!hasPermission("wallets")) {
+    if (!canAccessWallets) {
       showAccessNotice("Sumber Dana belum diizinkan untuk role " + currentRole + ".");
       setActiveTab("dashboard");
       return;
     }
+    if (!canViewAllWallets) setWalletFilterUser(currentUser);
     setShowSettingsCenter(false);
     setActiveTab("dompet");
   }
@@ -2416,21 +2548,21 @@ export default function App() {
             </Section>
 
             <Section title="Keuangan Settings">
-              {hasPermission("wallets") && <SettingButton onClick={openWalletManager} tone="green">🏦 Kelola Sumber Dana / Wallet v2</SettingButton>}
+              {canAccessWallets && <SettingButton onClick={openWalletManager} tone="green">🏦 Kelola Sumber Dana / Wallet v2</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.16)", color: "#a7f3d0", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Settings hanya untuk konfigurasi keuangan. Tabungan / Goal dan Investasi tetap berada di navigasi utama agar tidak tercampur dengan pengaturan.
               </div>
             </Section>
 
             <Section title="Backup & Sinkronisasi">
-              {hasPermission("sync") && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} tone="purple">📊 Sync Google Sheets</SettingButton>}
-              {hasPermission("reports") && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} tone="green">✉️ Kirim Email Report</SettingButton>}
-              {hasPermission("backup") && <SettingButton onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} tone="amber">💾 Export Backup JSON</SettingButton>}
+              {hasPermission("sync") && isAdminOrOwner && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} tone="purple">📊 Sync Google Sheets</SettingButton>}
+              {hasPermission("reports") && isAdminOrOwner && <SettingButton onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} tone="green">✉️ Kirim Email Report</SettingButton>}
+              {canBackupExport && <SettingButton onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} tone="amber">💾 Export Backup JSON</SettingButton>}
             </Section>
 
             <Section title="Sistem & Keamanan Data">
-              {hasPermission("activity_log") && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
-              {(isOwner || hasPermission("recycle_bin")) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
+              {canViewActivityLog && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
+              {(isOwner || canViewRecycleBin) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.16)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Data yang dihapus masuk Recycle Bin selama 30 hari. Restore dan hapus permanen dikontrol oleh Owner.
               </div>
@@ -2477,7 +2609,7 @@ export default function App() {
   };
 
   const ActivityLogModal = () => {
-    if (!showActivityLogModal || !hasPermission("activity_log")) return null;
+    if (!showActivityLogModal || !canViewActivityLog) return null;
     return (
       <div onClick={() => setShowActivityLogModal(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99996, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
         <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", overflowX: "hidden", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
@@ -2568,7 +2700,7 @@ export default function App() {
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("family"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔐 Ganti Password Keluarga</button>}
                 {isOwner && <button onClick={() => { setShowSettingsCenter(false); handleChangePw("user"); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.06)", color: "#fff", fontWeight: 900, textAlign: "left" }}>🔑 Reset / Ganti PIN User</button>}
                 {isOwner && <button onClick={openFamilyManagement} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.30)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>👨‍👩‍👧 Family Management v1.1</button>}
-                {isAdminOrOwner && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Kelola Sumber Dana / Wallet v2</button>}
+                {canAccessWallets && <button onClick={openWalletManager} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>🏦 Kelola Sumber Dana / Wallet v2</button>}
                 <button onClick={() => { setShowSettingsCenter(false); handleSyncAll(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(99,102,241,0.18)", color: "#c7d2fe", fontWeight: 900, textAlign: "left" }}>📊 Sync Google Sheets</button>
                 <button onClick={() => { setShowSettingsCenter(false); handleSendReport(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(16,185,129,0.16)", color: "#86efac", fontWeight: 900, textAlign: "left" }}>✉️ Kirim Email Report</button>
                 {typeof exportBackupJSON === "function" && <button onClick={() => { setShowSettingsCenter(false); exportBackupJSON(); }} style={{ padding: "14px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(245,158,11,0.14)", color: "#fbbf24", fontWeight: 900, textAlign: "left" }}>💾 Export Backup JSON</button>}
@@ -3615,14 +3747,14 @@ export default function App() {
 
         {showTimeFilters && (
           <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-            {["semua", ...userFilterNames].map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
+            {(canViewAllTransactions ? ["semua", ...userFilterNames] : [currentUser]).map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u || (!canViewAllTransactions && u === currentUser) ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u || (!canViewAllTransactions && u === currentUser) ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
           </div>
         )}
 
         {activeTab === "dashboard" && (
           <div style={{ padding: "0 20px 16px" }}>
             <div style={{ background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", borderRadius: "20px", padding: "22px", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
-              <div style={{ fontSize: "11px", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px", textTransform: "uppercase" }}>Saldo {filterUser === "semua" ? "Keluarga" : filterUser}</div>
+              <div style={{ fontSize: "11px", letterSpacing: "2px", color: "rgba(255,255,255,0.7)", marginBottom: "6px", textTransform: "uppercase" }}>Saldo {effectiveFilterUser === "semua" ? "Keluarga" : effectiveFilterUser}</div>
               <div style={{ fontSize: "30px", fontWeight: 900, color: "#fff", marginBottom: "18px" }}>{balance < 0 ? "-" : ""}{formatFull(Math.abs(balance))}</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
                 <div style={{ display: "flex", gap: "24px" }}>
@@ -3634,6 +3766,7 @@ export default function App() {
               {sheetsStatus && <div style={{ marginTop: "6px", fontSize: "12px", color: "#fff", background: "rgba(0,0,0,0.2)", borderRadius: "8px", padding: "6px 10px" }}>{sheetsStatus}</div>}
             </div>
 
+            {canViewFinancialSummary ? (
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
@@ -3680,6 +3813,15 @@ export default function App() {
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
             </div>
+            ) : (
+              <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "rgba(15,23,42,0.72)", border: "1px solid rgba(245,158,11,0.24)" }}>
+                <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase" }}>Sensitive Data Hidden</div>
+                <div style={{ fontSize: "17px", fontWeight: 900, color: "#fff", marginTop: "5px" }}>Financial Summary disembunyikan</div>
+                <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "8px", lineHeight: 1.55 }}>
+                  Role {currentRole} hanya melihat data sesuai izin. Net worth, investasi, pinjaman, dan wallet utama keluarga hanya untuk Owner/Admin dengan permission khusus.
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -3688,10 +3830,10 @@ export default function App() {
             {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>}
             {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>}
             {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Keluarga</button>}
-            {hasPermission("goals") && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
-            {hasPermission("investments") && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
-            {hasPermission("gadai") && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Pinjaman</button>}
-            {hasPermission("wallets") && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Sumber Dana</button>}
+            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
+            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
+            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Pinjaman</button>}
+            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Sumber Dana</button>}
           </div>
         )}
 
@@ -3891,7 +4033,7 @@ export default function App() {
                 </div>
               ))}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5 }}>
-                Permission tersimpan di Firebase. Owner dapat mencentang/mematikan akses role; permission inti Owner dikunci agar tidak terkunci dari sistem.
+                Permission tersimpan di Firebase. Sensitive data hidden by default: Member hanya own-wallet/own-transaction; Admin akses sensitif hanya jika Owner memberi izin; permission inti Owner dikunci.
               </div>
             </div>}
 
@@ -4129,7 +4271,7 @@ export default function App() {
                       <div style={{ fontSize: "10px", color: inv.sourceMode === "existing" ? "#fbbf24" : "#86efac", marginTop: "3px", fontWeight: 800 }}>{inv.sourceMode === "existing" ? "📦 Aset sudah dimiliki · wallet tidak berubah" : "💳 Dibeli dari wallet"}</div>
                       {inv.note && <div style={{ fontSize: "11px", color: "#666" }}>{inv.note}</div>}
                     </div>
-                    {hasPermission("investments") && (
+                    {canManageInvestments && (
                       <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                         <button onClick={(e) => { e.stopPropagation(); openMoveAssetToGoal(inv); }} style={{ background: "rgba(99,102,241,0.14)", border: "1px solid rgba(99,102,241,0.28)", cursor: "pointer", color: "#c7d2fe", fontSize: "10px", borderRadius: "10px", padding: "7px 9px", fontWeight: 900 }}>🎯 Goal</button>
                         <button onClick={(e) => { e.stopPropagation(); deleteInvestment(inv.id); }} style={{ background: "none", border: "none", cursor: "pointer", color: "#555", fontSize: "18px" }}>x</button>
@@ -4162,7 +4304,7 @@ export default function App() {
             })}
 
             {/* Tombol tambah */}
-            {hasPermission("investments") && (
+            {canManageInvestments && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "8px" }}>
                 <button onClick={() => { setShowAssetConvert("invest_asset"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); setAssetSDId(""); }} style={{ padding: "14px", borderRadius: "14px", border: "2px dashed rgba(16,185,129,0.4)", background: "rgba(16,185,129,0.1)", color: "#34d399", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>💳 Beli dari Wallet</button>
                 <button onClick={() => { setShowAssetConvert("invest_existing"); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); setAssetSDId(""); }} style={{ padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.45)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>📦 Aset Sudah Dimiliki</button>
@@ -4365,7 +4507,7 @@ export default function App() {
             </div>
             {/* User filter */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "16px" }}>
-              {activeFamilyMembers.map(member => { const u = member.name; return (
+              {activeFamilyMembers.filter(member => canAccessSelectedWalletUser(member.name)).map(member => { const u = member.name; return (
                 <button key={u} onClick={() => setWalletFilterUser(u)} style={{
                   padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
                   whiteSpace: "nowrap", fontSize: "12px", fontWeight: 700, flexShrink: 0,
@@ -4377,16 +4519,22 @@ export default function App() {
             <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "14px" }}>
               {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif/nonaktif"}
             </button>
+            {!canViewAllWallets && (
+              <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "14px" }}>
+                🔒 Mode own-wallet aktif. Role {currentRole} hanya melihat wallet dan transaksi milik sendiri.
+              </div>
+            )}
 
             {/* Total saldo + net position */}
             {(() => {
-              const userSDs = sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived"));
+              const effectiveWalletUser = canViewAllWallets ? walletFilterUser : currentUser;
+              const userSDs = sumberDanaList.filter(sd => sd.user === effectiveWalletUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived"));
               const totalBalance = userSDs.reduce((s, sd) => s + calcSumberDanaBalance(sd.id), 0);
-              const outstandingLoan = calcOutstandingLoanForUser(walletFilterUser);
+              const outstandingLoan = canViewLoans ? calcOutstandingLoanForUser(effectiveWalletUser) : 0;
               const netPosition = totalBalance - outstandingLoan;
               return (
                 <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,#6366f1,#4f46e5,#7c3aed)", boxShadow: "0 20px 60px rgba(99,102,241,0.3)" }}>
-                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Financial Position · {walletFilterUser}</div>
+                  <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Financial Position · {effectiveWalletUser}</div>
                   <div style={{ fontSize: "26px", fontWeight: 900, color: "#fff" }}>{formatFull(totalBalance)}</div>
                   <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.68)", marginTop: "4px" }}>Total Wallet / kas · {userSDs.length} sumber dana</div>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "12px" }}>
@@ -4405,12 +4553,12 @@ export default function App() {
             })()}
 
             {/* Daftar sumber dana */}
-            {sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).length === 0 ? (
+            {sumberDanaList.filter(sd => sd.user === (canViewAllWallets ? walletFilterUser : currentUser) && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div>
                 <div style={{ fontSize: "14px" }}>Belum ada sumber dana</div>
               </div>
-            ) : sumberDanaList.filter(sd => sd.user === walletFilterUser && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).map(sd => {
+            ) : sumberDanaList.filter(sd => sd.user === (canViewAllWallets ? walletFilterUser : currentUser) && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).map(sd => {
               const balance = calcSumberDanaBalance(sd.id);
               const status = getSumberDanaStatus(sd);
               return (
@@ -4432,7 +4580,7 @@ export default function App() {
             })}
 
             {/* Tombol tambah - hanya untuk diri sendiri */}
-            {walletFilterUser === currentUser && (
+            {(canManageAllWallets || ((canViewAllWallets ? walletFilterUser : currentUser) === currentUser && canManageOwnWallets)) && (
               <button onClick={() => { setShowSDForm(true); setSdForm({ name: "", icon: "💵", initialBalance: "", color: "#6366f1", status: "active" }); }} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(99,102,241,0.4)", background: "rgba(99,102,241,0.08)", color: "#a5b4fc", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Sumber Dana</button>
             )}
           </div>
