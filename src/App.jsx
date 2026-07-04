@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5b UI Revision";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Nav, Scope & Goal Cleanup";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1351,6 +1351,7 @@ export default function App() {
   const rangeLabel = periodBaseDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
+  const familyLogPeriodTxns = (canViewAllTransactions ? transactions : userTxns).filter(isTxnInSelectedRange);
   const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
   const monthTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
   const displayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
@@ -1626,6 +1627,19 @@ export default function App() {
     syncToSheets("cancelGoalAsset", { goalId, goalLabel: goal?.label || goalId, holdingId, refundValue, sumberDanaId: sourceId || "", sumberDanaName: source?.name || "", user: currentUser, createdAt: new Date().toISOString() });
   }
 
+  function getGoalCategoryColor(category = "custom") {
+    const colors = {
+      aroon: "#6366f1",
+      arunika: "#ec4899",
+      arkaja: "#f59e0b",
+      future: "#10b981",
+      pension: "#14b8a6",
+      health: "#ef4444",
+      custom: "#8b5cf6",
+    };
+    return colors[category] || "#6366f1";
+  }
+
   function resetGoalBuilderForm(seedCategory = null) {
     const inferredCategory = seedCategory || (savingsTab === "education" ? selectedEducationChild : savingsTab) || "future";
     setGoalBuilderForm({
@@ -1639,7 +1653,13 @@ export default function App() {
       visibility: "owner_admin",
       fundingType: "mixed",
       status: "active",
-      color: "#6366f1",
+      color: getGoalCategoryColor(inferredCategory),
+      program: "",
+      provider: "",
+      beneficiary: "",
+      premiumAmount: "",
+      coverageAmount: "",
+      renewalCycle: "",
     });
   }
 
@@ -1661,7 +1681,7 @@ export default function App() {
         visibility: goal.visibility || "owner_admin",
         fundingType: goal.fundingType || "mixed",
         status: goal.status || "active",
-        color: goal.color || "#6366f1",
+        color: goal.color || getGoalCategoryColor(goal.category || "custom"),
         program: goal.program || "",
         provider: goal.provider || "",
         beneficiary: goal.beneficiary || "",
@@ -1699,7 +1719,7 @@ export default function App() {
       visibility: goalBuilderForm.visibility || "owner_admin",
       fundingType: goalBuilderForm.fundingType || "mixed",
       status: goalBuilderForm.status || "active",
-      color: goalBuilderForm.color || "#6366f1",
+      color: getGoalCategoryColor(goalBuilderForm.category || "custom"),
       program: goalBuilderForm.program || "",
       provider: goalBuilderForm.provider || "",
       beneficiary: goalBuilderForm.beneficiary || "",
@@ -2936,7 +2956,10 @@ export default function App() {
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
-  const tabStyle = (key) => ({ flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
+  const tabStyle = (key) => {
+    const isActive = activeTab === key || (key === "dompet" && activeTab === "gadai");
+    return { flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: isActive ? "#6366f1" : "transparent", color: isActive ? "#fff" : "#666", transition: "all 0.2s" };
+  };
   const savTabStyle = (key) => ({ padding: "8px 10px", border: "none", cursor: "pointer", borderRadius: "16px", fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap", flex: "1 1 130px", minWidth: 0, textAlign: "center", background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
@@ -3033,6 +3056,9 @@ export default function App() {
     const visibleCount = visiblePermissions.filter(permission => permissions.includes(permission.id)).length;
     return { ...role, permissions, count: permissions.length, visibleCount };
   });
+  const scopeOptions = (canViewAllTransactions ? ["semua", ...userFilterNames] : [currentUser]).filter(Boolean);
+  const selectedScopeLabel = canViewAllTransactions && filterUser === "semua" ? "Family/Semua" : (filterUser || currentUser);
+  const canSwitchScope = scopeOptions.length > 1;
   const showTimeFilters = activeTab === "dashboard" || activeTab === "history";
   const showMainNav = true;
 
@@ -3302,7 +3328,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5b UI Revision. Period selector compact bulan/tahun, nav dipindah ke atas, permission manager role-popup, dan goal bisa ditambah di tiap kategori dengan program detail.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c. Navigation cleanup aktif: Family Log masuk Transaksi, Loan masuk Wallet/Finance, Settings tetap top icon, scope filter digabung dengan periode, dan warna goal otomatis.
           </div>
         </div>
       </div>
@@ -4347,7 +4373,9 @@ export default function App() {
               </select>
             </div>
 
-            <input value={goalBuilderForm.color} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, color: e.target.value }))} placeholder="Warna, contoh #6366f1" style={inputStyle} />
+            <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "11px", lineHeight: 1.45 }}>
+              Warna goal otomatis mengikuti kategori agar form tetap bersih.
+            </div>
             <input value={goalBuilderForm.desc} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, desc: e.target.value }))} placeholder="Deskripsi/catatan goal" style={inputStyle} />
 
             <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.22)", color: "#c7d2fe", fontSize: "12px", lineHeight: 1.55, fontWeight: 800 }}>
@@ -4910,7 +4938,18 @@ export default function App() {
                   {periodYears.map(y => <option key={y} value={y}>{y}</option>)}
                 </select>
               </div>
-              <button onClick={() => setShowPeriodPicker(false)} style={{ width: "100%", padding: "13px", borderRadius: "15px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", fontWeight: 900 }}>Terapkan: {rangeLabel}</button>
+              {canSwitchScope && (
+                <div style={{ marginBottom: "14px" }}>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 900, marginBottom: "8px" }}>Scope</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: "8px" }}>
+                    {scopeOptions.map(u => {
+                      const active = filterUser === u || (!canViewAllTransactions && u === currentUser);
+                      return <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "10px", borderRadius: "13px", border: "1px solid " + (active ? "rgba(16,185,129,0.35)" : "rgba(255,255,255,0.08)"), background: active ? "rgba(16,185,129,0.16)" : "rgba(255,255,255,0.05)", color: active ? "#86efac" : "#cbd5e1", fontSize: "11px", fontWeight: 900 }}>{u === "semua" ? "👨‍👩‍👧‍👦 Family/Semua" : "👤 " + u}</button>;
+                    })}
+                  </div>
+                </div>
+              )}
+              <button onClick={() => setShowPeriodPicker(false)} style={{ width: "100%", padding: "13px", borderRadius: "15px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", fontWeight: 900 }}>Terapkan: {rangeLabel} · {selectedScopeLabel}</button>
             </div>
           </div>
         )}
@@ -4931,10 +4970,8 @@ export default function App() {
             {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>🏠 Dashboard</button>}
             {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>🧾 Transaksi</button>}
             {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Goals</button>}
+            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>💼 Finance</button>}
             {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Portfolio</button>}
-            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Wallet</button>}
-            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Loan</button>}
-            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Family</button>}
           </div>
         )}
 
@@ -4942,17 +4979,11 @@ export default function App() {
           <div style={{ padding: "0 20px 6px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase" }}>Periode Dashboard</div>
-                <div style={{ fontSize: "12px", color: "#e5e7eb", fontWeight: 900, marginTop: "2px" }}>{rangeLabel}</div>
+                <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase" }}>Filter Dashboard</div>
+                <div style={{ fontSize: "12px", color: "#e5e7eb", fontWeight: 900, marginTop: "2px" }}>{rangeLabel} · {selectedScopeLabel}</div>
               </div>
               <button onClick={() => setShowPeriodPicker(true)} style={{ padding: "7px 10px", borderRadius: "11px", border: "1px solid rgba(99,102,241,0.26)", background: "rgba(99,102,241,0.12)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>Ganti</button>
             </div>
-          </div>
-        )}
-
-        {showTimeFilters && (
-          <div style={{ padding: "6px 20px 12px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-            {(canViewAllTransactions ? ["semua", ...userFilterNames] : [currentUser]).map(u => <button key={u} onClick={() => setFilterUser(u)} style={{ padding: "5px 12px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "11px", fontWeight: 600, flexShrink: 0, background: filterUser === u || (!canViewAllTransactions && u === currentUser) ? "#10b981" : "rgba(255,255,255,0.07)", color: filterUser === u || (!canViewAllTransactions && u === currentUser) ? "#fff" : "#888" }}>{u === "semua" ? "👨‍👩‍👧‍👦 Semua" : u}</button>)}
           </div>
         )}
 
@@ -5040,6 +5071,38 @@ export default function App() {
               <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan keuangan & snapshot transaksi</div>
               <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Detail transaksi pindah ke menu Transaksi. Periode aktif: {rangeLabel}.</div>
             </div>
+
+            {canViewAllTransactions && (
+              <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+                  <div>
+                    <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Family Log</div>
+                    <div style={{ fontSize: "14px", color: "#fff", fontWeight: 900, marginTop: "3px" }}>Log Transaksi per User</div>
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", textAlign: "right" }}>{rangeLabel}</div>
+                </div>
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {activeFamilyMembers.map(member => {
+                    const txns = familyLogPeriodTxns.filter(t => t.user === member.name);
+                    const income = txns.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
+                    const expense = txns.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
+                    return (
+                      <div key={member.id || member.name} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", alignItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.46)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff" }}>{member.avatar || "👤"} {member.name}</div>
+                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{txns.length} transaksi periode ini</div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: "11px", color: "#86efac", fontWeight: 900 }}>+{formatRupiah(income)}</div>
+                          <div style={{ fontSize: "11px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(expense)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
             : Object.keys(expenseByCategory).length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Filter ini kosong, cek menu Transaksi untuk transaksi terbaru")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
             : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
@@ -5636,7 +5699,8 @@ export default function App() {
         {activeTab === "gadai" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "18px", marginBottom: "16px", borderRadius: "18px", background: "linear-gradient(135deg,rgba(99,102,241,0.14),rgba(15,23,42,0.55))", border: "1px solid rgba(99,102,241,0.28)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Financial Engine · Phase 6.7</div>
+              <button onClick={() => setActiveTab("dompet")} style={{ marginBottom: "12px", padding: "8px 10px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.05)", color: "#c7d2fe", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>← Wallet / Finance</button>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Wallet / Finance · Loan Engine</div>
               <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Pinjaman / Loan</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.65 }}>
                 Gadai menjadi submodul Pinjaman. Wallet, Goal, Investasi, Pinjaman, dan Net Position mulai diringkas dalam Financial Engine agar saldo kas tidak disalahartikan sebagai kekayaan bersih.
@@ -5816,14 +5880,19 @@ export default function App() {
         {activeTab === "dompet" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "16px", marginBottom: "14px", borderRadius: "18px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.25)" }}>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Wallet v2 · Rename · Archive · Merge</div>
-              <div style={{ fontSize: "20px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Sumber Dana Keluarga</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "6px" }}>Wallet / Finance</div>
+              <div style={{ fontSize: "20px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>Sumber Dana & Pinjaman</div>
               <div style={{ fontSize: "13px", color: "#cbd5e1", lineHeight: 1.6 }}>
                 1. Tambahkan sumber dana sesuai kebutuhan: Cash, BCA, Mandiri, DANA, Owner Draw, atau lainnya.<br />
                 2. Setiap transaksi wajib memilih sumber dana aktif agar saldo dompet akurat.<br />
-                3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.<br />4. Gunakan Uang Saku / Transfer Wallet untuk memindahkan dana internal keluarga tanpa dianggap expense.
+                3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.<br />4. Pinjaman/Loan berada di area Finance. Gadai adalah salah satu jenis pinjaman.
               </div>
             </div>
+            {canViewLoans && (
+              <button onClick={() => setActiveTab("gadai")} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "13px", fontWeight: 900, marginBottom: "12px", cursor: "pointer", textAlign: "left" }}>
+                🏦 Pinjaman / Loan <span style={{ color: "#94a3b8", fontSize: "11px", fontWeight: 700 }}>· Gadai dan jenis pinjaman lain</span>
+              </button>
+            )}
             {/* User filter */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "16px" }}>
               {activeFamilyMembers.filter(member => canAccessSelectedWalletUser(member.name)).map(member => { const u = member.name; return (
