@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.3 Goal Usage Log";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.4 Custom Goal Builder";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -329,6 +329,7 @@ const CATEGORY_GROUPS = [
   { id: "future", label: "🏠 Masa Depan", color: "#f59e0b" },
   { id: "pension", label: "👴 Pensiun", color: "#14b8a6" },
   { id: "health", label: "🏥 Kesehatan", color: "#ef4444" },
+  { id: "custom", label: "✨ Custom", color: "#a855f7" },
 ];
 
 const EDUCATION_CHILDREN = [
@@ -355,6 +356,10 @@ function getGoalStageLabel(goal) {
 }
 
 function getGoalPriorityLabel(goal) {
+  const p = String(goal?.priority || "").toLowerCase();
+  if (p === "wajib") return "Wajib";
+  if (p === "penting") return "Penting";
+  if (p === "opsional") return "Opsional";
   if (["aroon", "arunika", "arkaja", "health", "pension"].includes(goal?.category)) return "Wajib";
   if (goal?.id === "emergency") return "Wajib";
   if (goal?.category === "future") return "Penting";
@@ -517,6 +522,8 @@ export default function App() {
   const [investments, setInvestments] = useState([]);
   const [savingsData, setSavingsData] = useState({});
   const [savingsHoldings, setSavingsHoldings] = useState({});
+  const [customGoals, setCustomGoals] = useState([]);
+  const [goalOverrides, setGoalOverrides] = useState({});
   const [goalUsageLog, setGoalUsageLog] = useState([]);
   const [marketPrices, setMarketPrices] = useState(null);
   const [loadingPrices, setLoadingPrices] = useState(false);
@@ -526,6 +533,21 @@ export default function App() {
   const [showForm, setShowForm] = useState(false);
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
+  const [showGoalBuilder, setShowGoalBuilder] = useState(false);
+  const [editingGoal, setEditingGoal] = useState(null);
+  const [goalBuilderForm, setGoalBuilderForm] = useState({
+    label: "",
+    icon: "🎯",
+    category: "future",
+    targetAmount: "",
+    yearsLeft: "",
+    priority: "penting",
+    desc: "",
+    visibility: "owner_admin",
+    fundingType: "mixed",
+    status: "active",
+    color: "#6366f1",
+  });
   const [showGoalUsage, setShowGoalUsage] = useState(null);
   const [goalUsageForm, setGoalUsageForm] = useState({
     mode: "cash",
@@ -657,8 +679,10 @@ export default function App() {
     const unsub6 = onSnapshot(collection(db, "sumberDana"), snap => { setSumberDanaList(sortTxns(mapDocs(snap))); }, err => console.error("sumberDana listener error:", err));
     const unsub7 = onSnapshot(collection(db, "sumberDanaLedger"), snap => { setSumberDanaLedger(mapDocs(snap)); }, err => console.error("sumberDanaLedger listener error:", err));
     const unsub8 = onSnapshot(collection(db, "goalUsage"), snap => { setGoalUsageLog(sortTxns(mapDocs(snap))); }, err => console.error("goalUsage listener error:", err));
+    const unsub9 = onSnapshot(collection(db, "customGoals"), snap => { setCustomGoals(sortTxns(mapDocs(snap))); }, err => console.error("customGoals listener error:", err));
+    const unsub10 = onSnapshot(doc(db, "savings", "goalOverrides"), snap => { setGoalOverrides(snap.exists() ? (snap.data()?.items || {}) : {}); }, err => console.error("goalOverrides listener error:", err));
 
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); };
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); unsub10(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
@@ -976,6 +1000,8 @@ export default function App() {
     setSelectedInvestment(null);
     setAssetToGoalInvestment(null);
     setShowWalletTransfer(false);
+    setShowGoalBuilder(false);
+    setEditingGoal(null);
     setShowGoalUsage(null);
     setSelectedGoal(null);
     setSelectedCategory(null);
@@ -1288,8 +1314,27 @@ export default function App() {
   const totalInvBuy = investments.reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
 
-  const totalSavingsTarget = SAVINGS_GOALS.reduce((s, g) => s + g.targetAmount, 0);
-  const totalSavingsCurrent = SAVINGS_GOALS.reduce((s, g) => s + calcGoalValue(g.id), 0);
+  const savingsGoals = [
+    ...SAVINGS_GOALS.map(g => ({
+      ...g,
+      ...(goalOverrides?.[g.id] || {}),
+      id: g.id,
+      sourceType: "template",
+      targetAmount: Number((goalOverrides?.[g.id]?.targetAmount ?? g.targetAmount) || 0),
+      yearsLeft: Number((goalOverrides?.[g.id]?.yearsLeft ?? g.yearsLeft) || 0),
+      status: goalOverrides?.[g.id]?.status || g.status || "active",
+    })),
+    ...customGoals.map(g => ({
+      ...g,
+      sourceType: "custom",
+      targetAmount: Number(g.targetAmount || 0),
+      yearsLeft: Number(g.yearsLeft || 0),
+      status: g.status || "active",
+    })),
+  ].filter(g => g.status !== "archived");
+
+  const totalSavingsTarget = savingsGoals.reduce((s, g) => s + Number(g.targetAmount || 0), 0);
+  const totalSavingsCurrent = savingsGoals.reduce((s, g) => s + calcGoalValue(g.id), 0);
 
   const financialScopeUser = canViewAllTransactionsNow
     ? (filterUser === "semua" ? null : filterUser)
@@ -1319,7 +1364,7 @@ export default function App() {
     { label: "Bahaya", color: "#f87171", bg: "rgba(239,68,68,0.14)" };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
-    const goals = SAVINGS_GOALS.filter(g => g.category === child);
+    const goals = savingsGoals.filter(g => g.category === child);
     return { child, target: goals.reduce((s,g) => s+g.targetAmount, 0), current: goals.reduce((s,g) => s+calcGoalValue(g.id), 0) };
   });
 
@@ -1344,7 +1389,7 @@ export default function App() {
       const ok = window.confirm("Saldo " + (source.name || "Sumber Dana") + " lebih kecil dari alokasi. Lanjutkan dan biarkan saldo sumber dana menjadi minus?");
       if (!ok) return;
     }
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const goal = savingsGoals.find(g => g.id === goalId);
     const goalLabel = goal?.label || goalId;
     const newData = { ...savingsData, [goalId]: (savingsData[goalId] || 0) + amt };
     await setDoc(doc(db, "savings", "goals"), newData);
@@ -1372,7 +1417,7 @@ export default function App() {
       if (!okEnough) return;
     }
 
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const goal = savingsGoals.find(g => g.id === goalId);
     const source = sumberDanaList.find(s => s.id === allocation.sumberDanaId);
     const ok = window.confirm("Batalkan alokasi tunai " + formatRupiah(refundAmount) + "? Wallet sumber akan dikembalikan dan dana tunai goal akan dikurangi.");
     if (!ok) return;
@@ -1454,7 +1499,7 @@ export default function App() {
     await setDoc(doc(db, "savings", "holdings"), updated);
     setSavingsHoldings(updated);
 
-    const goalLabel = SAVINGS_GOALS.find(g => g.id === goalId)?.label || goalId;
+    const goalLabel = savingsGoals.find(g => g.id === goalId)?.label || goalId;
     await logLedger(assetSDId, -buyValueIdr, "Alokasi aset " + (assetType?.label||"") + " ke goal: " + goalLabel, "goal_asset_allocation", goalId);
     await addActivityLog("goal_asset_allocated", currentUser + " alokasi aset " + (assetType?.label || assetForm.assetType) + " senilai " + formatRupiah(buyValueIdr) + " dari " + (source.name || "Sumber Dana") + " ke " + goalLabel);
 
@@ -1474,7 +1519,7 @@ export default function App() {
     const existing = savingsHoldings[goalId] || [];
     const holding = existing.find(h => String(h.id) === String(holdingId));
     if (!holding) return;
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const goal = savingsGoals.find(g => g.id === goalId);
     const assetType = ASSET_TYPES.find(a => a.id === holding.assetType);
     const sourceId = holding.sumberDanaId;
     const source = sumberDanaList.find(s => s.id === sourceId);
@@ -1519,6 +1564,161 @@ export default function App() {
     syncToSheets("cancelGoalAsset", { goalId, goalLabel: goal?.label || goalId, holdingId, refundValue, sumberDanaId: sourceId || "", sumberDanaName: source?.name || "", user: currentUser, createdAt: new Date().toISOString() });
   }
 
+  function resetGoalBuilderForm(seedCategory = null) {
+    const inferredCategory = seedCategory || (savingsTab === "education" ? selectedEducationChild : savingsTab) || "future";
+    setGoalBuilderForm({
+      label: "",
+      icon: "🎯",
+      category: inferredCategory,
+      targetAmount: "",
+      yearsLeft: "",
+      priority: inferredCategory === "future" || inferredCategory === "custom" ? "penting" : "wajib",
+      desc: "",
+      visibility: "owner_admin",
+      fundingType: "mixed",
+      status: "active",
+      color: "#6366f1",
+    });
+  }
+
+  function openGoalBuilder(goal = null) {
+    if (!canManageGoalFunds()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membuat/mengubah Goal.");
+      return;
+    }
+    if (goal) {
+      setEditingGoal(goal);
+      setGoalBuilderForm({
+        label: goal.label || "",
+        icon: goal.icon || "🎯",
+        category: goal.category || "future",
+        targetAmount: goal.targetAmount ? String(Math.round(Number(goal.targetAmount))) : "",
+        yearsLeft: goal.yearsLeft ? String(goal.yearsLeft) : "",
+        priority: String(goal.priority || getGoalPriorityLabel(goal) || "penting").toLowerCase(),
+        desc: goal.desc || "",
+        visibility: goal.visibility || "owner_admin",
+        fundingType: goal.fundingType || "mixed",
+        status: goal.status || "active",
+        color: goal.color || "#6366f1",
+      });
+    } else {
+      setEditingGoal(null);
+      resetGoalBuilderForm();
+    }
+    setShowGoalBuilder(true);
+  }
+
+  function normalizeGoalPayload() {
+    const label = (goalBuilderForm.label || "").trim();
+    const targetAmount = parseAmount(goalBuilderForm.targetAmount);
+    const yearsLeft = parseDecimal(goalBuilderForm.yearsLeft);
+    if (!label) {
+      showAccessNotice("Isi nama/tujuan Goal.");
+      return null;
+    }
+    if (!targetAmount || targetAmount <= 0) {
+      showAccessNotice("Isi target nominal Goal.");
+      return null;
+    }
+    return {
+      label,
+      icon: goalBuilderForm.icon || "🎯",
+      category: goalBuilderForm.category || "custom",
+      targetAmount,
+      yearsLeft: yearsLeft || 1,
+      priority: goalBuilderForm.priority || "penting",
+      desc: goalBuilderForm.desc || "",
+      visibility: goalBuilderForm.visibility || "owner_admin",
+      fundingType: goalBuilderForm.fundingType || "mixed",
+      status: goalBuilderForm.status || "active",
+      color: goalBuilderForm.color || "#6366f1",
+      updatedBy: currentUser,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  async function saveGoalBuilder() {
+    if (!canManageGoalFunds()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membuat/mengubah Goal.");
+      return;
+    }
+    const payload = normalizeGoalPayload();
+    if (!payload) return;
+
+    if (editingGoal) {
+      if (editingGoal.sourceType === "custom") {
+        await setDoc(doc(db, "customGoals", editingGoal.id), {
+          ...editingGoal,
+          ...payload,
+          createdAt: editingGoal.createdAt || new Date().toISOString(),
+          createdBy: editingGoal.createdBy || currentUser,
+        });
+      } else {
+        const nextOverrides = {
+          ...(goalOverrides || {}),
+          [editingGoal.id]: {
+            ...(goalOverrides?.[editingGoal.id] || {}),
+            ...payload,
+          },
+        };
+        await setDoc(doc(db, "savings", "goalOverrides"), { items: nextOverrides, updatedAt: new Date().toISOString(), updatedBy: currentUser });
+        setGoalOverrides(nextOverrides);
+      }
+      await addActivityLog("goal_updated", currentUser + " mengubah Goal " + payload.label + ".");
+      syncToSheets("goalUpdated", { id: editingGoal.id, ...payload, sourceType: editingGoal.sourceType || "template" });
+    } else {
+      const docRef = await addDoc(collection(db, "customGoals"), {
+        ...payload,
+        createdBy: currentUser,
+        createdAt: new Date().toISOString(),
+        sourceType: "custom",
+      });
+      await addActivityLog("goal_created", currentUser + " membuat Goal custom " + payload.label + " dengan target " + formatRupiah(payload.targetAmount) + ".");
+      syncToSheets("goalCreated", { id: docRef.id, ...payload, user: currentUser });
+    }
+
+    setShowGoalBuilder(false);
+    setEditingGoal(null);
+    resetGoalBuilderForm();
+  }
+
+  async function archiveGoal(goal) {
+    if (!goal || !canManageGoalFunds()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin mengarsipkan Goal.");
+      return;
+    }
+    const currentVal = calcGoalValue(goal.id);
+    const ok = window.confirm("Arsipkan Goal " + (goal.label || goal.id) + "? Data alokasi/log tidak dihapus. Nilai teralokasi saat ini: " + formatRupiah(currentVal) + ".");
+    if (!ok) return;
+
+    if (goal.sourceType === "custom") {
+      await setDoc(doc(db, "customGoals", goal.id), {
+        ...goal,
+        status: "archived",
+        archivedAt: new Date().toISOString(),
+        archivedBy: currentUser,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser,
+      });
+    } else {
+      const nextOverrides = {
+        ...(goalOverrides || {}),
+        [goal.id]: {
+          ...(goalOverrides?.[goal.id] || {}),
+          status: "archived",
+          archivedAt: new Date().toISOString(),
+          archivedBy: currentUser,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser,
+        },
+      };
+      await setDoc(doc(db, "savings", "goalOverrides"), { items: nextOverrides, updatedAt: new Date().toISOString(), updatedBy: currentUser });
+      setGoalOverrides(nextOverrides);
+    }
+    await addActivityLog("goal_archived", currentUser + " mengarsipkan Goal " + (goal.label || goal.id) + ".");
+    syncToSheets("goalArchived", { id: goal.id, label: goal.label, sourceType: goal.sourceType || "template", user: currentUser });
+  }
+
   function resetGoalUsageForm(goalId = null) {
     const holdings = goalId ? (savingsHoldings[goalId] || []) : [];
     const hasCash = goalId ? Number(savingsData[goalId] || 0) > 0 : true;
@@ -1557,7 +1757,7 @@ export default function App() {
       return;
     }
 
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const goal = savingsGoals.find(g => g.id === goalId);
     const goalLabel = goal?.label || goalId;
     const usedFor = (goalUsageForm.usedFor || "").trim();
     if (!usedFor) {
@@ -1807,7 +2007,7 @@ export default function App() {
     }
 
     const at = ASSET_TYPES.find(a => a.id === inv.assetType);
-    const goal = SAVINGS_GOALS.find(g => g.id === goalId);
+    const goal = savingsGoals.find(g => g.id === goalId);
     const totalCostBasis = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : availableQty * (inv.buyPrice || 0)));
     const ratio = availableQty ? moveQty / availableQty : 0;
     const movedCostBasis = Math.round(totalCostBasis * ratio);
@@ -2933,7 +3133,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.3. Goal Usage Log aktif: pemakaian dana/aset goal wajib mencatat dipakai untuk apa.
+            FinPlan v1.1.0 Family Edition Phase 6.7.4. Custom Goal Builder aktif: preset goal menjadi template dan Owner/Admin bisa membuat atau mengedit goal.
           </div>
         </div>
       </div>
@@ -2949,6 +3149,9 @@ export default function App() {
       goal_asset_cancelled: { label: "Batal Alokasi Aset", icon: "↩️", tone: "red" },
       goal_funds_used: { label: "Pakai Dana Goal", icon: "🧾", tone: "amber" },
       goal_asset_used: { label: "Pakai Aset Goal", icon: "🏦", tone: "amber" },
+      goal_created: { label: "Goal Dibuat", icon: "🎯", tone: "green" },
+      goal_updated: { label: "Goal Diubah", icon: "✏️", tone: "purple" },
+      goal_archived: { label: "Goal Diarsipkan", icon: "📦", tone: "amber" },
       permissions_updated: { label: "Permission Diubah", icon: "🛡️", tone: "purple" },
       wallet_created: { label: "Wallet Dibuat", icon: "🏦", tone: "green" },
       wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
@@ -3568,7 +3771,7 @@ export default function App() {
 
   const GoalCashFundingModal = () => {
     if (!showSavingsForm) return null;
-    const goal = SAVINGS_GOALS.find(g => g.id === showSavingsForm);
+    const goal = savingsGoals.find(g => g.id === showSavingsForm);
     if (!goal) return null;
     const currentVal = calcGoalValue(goal.id);
     const amount = parseAmount(savingsInput);
@@ -3625,7 +3828,7 @@ export default function App() {
     const movedCost = qtyAvailable ? Math.round(costBasis * Math.min(moveQty, qtyAvailable) / qtyAvailable) : 0;
     const currentValue = calcAssetValue(inv, marketPrices);
     const movedCurrentValue = qtyAvailable ? Math.round(currentValue * Math.min(moveQty, qtyAvailable) / qtyAvailable) : 0;
-    const selectedGoal = SAVINGS_GOALS.find(g => g.id === assetToGoalForm.goalId);
+    const selectedGoal = savingsGoals.find(g => g.id === assetToGoalForm.goalId);
 
     return (
       <div onClick={() => setAssetToGoalInvestment(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
@@ -3649,7 +3852,7 @@ export default function App() {
               <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>Pilih Goal Tujuan</div>
               <select value={assetToGoalForm.goalId} onChange={(e) => setAssetToGoalForm(prev => ({ ...prev, goalId: e.target.value }))} style={inputStyle}>
                 <option value="">Pilih goal...</option>
-                {SAVINGS_GOALS.map(g => <option key={g.id} value={g.id}>{g.icon} {g.label} · target {formatRupiah(g.targetAmount)}</option>)}
+                {savingsGoals.map(g => <option key={g.id} value={g.id}>{g.icon} {g.label} · target {formatRupiah(g.targetAmount)}</option>)}
               </select>
             </div>
 
@@ -3782,9 +3985,108 @@ export default function App() {
     );
   };
 
+  const GoalBuilderModal = () => {
+    if (!showGoalBuilder) return null;
+    const isEdit = Boolean(editingGoal);
+    const isTemplate = isEdit && editingGoal?.sourceType !== "custom";
+    const categoryOptions = [
+      { id: "aroon", label: "Pendidikan · Aroon" },
+      { id: "arunika", label: "Pendidikan · Arunika" },
+      { id: "arkaja", label: "Pendidikan · Arkaja" },
+      { id: "future", label: "Masa Depan" },
+      { id: "pension", label: "Pensiun" },
+      { id: "health", label: "Kesehatan" },
+      { id: "custom", label: "Custom / Lainnya" },
+    ];
+
+    return (
+      <div onClick={() => setShowGoalBuilder(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#c084fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.7.4 · Custom Goal Builder</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>{isEdit ? "Edit Goal" : "Buat Goal Manual"}</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.5 }}>
+                Preset goal adalah template awal. Nama, target, prioritas, visibility, dan status bisa disesuaikan Owner/Admin.
+              </div>
+            </div>
+            <button onClick={() => setShowGoalBuilder(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          {isTemplate && (
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
+              Ini goal bawaan/template. Perubahan disimpan sebagai override, bukan menghapus template dasar.
+            </div>
+          )}
+
+          <div style={{ display: "grid", gap: "12px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "80px 1fr", gap: "8px" }}>
+              <input value={goalBuilderForm.icon} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, icon: e.target.value }))} placeholder="Icon" style={inputStyle} />
+              <input value={goalBuilderForm.label} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, label: e.target.value }))} placeholder="Nama tujuan, contoh: Liburan Keluarga Jepang" style={inputStyle} />
+            </div>
+
+            <select value={goalBuilderForm.category} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, category: e.target.value }))} style={inputStyle}>
+              {categoryOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
+            </select>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <input value={goalBuilderForm.targetAmount} inputMode="numeric" onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, targetAmount: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Target nominal" style={inputStyle} />
+              <input value={goalBuilderForm.yearsLeft} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, yearsLeft: e.target.value }))} placeholder="Berapa tahun lagi" style={inputStyle} />
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <select value={goalBuilderForm.priority} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, priority: e.target.value }))} style={inputStyle}>
+                <option value="wajib">Wajib</option>
+                <option value="penting">Penting</option>
+                <option value="opsional">Opsional</option>
+              </select>
+              <select value={goalBuilderForm.fundingType} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, fundingType: e.target.value }))} style={inputStyle}>
+                <option value="cash">Tunai</option>
+                <option value="asset">Aset</option>
+                <option value="mixed">Campuran</option>
+              </select>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+              <select value={goalBuilderForm.visibility} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, visibility: e.target.value }))} style={inputStyle}>
+                <option value="owner_admin">Owner/Admin</option>
+                <option value="family_public">Family Public</option>
+                <option value="selected_member">Selected Member</option>
+                <option value="owner_only">Owner Only</option>
+              </select>
+              <select value={goalBuilderForm.status} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, status: e.target.value }))} style={inputStyle}>
+                <option value="active">Aktif</option>
+                <option value="paused">Pause</option>
+                <option value="done">Selesai</option>
+                <option value="archived">Arsip</option>
+              </select>
+            </div>
+
+            <input value={goalBuilderForm.color} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, color: e.target.value }))} placeholder="Warna, contoh #6366f1" style={inputStyle} />
+            <input value={goalBuilderForm.desc} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, desc: e.target.value }))} placeholder="Deskripsi/catatan goal" style={inputStyle} />
+
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.22)", color: "#c7d2fe", fontSize: "12px", lineHeight: 1.55, fontWeight: 800 }}>
+              Target bukan aset. Yang dihitung sebagai modal hanya dana/aset yang nanti benar-benar dialokasikan ke goal.
+            </div>
+
+            <button onClick={saveGoalBuilder} style={{ padding: "15px", borderRadius: "16px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "14px", fontWeight: 900, cursor: "pointer" }}>
+              💾 {isEdit ? "Simpan Perubahan Goal" : "Buat Goal"}
+            </button>
+
+            {isEdit && (
+              <button onClick={() => archiveGoal(editingGoal)} style={{ padding: "13px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "13px", fontWeight: 900, cursor: "pointer" }}>
+                📦 Arsipkan Goal
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const GoalUsageModal = () => {
     if (!showGoalUsage) return null;
-    const goal = SAVINGS_GOALS.find(g => g.id === showGoalUsage);
+    const goal = savingsGoals.find(g => g.id === showGoalUsage);
     if (!goal) return null;
 
     const idrCash = Number(savingsData[goal.id] || 0);
@@ -3876,7 +4178,7 @@ export default function App() {
 
   const GoalAssetFundingModal = () => {
     if (!showAssetConvert || String(showAssetConvert).startsWith("invest_")) return null;
-    const goal = SAVINGS_GOALS.find(g => g.id === showAssetConvert);
+    const goal = savingsGoals.find(g => g.id === showAssetConvert);
     if (!goal) return null;
     const assetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
     const qty = parseDecimal(assetForm.qty);
@@ -4652,6 +4954,14 @@ export default function App() {
               </div>
             </div>
 
+            {canManageGoalFunds() && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px", marginBottom: "12px" }}>
+                <button onClick={() => openGoalBuilder(null)} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(168,85,247,0.30)", background: "rgba(168,85,247,0.12)", color: "#d8b4fe", fontSize: "13px", fontWeight: 900, cursor: "pointer" }}>
+                  ✨ Buat Goal Manual / Custom
+                </button>
+              </div>
+            )}
+
             {/* Tabs */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "12px" }}>
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
@@ -4660,7 +4970,7 @@ export default function App() {
             {savingsTab === "education" && (
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "12px" }}>
                 {EDUCATION_CHILDREN.map(child => {
-                  const goals = SAVINGS_GOALS.filter(g => g.category === child.id);
+                  const goals = savingsGoals.filter(g => g.category === child.id);
                   const target = goals.reduce((s,g) => s + g.targetAmount, 0);
                   const current = goals.reduce((s,g) => s + calcGoalValue(g.id), 0);
                   const active = selectedEducationChild === child.id;
@@ -4677,8 +4987,8 @@ export default function App() {
 
             {(() => {
               const goalsToShow = savingsTab === "education"
-                ? SAVINGS_GOALS.filter(g => g.category === selectedEducationChild)
-                : SAVINGS_GOALS.filter(g => g.category === savingsTab);
+                ? savingsGoals.filter(g => g.category === selectedEducationChild)
+                : savingsGoals.filter(g => g.category === savingsTab);
               const groupTarget = goalsToShow.reduce((s,g) => s + g.targetAmount, 0);
               const groupCurrent = goalsToShow.reduce((s,g) => s + calcGoalValue(g.id), 0);
               const groupRemaining = Math.max(groupTarget - groupCurrent, 0);
@@ -4727,6 +5037,7 @@ export default function App() {
                         </div>
                         {canContributeGoal() && (
                           <div style={{ display: "grid", gap: "6px", flexShrink: 0 }}>
+                            {canManageGoalFunds() && <button onClick={() => openGoalBuilder(goal)} style={{ background: "rgba(168,85,247,0.16)", border: "1px solid rgba(168,85,247,0.35)", color: "#d8b4fe", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>✏️ Edit</button>}
                             <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Tunai</button>
                             <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Aset</button>
                             {canManageGoalFunds() && currentVal > 0 && <button onClick={() => openGoalUsageModal(goal.id)} style={{ background: "rgba(245,158,11,0.16)", border: "1px solid rgba(245,158,11,0.35)", color: "#fbbf24", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>🧾 Pakai</button>}
@@ -5178,6 +5489,7 @@ export default function App() {
         {SumberDanaDetailModal()}
         {RecycleBinModal()}
         {GoalCashFundingModal()}
+        {GoalBuilderModal()}
         {GoalUsageModal()}
         {AssetToGoalModal()}
         {InvestmentAssetModal()}
