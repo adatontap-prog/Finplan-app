@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.4b Goal UI Polish";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5 Goal Template System";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -534,6 +534,7 @@ export default function App() {
   const [showInvForm, setShowInvForm] = useState(false);
   const [showSavingsForm, setShowSavingsForm] = useState(null);
   const [showGoalBuilder, setShowGoalBuilder] = useState(false);
+  const [showGoalTemplateManager, setShowGoalTemplateManager] = useState(false);
   const [editingGoal, setEditingGoal] = useState(null);
   const [goalBuilderForm, setGoalBuilderForm] = useState({
     label: "",
@@ -1001,6 +1002,7 @@ export default function App() {
     setAssetToGoalInvestment(null);
     setShowWalletTransfer(false);
     setShowGoalBuilder(false);
+    setShowGoalTemplateManager(false);
     setEditingGoal(null);
     setShowGoalUsage(null);
     setSelectedGoal(null);
@@ -1314,12 +1316,13 @@ export default function App() {
   const totalInvBuy = investments.reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
 
-  const savingsGoals = [
+  const allSavingsGoals = [
     ...SAVINGS_GOALS.map(g => ({
       ...g,
       ...(goalOverrides?.[g.id] || {}),
       id: g.id,
       sourceType: "template",
+      templateId: g.id,
       targetAmount: Number((goalOverrides?.[g.id]?.targetAmount ?? g.targetAmount) || 0),
       yearsLeft: Number((goalOverrides?.[g.id]?.yearsLeft ?? g.yearsLeft) || 0),
       status: goalOverrides?.[g.id]?.status || g.status || "active",
@@ -1331,7 +1334,9 @@ export default function App() {
       yearsLeft: Number(g.yearsLeft || 0),
       status: g.status || "active",
     })),
-  ].filter(g => g.status !== "archived");
+  ];
+  const savingsGoals = allSavingsGoals.filter(g => g.status !== "archived");
+  const archivedSavingsGoals = allSavingsGoals.filter(g => g.status === "archived");
 
   const totalSavingsTarget = savingsGoals.reduce((s, g) => s + Number(g.targetAmount || 0), 0);
   const totalSavingsCurrent = savingsGoals.reduce((s, g) => s + calcGoalValue(g.id), 0);
@@ -1678,6 +1683,7 @@ export default function App() {
     }
 
     setShowGoalBuilder(false);
+    setShowGoalTemplateManager(false);
     setEditingGoal(null);
     resetGoalBuilderForm();
   }
@@ -1717,6 +1723,69 @@ export default function App() {
     }
     await addActivityLog("goal_archived", currentUser + " mengarsipkan Goal " + (goal.label || goal.id) + ".");
     syncToSheets("goalArchived", { id: goal.id, label: goal.label, sourceType: goal.sourceType || "template", user: currentUser });
+  }
+
+  async function restoreGoal(goal) {
+    if (!goal || !canManageGoalFunds()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin restore Goal.");
+      return;
+    }
+    if (goal.sourceType === "custom") {
+      await setDoc(doc(db, "customGoals", goal.id), {
+        ...goal,
+        status: "active",
+        restoredAt: new Date().toISOString(),
+        restoredBy: currentUser,
+        updatedAt: new Date().toISOString(),
+        updatedBy: currentUser,
+      });
+    } else {
+      const nextOverrides = {
+        ...(goalOverrides || {}),
+        [goal.id]: {
+          ...(goalOverrides?.[goal.id] || {}),
+          status: "active",
+          restoredAt: new Date().toISOString(),
+          restoredBy: currentUser,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser,
+        },
+      };
+      await setDoc(doc(db, "savings", "goalOverrides"), { items: nextOverrides, updatedAt: new Date().toISOString(), updatedBy: currentUser });
+      setGoalOverrides(nextOverrides);
+    }
+    await addActivityLog("goal_restored", currentUser + " mengaktifkan kembali Goal " + (goal.label || goal.id) + ".");
+    syncToSheets("goalRestored", { id: goal.id, label: goal.label, sourceType: goal.sourceType || "template", user: currentUser });
+  }
+
+  async function duplicateGoalTemplate(goal) {
+    if (!goal || !canManageGoalFunds()) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin duplikasi Goal.");
+      return;
+    }
+    const payload = {
+      label: (goal.label || "Goal") + " Custom",
+      icon: goal.icon || "🎯",
+      category: goal.category || "custom",
+      targetAmount: Number(goal.targetAmount || 0),
+      yearsLeft: Number(goal.yearsLeft || 1),
+      priority: String(goal.priority || getGoalPriorityLabel(goal) || "penting").toLowerCase(),
+      desc: goal.desc || "",
+      visibility: goal.visibility || "owner_admin",
+      fundingType: goal.fundingType || "mixed",
+      status: "active",
+      color: goal.color || "#6366f1",
+      sourceType: "custom",
+      duplicatedFrom: goal.id,
+      duplicatedFromType: goal.sourceType || "template",
+      createdBy: currentUser,
+      createdAt: new Date().toISOString(),
+      updatedBy: currentUser,
+      updatedAt: new Date().toISOString(),
+    };
+    const docRef = await addDoc(collection(db, "customGoals"), payload);
+    await addActivityLog("goal_duplicated", currentUser + " menduplikasi Goal " + (goal.label || goal.id) + " menjadi custom goal.");
+    syncToSheets("goalDuplicated", { id: docRef.id, ...payload });
   }
 
   function resetGoalUsageForm(goalId = null) {
@@ -3133,7 +3202,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.4b. UI Goal dirapikan: empty state, tombol custom lebih compact, chip Template/Custom, dan progress aman saat target kosong.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5. Goal Template System aktif: template bawaan bisa edit, arsip, restore, dan duplikat ke custom goal.
           </div>
         </div>
       </div>
@@ -3152,6 +3221,8 @@ export default function App() {
       goal_created: { label: "Goal Dibuat", icon: "🎯", tone: "green" },
       goal_updated: { label: "Goal Diubah", icon: "✏️", tone: "purple" },
       goal_archived: { label: "Goal Diarsipkan", icon: "📦", tone: "amber" },
+      goal_restored: { label: "Goal Diaktifkan", icon: "✅", tone: "green" },
+      goal_duplicated: { label: "Goal Diduplikasi", icon: "🧬", tone: "purple" },
       permissions_updated: { label: "Permission Diubah", icon: "🛡️", tone: "purple" },
       wallet_created: { label: "Wallet Dibuat", icon: "🏦", tone: "green" },
       wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
@@ -3979,6 +4050,101 @@ export default function App() {
             <button onClick={() => addInvestmentAsset(isExisting ? "existing" : "wallet")} disabled={!qty || (!isCashLikeAsset && !rawValueInput) || (!isExisting && !assetSDId)} style={{ padding: "15px", borderRadius: "16px", border: "none", background: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.06)", color: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "#fff" : "#64748b", fontSize: "14px", fontWeight: 900, cursor: qty && (isCashLikeAsset || rawValueInput) && (isExisting || assetSDId) ? "pointer" : "not-allowed" }}>
               {isExisting ? "✅ Simpan Aset Existing" : "✅ Beli & Catat Investasi"}
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const GoalTemplateManagerModal = () => {
+    if (!showGoalTemplateManager) return null;
+
+    const templateGoals = allSavingsGoals.filter(g => g.sourceType === "template");
+    const customGoalItems = allSavingsGoals.filter(g => g.sourceType === "custom");
+    const getGoalCategoryLabel = (goal) => {
+      if (["aroon", "arunika", "arkaja"].includes(goal.category)) {
+        return EDUCATION_CHILDREN.find(c => c.id === goal.category)?.label || "Pendidikan";
+      }
+      return CATEGORY_GROUPS.find(g => g.id === goal.category)?.label || goal.category || "Custom";
+    };
+    const GoalRow = ({ goal }) => {
+      const isArchived = goal.status === "archived";
+      const currentVal = calcGoalValue(goal.id);
+      return (
+        <div style={{ padding: "12px", borderRadius: "16px", background: isArchived ? "rgba(245,158,11,0.07)" : "rgba(255,255,255,0.05)", border: "1px solid " + (isArchived ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.07)") }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{goal.icon || "🎯"} {goal.label}</div>
+              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>
+                {goal.sourceType === "template" ? "Template" : "Custom"} · {getGoalCategoryLabel(goal)} · {getGoalPriorityLabel(goal)} · {isArchived ? "Arsip" : "Aktif"}
+              </div>
+              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "4px" }}>
+                Target {formatRupiah(goal.targetAmount || 0)} · Teralokasi {formatRupiah(currentVal)}
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "140px" }}>
+              <button onClick={() => { setShowGoalTemplateManager(false); openGoalBuilder(goal); }} style={{ padding: "7px 8px", borderRadius: "10px", border: "1px solid rgba(168,85,247,0.28)", background: "rgba(168,85,247,0.10)", color: "#d8b4fe", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>Edit</button>
+              {isArchived ? (
+                <button onClick={() => restoreGoal(goal)} style={{ padding: "7px 8px", borderRadius: "10px", border: "1px solid rgba(16,185,129,0.28)", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>Restore</button>
+              ) : (
+                <button onClick={() => archiveGoal(goal)} style={{ padding: "7px 8px", borderRadius: "10px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>Arsip</button>
+              )}
+              {goal.sourceType === "template" && (
+                <button onClick={() => duplicateGoalTemplate(goal)} style={{ padding: "7px 8px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.10)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>Duplikat</button>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div onClick={() => setShowGoalTemplateManager(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "16px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#c084fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.7.5 · Template System</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Goal Template Control</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.5 }}>
+                Template bawaan bisa diedit, diarsipkan, direstore, atau diduplikasi menjadi custom goal. Alur engine tetap terkunci; isi goal fleksibel.
+              </div>
+            </div>
+            <button onClick={() => setShowGoalTemplateManager(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "14px" }}>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+              <div style={{ fontSize: "10px", color: "#94a3b8" }}>Template</div>
+              <div style={{ fontSize: "18px", color: "#fff", fontWeight: 900 }}>{templateGoals.length}</div>
+            </div>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+              <div style={{ fontSize: "10px", color: "#94a3b8" }}>Custom</div>
+              <div style={{ fontSize: "18px", color: "#d8b4fe", fontWeight: 900 }}>{customGoalItems.length}</div>
+            </div>
+            <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.05)" }}>
+              <div style={{ fontSize: "10px", color: "#94a3b8" }}>Arsip</div>
+              <div style={{ fontSize: "18px", color: "#fbbf24", fontWeight: 900 }}>{archivedSavingsGoals.length}</div>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: "16px" }}>
+            <div style={{ fontSize: "11px", letterSpacing: "1px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "8px" }}>Template bawaan</div>
+            <div style={{ display: "grid", gap: "8px" }}>
+              {templateGoals.map(goal => <GoalRow key={goal.id} goal={goal} />)}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: "11px", letterSpacing: "1px", color: "#d8b4fe", fontWeight: 900, textTransform: "uppercase", marginBottom: "8px" }}>Custom goals</div>
+            {customGoalItems.length === 0 ? (
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(168,85,247,0.08)", border: "1px dashed rgba(168,85,247,0.22)", color: "#94a3b8", fontSize: "12px", lineHeight: 1.5 }}>
+                Belum ada custom goal. Klik + Goal untuk membuat tujuan manual.
+              </div>
+            ) : (
+              <div style={{ display: "grid", gap: "8px" }}>
+                {customGoalItems.map(goal => <GoalRow key={goal.id} goal={goal} />)}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -4960,9 +5126,14 @@ export default function App() {
                   <div style={{ fontSize: "12px", color: "#d8b4fe", fontWeight: 900 }}>✨ Custom Goal</div>
                   <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>Buat tujuan manual atau edit template bawaan.</div>
                 </div>
-                <button onClick={() => openGoalBuilder(null)} style={{ padding: "9px 12px", borderRadius: "13px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
-                  + Goal
-                </button>
+                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
+                  <button onClick={() => setShowGoalTemplateManager(true)} style={{ padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(168,85,247,0.28)", background: "rgba(168,85,247,0.10)", color: "#d8b4fe", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    Template
+                  </button>
+                  <button onClick={() => openGoalBuilder(null)} style={{ padding: "9px 12px", borderRadius: "13px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    + Goal
+                  </button>
+                </div>
               </div>
             )}
 
@@ -5503,6 +5674,7 @@ export default function App() {
         {SumberDanaDetailModal()}
         {RecycleBinModal()}
         {GoalCashFundingModal()}
+        {GoalTemplateManagerModal()}
         {GoalBuilderModal()}
         {GoalUsageModal()}
         {AssetToGoalModal()}
