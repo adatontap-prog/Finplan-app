@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 1";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 3";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -78,6 +78,7 @@ const CATEGORIES = [
   { id: "transport", label: "Transport", icon: "\uD83D\uDE97", type: "expense" },
   { id: "belanja", label: "Belanja", icon: "\uD83D\uDECD", type: "expense" },
   { id: "tagihan", label: "Tagihan", icon: "\uD83D\uDCC4", type: "expense" },
+  { id: "pinjaman", label: "Pinjaman / Loan", icon: "\uD83C\uDFE6", type: "expense" },
   { id: "hiburan", label: "Hiburan", icon: "\uD83C\uDFAC", type: "expense" },
   { id: "kesehatan", label: "Kesehatan", icon: "\uD83C\uDFE5", type: "expense" },
   { id: "tabungan", label: "Tabungan", icon: "\uD83C\uDFE6", type: "expense" },
@@ -573,6 +574,8 @@ export default function App() {
   const [showGadaiCalc, setShowGadaiCalc] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
   const [selectedInvestment, setSelectedInvestment] = useState(null);
+  const [investmentEditMode, setInvestmentEditMode] = useState(false);
+  const [investmentEditForm, setInvestmentEditForm] = useState({ assetType: "lm", qty: "", costBasis: "", ticker: "", note: "", manualPrice: "", buyDate: "" });
   const [assetToGoalInvestment, setAssetToGoalInvestment] = useState(null);
   const [assetToGoalForm, setAssetToGoalForm] = useState({ goalId: "", qty: "", note: "" });
   const [selectedGoal, setSelectedGoal] = useState(null);
@@ -631,6 +634,7 @@ export default function App() {
   const [familyForm, setFamilyForm] = useState({ name: "", role: "Member", avatar: "👤", status: "active" });
   const [familyStatus, setFamilyStatus] = useState("");
   const [activityLog, setActivityLog] = useState([]);
+  const [investmentLogs, setInvestmentLogs] = useState([]);
   const [recycleBin, setRecycleBin] = useState([]);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [recycleStatus, setRecycleStatus] = useState("");
@@ -693,8 +697,9 @@ export default function App() {
     const unsub8 = onSnapshot(collection(db, "goalUsage"), snap => { setGoalUsageLog(sortTxns(mapDocs(snap))); }, err => console.error("goalUsage listener error:", err));
     const unsub9 = onSnapshot(collection(db, "customGoals"), snap => { setCustomGoals(sortTxns(mapDocs(snap))); }, err => console.error("customGoals listener error:", err));
     const unsub10 = onSnapshot(doc(db, "savings", "goalOverrides"), snap => { setGoalOverrides(snap.exists() ? (snap.data()?.items || {}) : {}); }, err => console.error("goalOverrides listener error:", err));
+    const unsub11 = onSnapshot(collection(db, "investmentLogs"), snap => { setInvestmentLogs(sortTxns(mapDocs(snap))); }, err => console.error("investmentLogs listener error:", err));
 
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); unsub10(); };
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); unsub10(); unsub11(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
@@ -1010,6 +1015,7 @@ export default function App() {
     setShowUserSelect(false);
     setSelectedTransaction(null);
     setSelectedInvestment(null);
+    setInvestmentEditMode(false);
     setAssetToGoalInvestment(null);
     setShowWalletTransfer(false);
     setShowGoalBuilder(false);
@@ -1063,6 +1069,22 @@ export default function App() {
       });
     } catch (err) {
       console.error("activity log write error:", err);
+    }
+  }
+
+  async function addInvestmentLog(investmentId, action, detail, extra = {}) {
+    if (!investmentId) return;
+    try {
+      await addDoc(collection(db, "investmentLogs"), {
+        investmentId,
+        action,
+        detail: detail || "",
+        actor: currentUser || "System",
+        createdAt: new Date().toISOString(),
+        ...extra,
+      });
+    } catch (err) {
+      console.error("investment log write error:", err);
     }
   }
 
@@ -1373,6 +1395,7 @@ export default function App() {
   });
   const totalInvBuy = investments.reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
+  const selectedInvestmentSummary = selectedInvestment ? (invSummary.find(i => i.id === selectedInvestment.id) || selectedInvestment) : null;
 
   const allSavingsGoals = [
     ...SAVINGS_GOALS.map(g => ({
@@ -2079,6 +2102,61 @@ export default function App() {
     // Handled by addSavingsAsset with goalId "invest_cash" or "invest_asset"
   }
 
+  function openInvestmentDetail(inv) {
+    if (!inv) return;
+    const costBasis = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0)));
+    setSelectedInvestment(inv);
+    setInvestmentEditMode(false);
+    setInvestmentEditForm({
+      assetType: inv.assetType || inv.type || "lm",
+      qty: String(inv.qty ?? inv.amount ?? ""),
+      costBasis: costBasis ? String(Math.round(costBasis)) : "",
+      ticker: inv.ticker || "",
+      note: inv.note || "",
+      manualPrice: inv.manualPrice ? String(Math.round(Number(inv.manualPrice))) : "",
+      buyDate: inv.buyDate || (inv.createdAt ? String(inv.createdAt).slice(0, 10) : new Date().toISOString().split("T")[0]),
+    });
+  }
+
+  async function updateInvestmentAsset() {
+    if (!selectedInvestment) return;
+    if (!canManageInvestments) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin edit investasi/aset.");
+      return;
+    }
+    const qty = parseDecimal(investmentEditForm.qty);
+    const costBasis = parseAmount(investmentEditForm.costBasis) || parseDecimal(investmentEditForm.costBasis);
+    const assetType = investmentEditForm.assetType || selectedInvestment.assetType || "lm";
+    const at = ASSET_TYPES.find(a => a.id === assetType);
+    const isCashLike = ["idr","obligasi"].includes(assetType);
+    if (!qty || !costBasis) {
+      showAccessNotice("Isi jumlah aset dan modal/nilai perolehan.");
+      return;
+    }
+    const updates = {
+      assetType,
+      type: assetType,
+      qty,
+      amount: qty,
+      costBasis,
+      buyPrice: isCashLike ? 1 : (qty ? costBasis / qty : 0),
+      idrValue: isCashLike ? qty : null,
+      ticker: investmentEditForm.ticker || null,
+      note: investmentEditForm.note || null,
+      manualPrice: investmentEditForm.manualPrice ? parseDecimal(investmentEditForm.manualPrice) : null,
+      buyDate: investmentEditForm.buyDate || selectedInvestment.buyDate || new Date().toISOString().split("T")[0],
+      updatedAt: new Date().toISOString(),
+      updatedBy: currentUser,
+    };
+    const { updateDoc } = await import("firebase/firestore");
+    await updateDoc(doc(db, "investments", selectedInvestment.id), updates);
+    await addInvestmentLog(selectedInvestment.id, "investment_updated", "Edit aset/portfolio: " + (updates.ticker || at?.label || assetType) + ". Koreksi ini tidak otomatis mengubah wallet.", { after: updates });
+    await addActivityLog("investment_updated", currentUser + " mengedit aset " + (updates.ticker || at?.label || assetType) + ". Wallet tidak otomatis berubah.");
+    syncToSheets("updateInvestment", { id: selectedInvestment.id, ...updates });
+    setSelectedInvestment(prev => ({ ...(prev || {}), ...updates }));
+    setInvestmentEditMode(false);
+  }
+
   async function addInvestmentAsset(type) {
     if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin mengelola investasi.");
@@ -2126,8 +2204,10 @@ export default function App() {
     });
     if (sourceMode === "wallet") {
       await logLedger(assetSDId, -costBasis, "Beli investasi: " + (assetForm.ticker || (at ? at.label : "")||""), "investment", docRef.id);
+      await addInvestmentLog(docRef.id, "investment_buy", "Dibeli dari wallet " + (sourceWallet?.name || "Sumber Dana") + " senilai " + formatFull(costBasis) + ".", { amount: costBasis, walletId: assetSDId, walletName: sourceWallet?.name || "" });
       await addActivityLog("investment_buy", currentUser + " membeli aset investasi " + (assetForm.ticker || (at ? at.label : assetForm.assetType)) + " senilai " + formatFull(costBasis) + " dari " + (sourceWallet?.name || "Sumber Dana") + ".");
     } else {
+      await addInvestmentLog(docRef.id, "existing_asset_onboarded", "Aset sudah dimiliki dicatat senilai/modal " + formatFull(costBasis) + ". Wallet tidak berubah.", { amount: costBasis });
       await addActivityLog("existing_asset_onboarded", currentUser + " mencatat aset yang sudah dimiliki: " + (assetForm.ticker || (at ? at.label : assetForm.assetType)) + " senilai/modal " + formatFull(costBasis) + ". Wallet tidak berubah.");
     }
     // Sync ke Google Sheets
@@ -2209,6 +2289,7 @@ export default function App() {
       updatedBy: currentUser,
     });
 
+    await addInvestmentLog(inv.id, "asset_to_goal", "Dipindahkan ke Goal " + (goal?.label || goalId) + ": " + moveQty + " " + (at?.unit || "unit") + ". Wallet tidak berubah.", { goalId, goalLabel: goal?.label || goalId, qty: moveQty, costBasis: movedCostBasis });
     await addActivityLog(
       "asset_to_goal",
       currentUser + " memindahkan " + moveQty + " " + (at?.unit || "unit") + " " + sourceLabel + " dari Investasi ke Goal " + (goal?.label || goalId) + ". Wallet tidak berubah."
@@ -2245,7 +2326,12 @@ export default function App() {
     }
     const inv = investments.find(i => i.id === id);
     if (!inv) return false;
+    await addInvestmentLog(id, "investment_deleted", "Aset dipindahkan ke Recycle Bin. Wallet tidak otomatis berubah.");
     await softDeleteRecord({ type: "investment", collectionName: "investments", id, data: inv, detail: "Hapus investasi ke Recycle Bin" });
+    if (selectedInvestment?.id === id) {
+      setSelectedInvestment(null);
+      setInvestmentEditMode(false);
+    }
     return true;
   }
 
@@ -2393,15 +2479,19 @@ export default function App() {
     if (feePaid > 0) {
       await addDoc(collection(db, "transactions"), {
         type: "expense",
-        category: "lainnya",
+        category: "pinjaman",
         amount: feePaid,
         note: "Bunga/biaya pinjaman: " + (loanPaymentLoan.namaBarang || "Pinjaman"),
         user: currentUser,
         date: loanPaymentForm.date,
+        sumberDanaId: walletId,
+        sumberDanaName: wallet.name || "",
         createdAt: new Date().toISOString(),
         movementType: "fee_interest",
         refType: "loan_payment",
         refId: payRef.id,
+        loanId: loanPaymentLoan.id,
+        loanType: loanPaymentLoan.loanType || "gadai",
       });
     }
 
@@ -3177,6 +3267,7 @@ export default function App() {
   function getTransactionIcon(tx) {
     const note = String(tx?.note || "").toLowerCase();
     const cat = CATEGORIES.find(c => c.id === tx?.category) || {};
+    if (tx?.refType === "loan_payment" || note.includes("pinjaman") || note.includes("gadai")) return "🏦";
     if (cat?.icon && cat.icon !== "?") return cat.icon;
     if (note.includes("pizza")) return "🍕";
     if (note.includes("kopi") || note.includes("coffee") || note.includes("coffe") || note.includes("matcha")) return "☕";
@@ -3192,7 +3283,11 @@ export default function App() {
     return "🧾";
   }
 
-  function getCategoryInfo(categoryId) {
+  function getCategoryInfo(categoryId, tx = null) {
+    const note = String(tx?.note || "").toLowerCase();
+    if (tx?.refType === "loan_payment" || note.includes("bunga/biaya pinjaman") || note.includes("pinjaman") || note.includes("gadai")) {
+      return { id: "pinjaman", label: "Pinjaman / Loan", icon: "🏦", type: "expense" };
+    }
     return CATEGORIES.find(c => c.id === categoryId) || { label: categoryId || "Tanpa kategori", icon: "🧾" };
   }
 
@@ -3328,7 +3423,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c. Navigation cleanup aktif: Family Log masuk Transaksi, Loan masuk Wallet/Finance, Settings tetap top icon, scope filter digabung dengan periode, dan warna goal otomatis.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 3. Portfolio asset detail aktif: aset bisa dibuka, diedit, punya Asset Log, dan sticky Back/Home tidak lagi menutup Portfolio.
           </div>
         </div>
       </div>
@@ -4731,7 +4826,7 @@ export default function App() {
   const TransactionDetailModal = () => {
     if (!selectedTransaction) return null;
     const tx = selectedTransaction;
-    const cat = getCategoryInfo(tx.category);
+    const cat = getCategoryInfo(tx.category, tx);
     const typeInfo = getTypeInfo(tx.type);
     return (
       <div onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99999, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
@@ -4752,7 +4847,7 @@ export default function App() {
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || tx.sumberDanaId || "Belum tercatat"}</div></div>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || "Tidak ada catatan"}</div></div>
             {canDeleteTransaction(tx) ? (
-              <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini?"); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi</button>
+              <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini? Data masuk Recycle Bin dan bisa direstore."); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi · Recycle Bin</button>
             ) : (
               <div style={{ marginTop: "6px", padding: "12px", borderRadius: "14px", border: "1px solid rgba(245,158,11,0.22)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Role {currentRole} tidak punya izin hapus transaksi ini. Member default hanya boleh mengubah data sendiri; Owner/Admin mengikuti permission.</div>
             )}
@@ -4893,7 +4988,7 @@ export default function App() {
         <SettingsCenterModal />
         <ActivityLogModal />
         {(() => {
-          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedTransaction || selectedCategory || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || selectedInvestment || assetToGoalInvestment || showUserSelect;
+          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedCategory || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
           const closeCurrentPopup = () => {
             setShowSettingsCenter(false);
             setShowActivityLogModal(false);
@@ -4909,6 +5004,7 @@ export default function App() {
             setShowGoalUsage(null);
             setShowAssetConvert(null);
             setSelectedInvestment(null);
+            setInvestmentEditMode(false);
             setAssetToGoalInvestment(null);
             setShowUserSelect(false);
           };
@@ -4953,6 +5049,115 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {selectedInvestmentSummary && (() => {
+          const inv = selectedInvestmentSummary;
+          const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "💰", label: inv.assetType || "Aset", unit: "unit" };
+          const costBasis = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0)));
+          const currentValue = inv.currentValue ?? calcAssetValue(inv, marketPrices);
+          const profitLoss = currentValue - costBasis;
+          const walletLogs = sumberDanaLedger.filter(l => l.refType === "investment" && l.refId === inv.id).map(l => ({
+            id: "wallet-" + l.id,
+            createdAt: l.createdAt,
+            action: "wallet_ledger",
+            detail: (l.amount < 0 ? "Wallet keluar " : "Wallet masuk ") + formatRupiah(Math.abs(l.amount || 0)) + " · " + (l.note || "Ledger investasi"),
+          }));
+          const directLogs = investmentLogs.filter(l => l.investmentId === inv.id);
+          const baseLog = {
+            id: "base-" + inv.id,
+            createdAt: inv.createdAt || inv.buyDate || "",
+            action: inv.sourceMode === "existing" ? "existing_asset_onboarded" : "investment_buy",
+            detail: inv.sourceMode === "existing"
+              ? "Aset sudah dimiliki dicatat. Wallet tidak berubah."
+              : "Aset dibeli dari wallet. Ledger wallet dicatat jika sumber dana dipilih.",
+          };
+          const mergedLogs = [baseLog, ...directLogs, ...walletLogs]
+            .filter(Boolean)
+            .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+
+          return (
+            <div onClick={() => { setSelectedInvestment(null); setInvestmentEditMode(false); }} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "18px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", paddingBottom: "22px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "14px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Asset Detail</div>
+                    <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>{at.icon} {inv.ticker || at.label}</div>
+                    <div style={{ fontSize: "11px", color: inv.sourceMode === "existing" ? "#fbbf24" : "#86efac", marginTop: "5px", fontWeight: 800 }}>{inv.sourceMode === "existing" ? "Aset sudah dimiliki · wallet tidak berubah" : "Dibeli dari wallet"}</div>
+                  </div>
+                  <button onClick={() => { setSelectedInvestment(null); setInvestmentEditMode(false); }} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer" }}>×</button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Nilai Sekarang</div>
+                    <div style={{ fontSize: "16px", fontWeight: 900, color: "#fff" }}>{formatRupiah(currentValue)}</div>
+                  </div>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Untung/Rugi</div>
+                    <div style={{ fontSize: "16px", fontWeight: 900, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{profitLoss >= 0 ? "+" : ""}{formatRupiah(profitLoss)}</div>
+                  </div>
+                </div>
+
+                {!investmentEditMode ? (
+                  <>
+                    <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", marginBottom: "12px", display: "grid", gap: "7px", fontSize: "12px", color: "#cbd5e1" }}>
+                      <div><b>Jumlah:</b> {inv.qty ?? inv.amount} {at.unit}</div>
+                      <div><b>Modal/Nilai perolehan:</b> {formatRupiah(costBasis)}</div>
+                      <div><b>Tanggal:</b> {inv.buyDate || String(inv.createdAt || "").slice(0, 10) || "-"}</div>
+                      <div><b>Harga manual/unit:</b> {inv.manualPrice ? formatRupiah(inv.manualPrice) : "Tidak ada"}</div>
+                      {inv.note && <div><b>Catatan:</b> {inv.note}</div>}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: canManageInvestments ? "1fr 1fr" : "1fr", gap: "8px", marginBottom: "12px" }}>
+                      {canManageInvestments && <button onClick={() => setInvestmentEditMode(true)} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>✏️ Edit Aset</button>}
+                      {canManageInvestments && <button onClick={() => openMoveAssetToGoal(inv)} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(16,185,129,0.28)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>🎯 Pindah ke Goal</button>}
+                    </div>
+
+                    <div style={{ marginBottom: "12px" }}>
+                      <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, marginBottom: "8px" }}>🧾 Asset Log</div>
+                      <div style={{ display: "grid", gap: "7px" }}>
+                        {mergedLogs.slice(0, 8).map(log => (
+                          <div key={log.id} style={{ padding: "9px 10px", borderRadius: "13px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", marginBottom: "3px" }}>
+                              <div style={{ fontSize: "10px", color: "#a5b4fc", fontWeight: 900 }}>{log.action || "log"}</div>
+                              <div style={{ fontSize: "10px", color: "#64748b" }}>{String(log.createdAt || "").slice(0, 10) || "-"}</div>
+                            </div>
+                            <div style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{log.detail || "-"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {canManageInvestments && <button onClick={async () => { const ok = window.confirm("Hapus aset ini? Data masuk Recycle Bin. Wallet tidak otomatis berubah."); if (!ok) return; await deleteInvestment(inv.id); }} style={{ width: "100%", padding: "12px", borderRadius: "14px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.10)", color: "#fca5a5", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Hapus Aset · Recycle Bin</button>}
+                  </>
+                ) : (
+                  <div style={{ display: "grid", gap: "9px" }}>
+                    <select value={investmentEditForm.assetType} onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, assetType: e.target.value }))} style={inputStyle}>
+                      {ASSET_TYPES.map(a => <option key={a.id} value={a.id}>{a.icon} {a.label}</option>)}
+                    </select>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <input value={investmentEditForm.qty} inputMode="decimal" onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, qty: e.target.value.replace(/[^0-9.,]/g, "") }))} placeholder="Jumlah/qty" style={inputStyle} />
+                      <input value={investmentEditForm.costBasis} inputMode="numeric" onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, costBasis: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Modal/nilai perolehan total" style={inputStyle} />
+                    </div>
+                    <input value={investmentEditForm.ticker} onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, ticker: e.target.value }))} placeholder="Nama/ticker aset" style={inputStyle} />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <input value={investmentEditForm.manualPrice} inputMode="numeric" onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, manualPrice: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Harga manual/unit opsional" style={inputStyle} />
+                      <input type="date" value={investmentEditForm.buyDate} onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, buyDate: e.target.value }))} style={inputStyle} />
+                    </div>
+                    <input value={investmentEditForm.note} onChange={(e) => setInvestmentEditForm(prev => ({ ...prev, note: e.target.value }))} placeholder="Catatan" style={inputStyle} />
+                    <div style={{ padding: "10px", borderRadius: "13px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.20)", color: "#fbbf24", fontSize: "11px", lineHeight: 1.45 }}>
+                      Edit aset adalah koreksi portfolio. Wallet tidak otomatis berubah agar riwayat kas tetap aman.
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                      <button onClick={() => setInvestmentEditMode(false)} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Batal</button>
+                      <button onClick={updateInvestmentAsset} style={{ padding: "12px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Simpan</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -5131,7 +5336,7 @@ export default function App() {
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
             : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
             : displayTxns.map(t => {
-              const cat = CATEGORIES.find(c => c.id === t.category);
+              const cat = getCategoryInfo(t.category, t);
               return (
                 <div key={t.id} onClick={() => setSelectedTransaction(t)} style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", marginBottom: "8px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", transition: "all 0.15s" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
@@ -5186,7 +5391,7 @@ export default function App() {
                         </div>
                       </div>
                       {txns.length === 0 ? <div style={{ fontSize: "12px", color: "#64748b" }}>Belum ada transaksi untuk user ini.</div> : txns.map(tx => {
-                        const info = getCategoryInfo(tx.category);
+                        const info = getCategoryInfo(tx.category, tx);
                         return <div key={tx.id} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: "12px" }}><span style={{ color: "#cbd5e1" }}>{info.icon} {info.label} · {tx.date}</span><b style={{ color: tx.type === "income" ? "#86efac" : "#fca5a5" }}>{tx.type === "income" ? "+" : "-"}{formatRupiah(tx.amount)}</b></div>;
                       })}
                     </div>
@@ -5645,7 +5850,7 @@ export default function App() {
               const at = ASSET_TYPES.find(a => a.id === inv.assetType) || { icon: "\uD83D\uDCB0", label: inv.type, unit: "" };
               const needsManual = (at ? at.manual : false) && !inv.manualPrice;
               return (
-                <div key={inv.id} onClick={() => setSelectedInvestment(inv)} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                <div key={inv.id} onClick={() => openInvestmentDetail(inv)} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 700 }}>{at.icon} {inv.ticker || at.label}</div>
