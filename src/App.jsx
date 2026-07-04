@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5b Final UI & Permission Cleanup";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5b UI Revision";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -536,6 +536,8 @@ export default function App() {
   const [showGoalBuilder, setShowGoalBuilder] = useState(false);
   const [showGoalTemplateManager, setShowGoalTemplateManager] = useState(false);
   const [editingGoal, setEditingGoal] = useState(null);
+  const [selectedPermissionRole, setSelectedPermissionRole] = useState(null);
+  const [expandedPermissionGroups, setExpandedPermissionGroups] = useState({});
   const [goalBuilderForm, setGoalBuilderForm] = useState({
     label: "",
     icon: "🎯",
@@ -548,6 +550,12 @@ export default function App() {
     fundingType: "mixed",
     status: "active",
     color: "#6366f1",
+    program: "",
+    provider: "",
+    beneficiary: "",
+    premiumAmount: "",
+    coverageAmount: "",
+    renewalCycle: "",
   });
   const [showGoalUsage, setShowGoalUsage] = useState(null);
   const [goalUsageForm, setGoalUsageForm] = useState({
@@ -606,7 +614,8 @@ export default function App() {
   const [amountDisplay, setAmountDisplay] = useState("");
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
-  const [dateRangeMode, setDateRangeMode] = useState("day");
+  const [dateRangeMode, setDateRangeMode] = useState("month");
+  const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [filterUser, setFilterUser] = useState("semua");
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState("");
@@ -1005,6 +1014,8 @@ export default function App() {
     setShowWalletTransfer(false);
     setShowGoalBuilder(false);
     setShowGoalTemplateManager(false);
+    setShowPeriodPicker(false);
+    setSelectedPermissionRole(null);
     setEditingGoal(null);
     setShowGoalUsage(null);
     setSelectedGoal(null);
@@ -1335,16 +1346,14 @@ export default function App() {
     return d.getMonth() === base.getMonth() && d.getFullYear() === base.getFullYear();
   }
 
-  const rangeLabel = dateRangeMode === "day"
-    ? parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
-    : dateRangeMode === "week"
-      ? "7 hari sampai " + parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
-      : parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+  const periodBaseDate = parseLocalDateString(selectedDate);
+  const periodYears = Array.from({ length: 15 }, (_, i) => new Date().getFullYear() - 5 + i);
+  const rangeLabel = periodBaseDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
   const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
   const monthTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
-  const displayTxns = dateRangeMode === "day" ? filteredPeriodTxns : (filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50));
+  const displayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
   const totalIncome = filteredPeriodTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
   const totalExpense = filteredPeriodTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
   const balance = totalIncome - totalExpense;
@@ -1634,7 +1643,7 @@ export default function App() {
     });
   }
 
-  function openGoalBuilder(goal = null) {
+  function openGoalBuilder(goal = null, forcedCategory = null) {
     if (!canManageGoalFunds()) {
       showAccessNotice("Role " + currentRole + " tidak punya izin membuat/mengubah Goal.");
       return;
@@ -1653,10 +1662,16 @@ export default function App() {
         fundingType: goal.fundingType || "mixed",
         status: goal.status || "active",
         color: goal.color || "#6366f1",
+        program: goal.program || "",
+        provider: goal.provider || "",
+        beneficiary: goal.beneficiary || "",
+        premiumAmount: goal.premiumAmount ? String(Math.round(Number(goal.premiumAmount))) : "",
+        coverageAmount: goal.coverageAmount ? String(Math.round(Number(goal.coverageAmount))) : "",
+        renewalCycle: goal.renewalCycle || "",
       });
     } else {
       setEditingGoal(null);
-      resetGoalBuilderForm();
+      resetGoalBuilderForm(forcedCategory);
     }
     setShowGoalBuilder(true);
   }
@@ -1685,6 +1700,12 @@ export default function App() {
       fundingType: goalBuilderForm.fundingType || "mixed",
       status: goalBuilderForm.status || "active",
       color: goalBuilderForm.color || "#6366f1",
+      program: goalBuilderForm.program || "",
+      provider: goalBuilderForm.provider || "",
+      beneficiary: goalBuilderForm.beneficiary || "",
+      premiumAmount: parseAmount(goalBuilderForm.premiumAmount),
+      coverageAmount: parseAmount(goalBuilderForm.coverageAmount),
+      renewalCycle: goalBuilderForm.renewalCycle || "",
       updatedBy: currentUser,
       updatedAt: new Date().toISOString(),
     };
@@ -1732,6 +1753,8 @@ export default function App() {
 
     setShowGoalBuilder(false);
     setShowGoalTemplateManager(false);
+    setShowPeriodPicker(false);
+    setSelectedPermissionRole(null);
     setEditingGoal(null);
     resetGoalBuilderForm();
   }
@@ -3067,6 +3090,32 @@ export default function App() {
     await saveRolePermissions({ ...effectiveRolePermissions, [roleLabel]: nextForRole }, roleLabel + " permission: " + permissionId);
   }
 
+  async function applyRolePreset(roleLabel, preset = "default") {
+    if (!canManagePermissions) {
+      showAccessNotice("Permission Manager hanya bisa dikelola oleh Owner.");
+      return;
+    }
+    if (roleLabel === "Owner") {
+      setFamilyStatus("Owner memakai full access locked.");
+      setTimeout(() => setFamilyStatus(""), 3000);
+      return;
+    }
+    let next = ROLE_PERMISSION_PRESET_V110[roleLabel] || [];
+    if (preset === "basic") {
+      next = ["dashboard", "history", "settings", "transaction_view_own", "wallet_view_own", "goal_view_public"];
+      if (roleLabel !== "Viewer") next.push("transaction_add");
+    }
+    if (preset === "trusted_admin") {
+      next = ROLE_PERMISSION_PRESET_V110.Admin || next;
+    }
+    await saveRolePermissions({ ...effectiveRolePermissions, [roleLabel]: next }, roleLabel + " permission preset: " + preset);
+  }
+
+  function togglePermissionGroup(roleLabel, groupName) {
+    const key = roleLabel + "::" + groupName;
+    setExpandedPermissionGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  }
+
   function openFamilyManagement(panel = "members") {
     if (!canAccessFamilyPage) {
       showAccessNotice("Family Management hanya bisa diakses role yang memiliki izin Family Admin.");
@@ -3253,7 +3302,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5b. Final UI cleanup aktif: date filter harian, nav profesional, permission UI grouped, loan log sensitif, sticky popup action, dan market price status.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5b UI Revision. Period selector compact bulan/tahun, nav dipindah ke atas, permission manager role-popup, dan goal bisa ditambah di tiap kategori dengan program detail.
           </div>
         </div>
       </div>
@@ -4249,6 +4298,22 @@ export default function App() {
               {categoryOptions.map(opt => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
             </select>
 
+            <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900, marginBottom: "8px" }}>Program detail opsional</div>
+              <div style={{ display: "grid", gap: "8px" }}>
+                <input value={goalBuilderForm.program} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, program: e.target.value }))} placeholder="Program/subkategori, contoh: Sertifikasi, Asuransi Kesehatan" style={inputStyle} />
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <input value={goalBuilderForm.provider} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, provider: e.target.value }))} placeholder="Provider, contoh: Prudential" style={inputStyle} />
+                  <input value={goalBuilderForm.beneficiary} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, beneficiary: e.target.value }))} placeholder="Untuk siapa" style={inputStyle} />
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <input value={goalBuilderForm.premiumAmount} inputMode="numeric" onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, premiumAmount: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Premi/bulan opsional" style={inputStyle} />
+                  <input value={goalBuilderForm.coverageAmount} inputMode="numeric" onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, coverageAmount: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Coverage/manfaat opsional" style={inputStyle} />
+                </div>
+                <input value={goalBuilderForm.renewalCycle} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, renewalCycle: e.target.value }))} placeholder="Renewal/jatuh tempo, contoh: bulanan / tahunan" style={inputStyle} />
+              </div>
+            </div>
+
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
               <input value={goalBuilderForm.targetAmount} inputMode="numeric" onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, targetAmount: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Target nominal" style={inputStyle} />
               <input value={goalBuilderForm.yearsLeft} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, yearsLeft: e.target.value }))} placeholder="Berapa tahun lagi" style={inputStyle} />
@@ -4827,6 +4892,29 @@ export default function App() {
           ) : null;
         })()}
 
+        {showPeriodPicker && (
+          <div onClick={() => setShowPeriodPicker(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.65)", zIndex: 100000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "22px 22px 16px 16px", padding: "18px", color: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <div>
+                  <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Filter Bulan</div>
+                  <div style={{ fontSize: "20px", fontWeight: 900, marginTop: "3px" }}>Pilih Bulan & Tahun</div>
+                </div>
+                <button onClick={() => setShowPeriodPicker(false)} style={{ width: "38px", height: "38px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "18px", fontWeight: 900 }}>×</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "14px" }}>
+                <select value={periodBaseDate.getMonth()} onChange={(e) => { const d = parseLocalDateString(selectedDate); d.setMonth(Number(e.target.value)); setSelectedDate(toLocalDateInput(d)); setFilterMonth(d.getMonth()); setDateRangeMode("month"); }} style={inputStyle}>
+                  {MONTHS.map((m, i) => <option key={i} value={i}>{m}</option>)}
+                </select>
+                <select value={periodBaseDate.getFullYear()} onChange={(e) => { const d = parseLocalDateString(selectedDate); d.setFullYear(Number(e.target.value)); setSelectedDate(toLocalDateInput(d)); setFilterMonth(d.getMonth()); setDateRangeMode("month"); }} style={inputStyle}>
+                  {periodYears.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <button onClick={() => setShowPeriodPicker(false)} style={{ width: "100%", padding: "13px", borderRadius: "15px", border: "none", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "13px", fontWeight: 900 }}>Terapkan: {rangeLabel}</button>
+            </div>
+          </div>
+        )}
+
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>{APP_VERSION}</div>
@@ -4838,21 +4926,26 @@ export default function App() {
           </div>
         </div>
 
+        {showMainNav && (
+          <div style={{ margin: "0 20px 10px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "5px", display: "flex", gap: "5px", flexWrap: "wrap", overflowX: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
+            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>🏠 Dashboard</button>}
+            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>🧾 Transaksi</button>}
+            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Goals</button>}
+            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Portfolio</button>}
+            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Wallet</button>}
+            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Loan</button>}
+            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Family</button>}
+          </div>
+        )}
+
         {showTimeFilters && (
-          <div style={{ padding: "8px 20px 6px" }}>
-            <div style={{ padding: "10px", borderRadius: "18px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "38px 1fr 38px", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
-                <button onClick={() => shiftSelectedDate(-1)} style={{ height: "38px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#c7d2fe", fontWeight: 900 }}>‹</button>
-                <input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); const d = parseLocalDateString(e.target.value); setFilterMonth(d.getMonth()); }} style={{ ...inputStyle, padding: "9px 10px", textAlign: "center", fontSize: "13px" }} />
-                <button onClick={() => shiftSelectedDate(1)} style={{ height: "38px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#c7d2fe", fontWeight: 900 }}>›</button>
+          <div style={{ padding: "0 20px 6px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase" }}>Periode Dashboard</div>
+                <div style={{ fontSize: "12px", color: "#e5e7eb", fontWeight: 900, marginTop: "2px" }}>{rangeLabel}</div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px" }}>
-                <button onClick={goToday} style={{ padding: "8px 6px", borderRadius: "12px", border: "none", background: "rgba(16,185,129,0.14)", color: "#86efac", fontSize: "10px", fontWeight: 900 }}>Hari Ini</button>
-                {[["day","Harian"],["week","7 Hari"],["month","Bulan Ini"]].map(([key,label]) => (
-                  <button key={key} onClick={() => setDateRangeMode(key)} style={{ padding: "8px 6px", borderRadius: "12px", border: "none", background: dateRangeMode === key ? "#6366f1" : "rgba(255,255,255,0.06)", color: dateRangeMode === key ? "#fff" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{label}</button>
-                ))}
-              </div>
-              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "8px", textAlign: "center" }}>Filter: {rangeLabel}</div>
+              <button onClick={() => setShowPeriodPicker(true)} style={{ padding: "7px 10px", borderRadius: "11px", border: "1px solid rgba(99,102,241,0.26)", background: "rgba(99,102,241,0.12)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>Ganti</button>
             </div>
           </div>
         )}
@@ -4937,17 +5030,7 @@ export default function App() {
           </div>
         )}
 
-        {showMainNav && (
-          <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "5px", display: "flex", gap: "5px", flexWrap: "wrap", overflowX: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
-            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>🏠 Dashboard</button>}
-            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>🧾 Transaksi</button>}
-            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Goals</button>}
-            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Portfolio</button>}
-            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Wallet</button>}
-            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Loan</button>}
-            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Family</button>}
-          </div>
-        )}
+
 
         {/* DASHBOARD */}
         {activeTab === "dashboard" && (
@@ -5140,39 +5223,87 @@ export default function App() {
             </div>}
 
             {familyPanel === "permissions" && <div style={{ marginBottom: "14px" }}>
-              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "10px" }}>🛡️ Permission Manager</div>
-              {rolePermissionSummary.map(role => (
-                <div key={role.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                    <div style={{ fontSize: "14px", fontWeight: 900, color: role.color }}>{role.icon} {role.label}</div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{role.visibleCount}/{visiblePermissions.length} izin</div>
-                  </div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "8px" }}>{role.desc}</div>
-                  <div style={{ display: "grid", gap: "10px" }}>
-                    {permissionGroups.map(groupName => {
-                      const groupItems = visiblePermissions.filter(permission => permission.group === groupName);
-                      const allowedCount = groupItems.filter(permission => role.permissions.includes(permission.id)).length;
-                      return (
-                        <div key={groupName} style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.05)" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "7px", alignItems: "center" }}>
-                            <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>{groupName}</div>
-                            <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>{allowedCount}/{groupItems.length}</div>
-                          </div>
-                          <div style={{ display: "grid", gap: "6px" }}>
-                            {groupItems.map(permission => {
-                              const allowed = role.permissions.includes(permission.id);
-                              const locked = role.label === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permission.id);
-                              return <button key={permission.id} onClick={() => toggleRolePermission(role.label, permission.id)} disabled={locked || !canManagePermissions} style={{ padding: "9px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 900, textAlign: "left", cursor: locked || !canManagePermissions ? "not-allowed" : "pointer", background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)"), opacity: locked ? 0.82 : 1 }}>{allowed ? "☑" : "☐"} {permission.icon} {permission.label}{locked ? " · locked" : ""}</button>;
-                            })}
-                          </div>
+              <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>🛡️ Permission Manager</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "10px", lineHeight: 1.5 }}>Pilih role untuk mengelola permission. Detail permission dibuka dalam popup agar halaman tidak terlalu panjang.</div>
+              <div style={{ display: "grid", gap: "9px" }}>
+                {rolePermissionSummary.map(role => {
+                  const isOwnerRole = role.label === "Owner";
+                  return (
+                    <button key={role.id} onClick={() => setSelectedPermissionRole(role.label)} style={{ width: "100%", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", textAlign: "left", cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                        <div>
+                          <div style={{ fontSize: "15px", fontWeight: 900, color: role.color }}>{role.icon} {role.label}</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{role.desc}</div>
                         </div>
-                      );
-                    })}
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: "12px", fontWeight: 900, color: isOwnerRole ? "#fbbf24" : "#c7d2fe" }}>{isOwnerRole ? "Full / Locked" : role.visibleCount + "/" + visiblePermissions.length}</div>
+                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px" }}>Kelola →</div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {selectedPermissionRole && (() => {
+                const role = rolePermissionSummary.find(r => r.label === selectedPermissionRole);
+                if (!role) return null;
+                return (
+                  <div onClick={() => setSelectedPermissionRole(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+                    <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "18px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "14px" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Permission Detail</div>
+                          <div style={{ fontSize: "22px", color: role.color, fontWeight: 900, marginTop: "4px" }}>{role.icon} {role.label}</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>{role.visibleCount}/{visiblePermissions.length} permission aktif terlihat</div>
+                        </div>
+                        <button onClick={() => setSelectedPermissionRole(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer" }}>×</button>
+                      </div>
+
+                      {role.label !== "Owner" && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                          <button onClick={() => applyRolePreset(role.label, "basic")} style={{ padding: "10px", borderRadius: "13px", border: "1px solid rgba(16,185,129,0.22)", background: "rgba(16,185,129,0.10)", color: "#86efac", fontSize: "11px", fontWeight: 900 }}>Basic</button>
+                          <button onClick={() => applyRolePreset(role.label, role.label === "Admin" ? "trusted_admin" : "default")} style={{ padding: "10px", borderRadius: "13px", border: "1px solid rgba(99,102,241,0.22)", background: "rgba(99,102,241,0.10)", color: "#c7d2fe", fontSize: "11px", fontWeight: 900 }}>Preset Awal</button>
+                        </div>
+                      )}
+
+                      {role.label === "Owner" && (
+                        <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.55, fontWeight: 800, marginBottom: "12px" }}>
+                          Owner memakai full access dan beberapa permission dikunci agar tidak terjadi lockout.
+                        </div>
+                      )}
+
+                      <div style={{ display: "grid", gap: "9px" }}>
+                        {permissionGroups.map(groupName => {
+                          const groupItems = visiblePermissions.filter(permission => permission.group === groupName);
+                          const allowedCount = groupItems.filter(permission => role.permissions.includes(permission.id)).length;
+                          const expanded = Boolean(expandedPermissionGroups[role.label + "::" + groupName]);
+                          return (
+                            <div key={groupName} style={{ borderRadius: "15px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                              <button onClick={() => togglePermissionGroup(role.label, groupName)} style={{ width: "100%", padding: "12px", border: "none", background: "transparent", color: "#fff", display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}>
+                                <span style={{ fontSize: "12px", fontWeight: 900, color: "#c7d2fe" }}>{groupName}</span>
+                                <span style={{ fontSize: "11px", fontWeight: 900, color: "#94a3b8" }}>{allowedCount}/{groupItems.length} {expanded ? "⌃" : "⌄"}</span>
+                              </button>
+                              {expanded && (
+                                <div style={{ display: "grid", gap: "6px", padding: "0 10px 10px" }}>
+                                  {groupItems.map(permission => {
+                                    const allowed = role.permissions.includes(permission.id);
+                                    const locked = role.label === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permission.id);
+                                    return <button key={permission.id} onClick={() => toggleRolePermission(role.label, permission.id)} disabled={locked || !canManagePermissions} style={{ padding: "9px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 900, textAlign: "left", cursor: locked || !canManagePermissions ? "not-allowed" : "pointer", background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)"), opacity: locked ? 0.82 : 1 }}>{allowed ? "☑" : "☐"} {permission.icon} {permission.label}{locked ? " · locked" : ""}</button>;
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              ))}
-              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5 }}>
-                Permission tersimpan di Firebase. Sensitive data hidden by default. Pembuatan wallet dipisah: own wallet, member wallet, family/main wallet, adjustment, merge, dan archive punya izin masing-masing.
+                );
+              })()}
+
+              <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)", color: "#a5b4fc", fontSize: "12px", lineHeight: 1.5, marginTop: "10px" }}>
+                Permission tersimpan di Firebase. Sensitive data hidden by default. Role dibuka satu per satu agar pengaturan tetap ringkas.
               </div>
             </div>}
 
@@ -5241,23 +5372,6 @@ export default function App() {
               </div>
             </div>
 
-            {canManageGoalFunds() && (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", padding: "11px 12px", marginBottom: "12px", borderRadius: "16px", border: "1px solid rgba(168,85,247,0.28)", background: "linear-gradient(135deg,rgba(168,85,247,0.12),rgba(99,102,241,0.08))" }}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: "12px", color: "#d8b4fe", fontWeight: 900 }}>✨ Custom Goal</div>
-                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>Buat tujuan manual atau edit template bawaan.</div>
-                </div>
-                <div style={{ display: "flex", gap: "6px", flexShrink: 0 }}>
-                  <button onClick={() => setShowGoalTemplateManager(true)} style={{ padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(168,85,247,0.28)", background: "rgba(168,85,247,0.10)", color: "#d8b4fe", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    Template
-                  </button>
-                  <button onClick={() => openGoalBuilder(null)} style={{ padding: "9px 12px", borderRadius: "13px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
-                    + Goal
-                  </button>
-                </div>
-              </div>
-            )}
-
             {/* Tabs */}
             <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "12px" }}>
               {CATEGORY_GROUPS.map(g => <button key={g.id} style={savTabStyle(g.id)} onClick={() => setSavingsTab(g.id)}>{g.label}</button>)}
@@ -5294,12 +5408,18 @@ export default function App() {
 
               return <>
                 <div style={{ padding: "13px 14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
-                    <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                    <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{groupTitle}</div>
                       <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{goalsToShow.length} goal aktif · sisa target {formatRupiah(groupRemaining)}</div>
+                      {canManageGoalFunds() && (
+                        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "9px" }}>
+                          <button onClick={() => openGoalBuilder(null, savingsTab === "education" ? selectedEducationChild : savingsTab)} style={{ padding: "8px 10px", borderRadius: "12px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>+ Goal {savingsTab === "custom" ? "Custom" : ""}</button>
+                          {savingsTab === "custom" && <button onClick={() => setShowGoalTemplateManager(true)} style={{ padding: "8px 10px", borderRadius: "12px", border: "1px solid rgba(168,85,247,0.28)", background: "rgba(168,85,247,0.10)", color: "#d8b4fe", fontSize: "10px", fontWeight: 900, cursor: "pointer" }}>Template</button>}
+                        </div>
+                      )}
                     </div>
-                    <div style={{ textAlign: "right" }}>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
                       <div style={{ fontSize: "14px", fontWeight: 900, color: "#34d399" }}>{formatRupiah(groupCurrent)}</div>
                       <div style={{ fontSize: "10px", color: "#64748b" }}>/ {formatRupiah(groupTarget)}</div>
                     </div>
@@ -5311,7 +5431,7 @@ export default function App() {
                     <div style={{ fontSize: "28px", marginBottom: "8px" }}>✨</div>
                     <div style={{ fontSize: "16px", fontWeight: 900, color: "#fff" }}>Belum ada goal di kategori ini</div>
                     <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Goal bawaan tetap template. Kamu bisa membuat goal custom sesuai kebutuhan hidup keluarga.</div>
-                    {canManageGoalFunds() && <button onClick={() => openGoalBuilder(null)} style={{ marginTop: "12px", padding: "11px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>+ Buat Goal di sini</button>}
+                    {canManageGoalFunds() && <button onClick={() => openGoalBuilder(null, savingsTab === "education" ? selectedEducationChild : savingsTab)} style={{ marginTop: "12px", padding: "11px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>+ Buat Goal di sini</button>}
                   </div>
                 )}
 
@@ -5340,6 +5460,7 @@ export default function App() {
                             <span style={{ padding: "3px 7px", borderRadius: "999px", background: goal.sourceType === "custom" ? "rgba(168,85,247,0.14)" : "rgba(255,255,255,0.06)", color: goal.sourceType === "custom" ? "#d8b4fe" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{goal.sourceType === "custom" ? "Custom" : "Template"}</span>
                           </div>
                           <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>{goal.desc} · {goal.yearsLeft} thn lagi</div>
+                          {(goal.program || goal.provider || goal.beneficiary) && <div style={{ fontSize: "10px", color: "#c7d2fe", marginTop: "4px", lineHeight: 1.4 }}>{[goal.program, goal.provider, goal.beneficiary].filter(Boolean).join(" · ")}</div>}
                         </div>
                         {canContributeGoal() && (
                           <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "140px", flexShrink: 0 }}>
