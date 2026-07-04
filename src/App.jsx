@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5 Goal Template System";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5b Final UI & Permission Cleanup";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -429,7 +429,7 @@ async function fetchMarketPrices() {
       }
     } catch(e) {}
 
-    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot, lastUpdated: new Date().toLocaleTimeString("id-ID") };
+    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot, lastUpdated: new Date().toLocaleString("id-ID"), source: "Frankfurter FX + GoldPrice estimate", status: "refreshed" };
   } catch {
     return FALLBACK;
   }
@@ -605,6 +605,8 @@ export default function App() {
   const [assetForm, setAssetForm] = useState({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" });
   const [amountDisplay, setAmountDisplay] = useState("");
   const [filterMonth, setFilterMonth] = useState(new Date().getMonth());
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
+  const [dateRangeMode, setDateRangeMode] = useState("day");
   const [filterUser, setFilterUser] = useState("semua");
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState("");
@@ -1279,26 +1281,72 @@ export default function App() {
   const effectiveFilterUser = canViewAllTransactionsNow ? filterUser : currentUser;
 
   const userTxns = transactions.filter(t => effectiveFilterUser === "semua" || t.user === effectiveFilterUser);
-  const yearsForSelectedMonth = userTxns
-    .map(t => getTxnDate(t))
-    .filter(d => d && d.getMonth() === filterMonth)
-    .map(d => d.getFullYear());
-  const currentYear = new Date().getFullYear();
-  const targetYear = yearsForSelectedMonth.includes(currentYear)
-    ? currentYear
-    : (yearsForSelectedMonth.length ? Math.max(...yearsForSelectedMonth) : currentYear);
 
-  const filteredMonthTxns = userTxns.filter(t => {
-    const d = getTxnDate(t);
-    return d && d.getMonth() === filterMonth && d.getFullYear() === targetYear;
-  });
+  function parseLocalDateString(value) {
+    if (!value) return new Date();
+    const parts = String(value).split("-");
+    if (parts.length >= 3) {
+      const y = Number(parts[0]);
+      const m = Number(parts[1]) - 1;
+      const d = Number(parts[2]);
+      if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) return new Date(y, m, d);
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }
 
-  // Recovery fallback: if selected month has no data but Firestore has transactions,
-  // show latest transactions instead of empty screen.
-  const monthTxns = filteredMonthTxns.length > 0 ? filteredMonthTxns : userTxns.slice(0, 50);
-  const displayTxns = monthTxns.length > 0 ? monthTxns : userTxns.slice(0, 50);
-  const totalIncome = filteredMonthTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-  const totalExpense = filteredMonthTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  function toLocalDateInput(date) {
+    const d = new Date(date);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return y + "-" + m + "-" + day;
+  }
+
+  function shiftSelectedDate(days) {
+    const d = parseLocalDateString(selectedDate);
+    d.setDate(d.getDate() + days);
+    const next = toLocalDateInput(d);
+    setSelectedDate(next);
+    setFilterMonth(d.getMonth());
+  }
+
+  function goToday() {
+    const d = new Date();
+    setSelectedDate(toLocalDateInput(d));
+    setFilterMonth(d.getMonth());
+    setDateRangeMode("day");
+  }
+
+  function isSameLocalDay(a, b) {
+    return a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function isTxnInSelectedRange(txn) {
+    const d = getTxnDate(txn);
+    if (!d) return false;
+    const base = parseLocalDateString(selectedDate);
+    if (dateRangeMode === "day") return isSameLocalDay(d, base);
+    if (dateRangeMode === "week") {
+      const start = new Date(base); start.setDate(start.getDate() - 6); start.setHours(0,0,0,0);
+      const end = new Date(base); end.setHours(23,59,59,999);
+      return d >= start && d <= end;
+    }
+    return d.getMonth() === base.getMonth() && d.getFullYear() === base.getFullYear();
+  }
+
+  const rangeLabel = dateRangeMode === "day"
+    ? parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })
+    : dateRangeMode === "week"
+      ? "7 hari sampai " + parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" })
+      : parseLocalDateString(selectedDate).toLocaleDateString("id-ID", { month: "long", year: "numeric" });
+
+  const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
+  const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
+  const monthTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
+  const displayTxns = dateRangeMode === "day" ? filteredPeriodTxns : (filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50));
+  const totalIncome = filteredPeriodTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
+  const totalExpense = filteredPeriodTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
   const balance = totalIncome - totalExpense;
   const expenseByCategory = {};
   monthTxns.filter(t => t.type === "expense").forEach(t => { expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount; });
@@ -2955,12 +3003,15 @@ export default function App() {
     }
   }, [canViewAllTransactions, canViewAllWallets, currentUser, filterUser, walletFilterUser]);
 
+  const visiblePermissions = PERMISSIONS_V110.filter(permission => permission.group !== "Legacy");
+  const permissionGroups = [...new Set(visiblePermissions.map(permission => permission.group))];
   const rolePermissionSummary = FAMILY_ROLES_V110.map(role => {
     const permissions = permissionsForRole(role.label);
-    return { ...role, permissions, count: permissions.length };
+    const visibleCount = visiblePermissions.filter(permission => permissions.includes(permission.id)).length;
+    return { ...role, permissions, count: permissions.length, visibleCount };
   });
   const showTimeFilters = activeTab === "dashboard" || activeTab === "history";
-  const showMainNav = activeTab !== "family";
+  const showMainNav = true;
 
   function showAccessNotice(message) {
     setShowSettingsCenter(false);
@@ -3202,7 +3253,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5. Goal Template System aktif: template bawaan bisa edit, arsip, restore, dan duplikat ke custom goal.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5b. Final UI cleanup aktif: date filter harian, nav profesional, permission UI grouped, loan log sensitif, sticky popup action, dan market price status.
           </div>
         </div>
       </div>
@@ -3706,7 +3757,10 @@ export default function App() {
     const walletTransactions = transactions.filter(t => t.sumberDanaId === sd.id);
     const walletLedger = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id);
     const walletLedgerSorted = getWalletLedgerSorted(sd.id);
-    const orphanLoanLedgers = getOrphanLoanDisbursementLedgers(sd.id);
+    const sensitiveLoanLedgerTypes = ["loan_disbursement","loan_repayment","loan_repayment_cancel","orphan_loan_disbursement_reversal","gadai","gadai_lunas","loan_status_updated"];
+    const canSeeSensitiveWalletLedger = canViewLoans || isOwner;
+    const visibleWalletLedgerSorted = walletLedgerSorted.filter(l => canSeeSensitiveWalletLedger || !sensitiveLoanLedgerTypes.includes(l.refType));
+    const orphanLoanLedgers = canSeeSensitiveWalletLedger ? getOrphanLoanDisbursementLedgers(sd.id) : [];
     const mergeTargets = sumberDanaList.filter(item => item.user === sd.user && item.id !== sd.id && getSumberDanaStatus(item) !== "archived");
     return (
       <div onClick={() => setSelectedSD(null)} style={{
@@ -3757,11 +3811,11 @@ export default function App() {
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.20)", marginBottom: "14px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
               <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff" }}>📜 Log Wallet</div>
-              <div style={{ fontSize: "11px", color: "#a5b4fc", fontWeight: 800 }}>{walletLedgerSorted.length} item</div>
+              <div style={{ fontSize: "11px", color: "#a5b4fc", fontWeight: 800 }}>{visibleWalletLedgerSorted.length} item</div>
             </div>
             <div style={{ display: "grid", gap: "8px", maxHeight: "240px", overflowY: "auto", paddingRight: "4px" }}>
-              {walletLedgerSorted.length === 0 && <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada pergerakan wallet.</div>}
-              {walletLedgerSorted.slice(0, 30).map(l => (
+              {visibleWalletLedgerSorted.length === 0 && <div style={{ fontSize: "12px", color: "#94a3b8" }}>Belum ada pergerakan wallet yang bisa dilihat role ini.</div>}
+              {visibleWalletLedgerSorted.slice(0, 30).map(l => (
                 <div key={l.id} style={{ padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div>
@@ -4745,6 +4799,33 @@ export default function App() {
       <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box" }}>
         <SettingsCenterModal />
         <ActivityLogModal />
+        {(() => {
+          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedTransaction || selectedCategory || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || selectedInvestment || assetToGoalInvestment || showUserSelect;
+          const closeCurrentPopup = () => {
+            setShowSettingsCenter(false);
+            setShowActivityLogModal(false);
+            setShowForm(false);
+            setSelectedTransaction(null);
+            setSelectedCategory(null);
+            setSelectedSD(null);
+            setShowSDForm(false);
+            setShowWalletTransfer(false);
+            setShowSavingsForm(null);
+            setShowGoalBuilder(false);
+            setShowGoalTemplateManager(false);
+            setShowGoalUsage(null);
+            setShowAssetConvert(null);
+            setSelectedInvestment(null);
+            setAssetToGoalInvestment(null);
+            setShowUserSelect(false);
+          };
+          return hasPopupOpen ? (
+            <div style={{ position: "fixed", left: "50%", bottom: "14px", transform: "translateX(-50%)", zIndex: 100001, width: "calc(100% - 32px)", maxWidth: "398px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", pointerEvents: "auto" }}>
+              <button onClick={closeCurrentPopup} style={{ padding: "12px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.14)", background: "rgba(15,23,42,0.92)", color: "#e5e7eb", fontSize: "12px", fontWeight: 900, boxShadow: "0 12px 35px rgba(0,0,0,0.45)" }}>← Back</button>
+              <button onClick={() => { closeCurrentPopup(); setActiveTab("dashboard"); }} style={{ padding: "12px", borderRadius: "16px", border: "1px solid rgba(99,102,241,0.32)", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "12px", fontWeight: 900, boxShadow: "0 12px 35px rgba(0,0,0,0.45)" }}>🏠 Home</button>
+            </div>
+          ) : null;
+        })()}
 
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -4758,8 +4839,21 @@ export default function App() {
         </div>
 
         {showTimeFilters && (
-          <div style={{ padding: "8px 20px", display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
-            {MONTHS.map((m, i) => <button key={i} onClick={() => setFilterMonth(i)} style={{ padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer", whiteSpace: "nowrap", fontSize: "12px", fontWeight: 600, flexShrink: 0, background: filterMonth === i ? "#6366f1" : "rgba(255,255,255,0.07)", color: filterMonth === i ? "#fff" : "#888" }}>{m}</button>)}
+          <div style={{ padding: "8px 20px 6px" }}>
+            <div style={{ padding: "10px", borderRadius: "18px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "38px 1fr 38px", gap: "8px", alignItems: "center", marginBottom: "8px" }}>
+                <button onClick={() => shiftSelectedDate(-1)} style={{ height: "38px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#c7d2fe", fontWeight: 900 }}>‹</button>
+                <input type="date" value={selectedDate} onChange={(e) => { setSelectedDate(e.target.value); const d = parseLocalDateString(e.target.value); setFilterMonth(d.getMonth()); }} style={{ ...inputStyle, padding: "9px 10px", textAlign: "center", fontSize: "13px" }} />
+                <button onClick={() => shiftSelectedDate(1)} style={{ height: "38px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#c7d2fe", fontWeight: 900 }}>›</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: "6px" }}>
+                <button onClick={goToday} style={{ padding: "8px 6px", borderRadius: "12px", border: "none", background: "rgba(16,185,129,0.14)", color: "#86efac", fontSize: "10px", fontWeight: 900 }}>Hari Ini</button>
+                {[["day","Harian"],["week","7 Hari"],["month","Bulan Ini"]].map(([key,label]) => (
+                  <button key={key} onClick={() => setDateRangeMode(key)} style={{ padding: "8px 6px", borderRadius: "12px", border: "none", background: dateRangeMode === key ? "#6366f1" : "rgba(255,255,255,0.06)", color: dateRangeMode === key ? "#fff" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{label}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "8px", textAlign: "center" }}>Filter: {rangeLabel}</div>
+            </div>
           </div>
         )}
 
@@ -4844,22 +4938,27 @@ export default function App() {
         )}
 
         {showMainNav && (
-          <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "14px", padding: "4px", display: "flex", gap: "4px", flexWrap: "wrap", overflowX: "hidden" }}>
-            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>📊 Ringkasan</button>}
-            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>📋 Riwayat</button>}
-            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Keluarga</button>}
-            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Tabungan</button>}
-            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Investasi</button>}
-            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Pinjaman</button>}
-            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Sumber Dana</button>}
+          <div style={{ margin: "0 20px 16px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "5px", display: "flex", gap: "5px", flexWrap: "wrap", overflowX: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
+            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>🏠 Dashboard</button>}
+            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>🧾 Transaksi</button>}
+            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Goals</button>}
+            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Portfolio</button>}
+            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>👛 Wallet</button>}
+            {canViewLoans && <button style={tabStyle("gadai")} onClick={() => setActiveTab("gadai")}>🏦 Loan</button>}
+            {canAccessFamilyPage && <button style={tabStyle("family")} onClick={() => { setFamilyView("overview"); setActiveTab("family"); }}>👨‍👩‍👧‍👦 Family</button>}
           </div>
         )}
 
         {/* DASHBOARD */}
         {activeTab === "dashboard" && (
           <div style={{ padding: "0 20px" }}>
+            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.68)", border: "1px solid rgba(99,102,241,0.18)" }}>
+              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Dashboard Overview</div>
+              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan keuangan & snapshot transaksi</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Detail transaksi pindah ke menu Transaksi. Periode aktif: {rangeLabel}.</div>
+            </div>
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
-            : Object.keys(expenseByCategory).length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Bulan ini kosong, cek tab Riwayat untuk transaksi terbaru")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
+            : Object.keys(expenseByCategory).length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Filter ini kosong, cek menu Transaksi untuk transaksi terbaru")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
             : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
               const spent = expenseByCategory[cat.id] || 0;
               return (
@@ -4872,9 +4971,17 @@ export default function App() {
           </div>
         )}
 
-        {/* HISTORY */}
+        {/* TRANSAKSI */}
         {activeTab === "history" && (
           <div style={{ padding: "0 20px" }}>
+            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.68)", border: "1px solid rgba(99,102,241,0.18)" }}>
+              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaksi</div>
+              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan & Riwayat</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "10px" }}>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(16,185,129,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#86efac" }}>{formatRupiah(totalIncome)}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(239,68,68,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
+              </div>
+            </div>
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
             : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
             : displayTxns.map(t => {
@@ -5038,14 +5145,28 @@ export default function App() {
                 <div key={role.id} style={{ padding: "14px", marginBottom: "9px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                     <div style={{ fontSize: "14px", fontWeight: 900, color: role.color }}>{role.icon} {role.label}</div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{role.count}/{PERMISSIONS_V110.length} izin</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8" }}>{role.visibleCount}/{visiblePermissions.length} izin</div>
                   </div>
                   <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "8px" }}>{role.desc}</div>
-                  <div style={{ display: "grid", gap: "6px" }}>
-                    {PERMISSIONS_V110.map(permission => {
-                      const allowed = role.permissions.includes(permission.id);
-                      const locked = role.label === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permission.id);
-                      return <button key={permission.id} onClick={() => toggleRolePermission(role.label, permission.id)} disabled={locked || !canManagePermissions} style={{ padding: "9px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 900, textAlign: "left", cursor: locked || !canManagePermissions ? "not-allowed" : "pointer", background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)"), opacity: locked ? 0.82 : 1 }}>{allowed ? "☑" : "☐"} {permission.icon} {permission.label}{locked ? " · locked" : ""}</button>;
+                  <div style={{ display: "grid", gap: "10px" }}>
+                    {permissionGroups.map(groupName => {
+                      const groupItems = visiblePermissions.filter(permission => permission.group === groupName);
+                      const allowedCount = groupItems.filter(permission => role.permissions.includes(permission.id)).length;
+                      return (
+                        <div key={groupName} style={{ padding: "10px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "7px", alignItems: "center" }}>
+                            <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>{groupName}</div>
+                            <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>{allowedCount}/{groupItems.length}</div>
+                          </div>
+                          <div style={{ display: "grid", gap: "6px" }}>
+                            {groupItems.map(permission => {
+                              const allowed = role.permissions.includes(permission.id);
+                              const locked = role.label === "Owner" && OWNER_LOCKED_PERMISSIONS_V110.includes(permission.id);
+                              return <button key={permission.id} onClick={() => toggleRolePermission(role.label, permission.id)} disabled={locked || !canManagePermissions} style={{ padding: "9px 10px", borderRadius: "12px", fontSize: "11px", fontWeight: 900, textAlign: "left", cursor: locked || !canManagePermissions ? "not-allowed" : "pointer", background: allowed ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)", color: allowed ? "#86efac" : "#64748b", border: "1px solid " + (allowed ? "rgba(16,185,129,0.22)" : "rgba(255,255,255,0.05)"), opacity: locked ? 0.82 : 1 }}>{allowed ? "☑" : "☐"} {permission.icon} {permission.label}{locked ? " · locked" : ""}</button>;
+                            })}
+                          </div>
+                        </div>
+                      );
                     })}
                   </div>
                 </div>
@@ -5302,11 +5423,21 @@ export default function App() {
           <div style={{ padding: "0 20px" }}>
 
             {/* Harga pasar */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: "12px", borderRadius: "12px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "12px", color: "#555" }}>
-                {marketPrices ? "USD " + formatFull(marketPrices.usdIdr) + " | Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga belum dimuat"}
+            <div style={{ padding: "12px 14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontSize: "10px", letterSpacing: "1px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Market Price</div>
+                  <div style={{ fontSize: "12px", color: "#e5e7eb", marginTop: "5px", fontWeight: 800 }}>
+                    {marketPrices ? "USD/IDR " + formatFull(marketPrices.usdIdr) + " · Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga belum dimuat"}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>
+                    Status: <b style={{ color: marketPrices?.status === "estimate" ? "#fbbf24" : "#86efac" }}>{marketPrices?.status === "estimate" ? "Estimasi/manual" : marketPrices ? "Ter-refresh" : "Belum dimuat"}</b>
+                    {marketPrices?.lastUpdated ? " · Update: " + marketPrices.lastUpdated : ""}
+                    {marketPrices?.source ? " · Source: " + marketPrices.source : ""}
+                  </div>
+                </div>
+                <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 900 }}>{loadingPrices ? "⏳" : "🔄"}</button>
               </div>
-              <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "\u23F3" : "\uD83D\uDD04"}</button>
             </div>
 
             {/* Total Portofolio */}
