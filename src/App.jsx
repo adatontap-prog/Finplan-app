@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.4 Custom Goal Builder";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.4b Goal UI Polish";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -2797,7 +2797,7 @@ export default function App() {
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
   const tabStyle = (key) => ({ flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: activeTab === key ? "#6366f1" : "transparent", color: activeTab === key ? "#fff" : "#666", transition: "all 0.2s" });
-  const savTabStyle = (key) => ({ padding: "6px 12px", border: "none", cursor: "pointer", borderRadius: "20px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap", flex: "1 1 auto", background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
+  const savTabStyle = (key) => ({ padding: "8px 10px", border: "none", cursor: "pointer", borderRadius: "16px", fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap", flex: "1 1 130px", minWidth: 0, textAlign: "center", background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
@@ -3133,7 +3133,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.4. Custom Goal Builder aktif: preset goal menjadi template dan Owner/Admin bisa membuat atau mengedit goal.
+            FinPlan v1.1.0 Family Edition Phase 6.7.4b. UI Goal dirapikan: empty state, tombol custom lebih compact, chip Template/Custom, dan progress aman saat target kosong.
           </div>
         </div>
       </div>
@@ -4942,12 +4942,12 @@ export default function App() {
                   <div style={{ fontSize: "11px", color: "#94a3b8" }}>Dana/aset yang benar-benar dialokasikan</div>
                 </div>
                 <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "13px", fontWeight: 900, color: "#c7d2fe" }}>{((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2)}%</div>
+                  <div style={{ fontSize: "13px", fontWeight: 900, color: "#c7d2fe" }}>{totalSavingsTarget > 0 ? ((totalSavingsCurrent / totalSavingsTarget) * 100).toFixed(2) : "0.00"}%</div>
                   <div style={{ fontSize: "10px", color: "#64748b" }}>dari {formatRupiah(totalSavingsTarget)}</div>
                 </div>
               </div>
               <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginTop: "10px" }}>
-                <div style={{ height: "100%", borderRadius: "10px", width: (Math.min((totalSavingsCurrent / totalSavingsTarget) * 100, 100)) + "%", background: "linear-gradient(90deg,#6366f1,#10b981)", transition: "width 0.8s ease" }} />
+                <div style={{ height: "100%", borderRadius: "10px", width: (totalSavingsTarget > 0 ? Math.min((totalSavingsCurrent / totalSavingsTarget) * 100, 100) : 0) + "%", background: "linear-gradient(90deg,#6366f1,#10b981)", transition: "width 0.8s ease" }} />
               </div>
               <div style={{ marginTop: "10px", padding: "10px 12px", borderRadius: "12px", background: "rgba(0,0,0,0.18)", color: "#cbd5e1", fontSize: "11px", lineHeight: 1.5 }}>
                 Target goal bukan aset. Yang dihitung sebagai modal hanya uang/aset yang sudah dialokasikan ke goal.
@@ -4955,9 +4955,13 @@ export default function App() {
             </div>
 
             {canManageGoalFunds() && (
-              <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: "8px", marginBottom: "12px" }}>
-                <button onClick={() => openGoalBuilder(null)} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(168,85,247,0.30)", background: "rgba(168,85,247,0.12)", color: "#d8b4fe", fontSize: "13px", fontWeight: 900, cursor: "pointer" }}>
-                  ✨ Buat Goal Manual / Custom
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", padding: "11px 12px", marginBottom: "12px", borderRadius: "16px", border: "1px solid rgba(168,85,247,0.28)", background: "linear-gradient(135deg,rgba(168,85,247,0.12),rgba(99,102,241,0.08))" }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: "12px", color: "#d8b4fe", fontWeight: 900 }}>✨ Custom Goal</div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>Buat tujuan manual atau edit template bawaan.</div>
+                </div>
+                <button onClick={() => openGoalBuilder(null)} style={{ padding: "9px 12px", borderRadius: "13px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "11px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>
+                  + Goal
                 </button>
               </div>
             )}
@@ -4997,11 +5001,11 @@ export default function App() {
                 : (CATEGORY_GROUPS.find(g => g.id === savingsTab)?.label || "Goals");
 
               return <>
-                <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ padding: "13px 14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px" }}>
                     <div>
                       <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{groupTitle}</div>
-                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{goalsToShow.length} goal · kurang {formatRupiah(groupRemaining)}</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{goalsToShow.length} goal aktif · sisa target {formatRupiah(groupRemaining)}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: "14px", fontWeight: 900, color: "#34d399" }}>{formatRupiah(groupCurrent)}</div>
@@ -5009,6 +5013,15 @@ export default function App() {
                     </div>
                   </div>
                 </div>
+
+                {goalsToShow.length === 0 && (
+                  <div style={{ padding: "18px", marginBottom: "12px", borderRadius: "18px", background: "rgba(168,85,247,0.08)", border: "1px dashed rgba(168,85,247,0.28)", textAlign: "center" }}>
+                    <div style={{ fontSize: "28px", marginBottom: "8px" }}>✨</div>
+                    <div style={{ fontSize: "16px", fontWeight: 900, color: "#fff" }}>Belum ada goal di kategori ini</div>
+                    <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Goal bawaan tetap template. Kamu bisa membuat goal custom sesuai kebutuhan hidup keluarga.</div>
+                    {canManageGoalFunds() && <button onClick={() => openGoalBuilder(null)} style={{ marginTop: "12px", padding: "11px 14px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#a855f7,#6366f1)", color: "#fff", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>+ Buat Goal di sini</button>}
+                  </div>
+                )}
 
                 {goalsToShow.map(goal => {
                   const currentVal = calcGoalValue(goal.id);
@@ -5032,11 +5045,12 @@ export default function App() {
                           <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
                             <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{goal.icon} {stage}</div>
                             <span style={{ padding: "3px 7px", borderRadius: "999px", background: priority === "Wajib" ? "rgba(239,68,68,0.14)" : "rgba(99,102,241,0.14)", color: priority === "Wajib" ? "#fca5a5" : "#c7d2fe", fontSize: "10px", fontWeight: 900 }}>{priority}</span>
+                            <span style={{ padding: "3px 7px", borderRadius: "999px", background: goal.sourceType === "custom" ? "rgba(168,85,247,0.14)" : "rgba(255,255,255,0.06)", color: goal.sourceType === "custom" ? "#d8b4fe" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{goal.sourceType === "custom" ? "Custom" : "Template"}</span>
                           </div>
                           <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>{goal.desc} · {goal.yearsLeft} thn lagi</div>
                         </div>
                         {canContributeGoal() && (
-                          <div style={{ display: "grid", gap: "6px", flexShrink: 0 }}>
+                          <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", justifyContent: "flex-end", maxWidth: "140px", flexShrink: 0 }}>
                             {canManageGoalFunds() && <button onClick={() => openGoalBuilder(goal)} style={{ background: "rgba(168,85,247,0.16)", border: "1px solid rgba(168,85,247,0.35)", color: "#d8b4fe", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>✏️ Edit</button>}
                             <button onClick={() => { setShowSavingsForm(goal.id); setSavingsInput(""); setSavingsInputDisplay(""); }} style={{ background: "rgba(99,102,241,0.18)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Tunai</button>
                             <button onClick={() => { setShowAssetConvert(goal.id); setAssetForm({ assetType: "lm", qty: "", buyPrice: "", valueMode: "total", note: "", ticker: "", manualPrice: "" }); }} style={{ background: "rgba(16,185,129,0.16)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", borderRadius: "9px", padding: "5px 8px", fontSize: "10px", cursor: "pointer", fontWeight: 800 }}>+ Aset</button>
