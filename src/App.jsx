@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Nav, Scope & Goal Cleanup";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1351,7 +1351,7 @@ export default function App() {
   const rangeLabel = periodBaseDate.toLocaleDateString("id-ID", { month: "long", year: "numeric" });
 
   const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
-  const familyLogPeriodTxns = (canViewAllTransactions ? transactions : userTxns).filter(isTxnInSelectedRange);
+  const familyLogPeriodTxns = (canViewAllTransactionsNow ? transactions : userTxns).filter(isTxnInSelectedRange);
   const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
   const monthTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
   const displayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
