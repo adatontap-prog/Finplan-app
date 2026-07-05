@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 7";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 8";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3449,7 +3449,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 7. Goal Color Pattern aktif: kategori, subkategori pendidikan, priority badge, progress bar, dan card accent memakai warna konsisten agar mudah ditandai.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 8. Legend warna goal dihapus; warna kategori, subkategori, priority badge, progress bar, dan card accent tetap aktif di semua kategori/subkategori.
           </div>
         </div>
       </div>
@@ -4495,7 +4495,7 @@ export default function App() {
             </div>
 
             <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "11px", lineHeight: 1.45 }}>
-              Warna goal otomatis mengikuti Color Pattern kategori agar gampang ditandai.
+              Warna goal otomatis mengikuti kategori agar gampang ditandai.
             </div>
             <input value={goalBuilderForm.desc} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, desc: e.target.value }))} placeholder="Deskripsi/catatan goal" style={inputStyle} />
 
@@ -5636,17 +5636,6 @@ export default function App() {
                 {marketPrices ? "Nilai pasar: USD " + formatFull(marketPrices.usdIdr) + " · Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga pasar belum dimuat. Tekan refresh untuk update USD/emas."}
               </div>
               <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
-            </div>
-
-            {/* Color Pattern */}
-            <div style={{ padding: "12px", marginBottom: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>Color Pattern Goal</div>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
-                {CATEGORY_GROUPS.map(g => <span key={g.id} style={{ padding: "5px 8px", borderRadius: "999px", background: g.color + "18", border: "1px solid " + g.color + "44", color: g.color, fontSize: "10px", fontWeight: 900 }}>{g.label}</span>)}
-              </div>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {["Wajib","Penting","Opsional"].map(p => { const m = getGoalPriorityMeta(p); return <span key={p} style={{ padding: "4px 8px", borderRadius: "999px", background: m.bg, border: "1px solid " + m.border, color: m.color, fontSize: "10px", fontWeight: 900 }}>{p}</span>; })}
-              </div>
             </div>
 
             {/* Total */}
