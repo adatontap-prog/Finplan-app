@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 5";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3423,7 +3423,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 5. Loan UI dirapikan: Gadai diposisikan sebagai subtipe Loan, kalkulator berada di Submodul Gadai, dan tombol bawah menjadi Tambah Loan dengan konteks tipe Gadai.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 6. Dashboard dibersihkan: Family Log dan snapshot kategori dipindahkan ke Transaksi; Dashboard fokus ke saldo, Net Worth Console, warning, dan insight utama.
           </div>
         </div>
       </div>
@@ -5268,13 +5268,16 @@ export default function App() {
 
 
 
-        {/* DASHBOARD */}
-        {activeTab === "dashboard" && (
+        {/* TRANSAKSI */}
+        {activeTab === "history" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.68)", border: "1px solid rgba(99,102,241,0.18)" }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Dashboard Overview</div>
-              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan keuangan & snapshot transaksi</div>
-              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>Detail transaksi pindah ke menu Transaksi. Periode aktif: {rangeLabel}.</div>
+              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaksi</div>
+              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan & Riwayat</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "10px" }}>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(16,185,129,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#86efac" }}>{formatRupiah(totalIncome)}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(239,68,68,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
+              </div>
             </div>
 
             {canViewAllTransactions && (
@@ -5308,31 +5311,21 @@ export default function App() {
               </div>
             )}
 
-            {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
-            : Object.keys(expenseByCategory).length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>💰</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Filter ini kosong, cek menu Transaksi untuk transaksi terbaru")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
-            : EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
-              const spent = expenseByCategory[cat.id] || 0;
-              return (
-                <div key={cat.id} onClick={() => setSelectedCategory(cat.id)} style={{ marginBottom: "14px", cursor: "pointer" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}><span style={{ fontSize: "13px" }}>{cat.icon} {cat.label}</span><span style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(spent)}</span></div>
-                  <div style={{ height: "6px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden" }}><div style={{ height: "100%", borderRadius: "10px", width: (spent / barMax * 100) + "%", background: "linear-gradient(90deg,#6366f1,#10b981)" }} /></div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* TRANSAKSI */}
-        {activeTab === "history" && (
-          <div style={{ padding: "0 20px" }}>
-            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.68)", border: "1px solid rgba(99,102,241,0.18)" }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaksi</div>
-              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan & Riwayat</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "10px" }}>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(16,185,129,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#86efac" }}>{formatRupiah(totalIncome)}</div></div>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(239,68,68,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
+            {Object.keys(expenseByCategory).length > 0 && (
+              <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.58)", border: "1px solid rgba(99,102,241,0.14)" }}>
+                <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "10px" }}>Snapshot Kategori Pengeluaran</div>
+                {EXPENSE_CATS.filter(c => expenseByCategory[c.id]).map(cat => {
+                  const spent = expenseByCategory[cat.id] || 0;
+                  return (
+                    <div key={cat.id} onClick={() => setSelectedCategory(cat.id)} style={{ marginBottom: "12px", cursor: "pointer" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "5px" }}><span style={{ fontSize: "12px", color: "#e5e7eb" }}>{cat.icon} {cat.label}</span><span style={{ fontSize: "12px", fontWeight: 900, color: "#fff" }}>{formatRupiah(spent)}</span></div>
+                      <div style={{ height: "6px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden" }}><div style={{ height: "100%", borderRadius: "10px", width: (spent / barMax * 100) + "%", background: "linear-gradient(90deg,#6366f1,#10b981)" }} /></div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
+
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
             : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
             : displayTxns.map(t => {
