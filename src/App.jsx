@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 8";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 9";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -580,6 +580,7 @@ export default function App() {
   const [assetToGoalForm, setAssetToGoalForm] = useState({ goalId: "", qty: "", note: "" });
   const [selectedGoal, setSelectedGoal] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedFamilyLogUser, setSelectedFamilyLogUser] = useState(null);
   const [gadaiList, setGadaiList] = useState([]);
   const [gadaiForm, setGadaiForm] = useState({ namaBarang: "", beratGram: "", kadar: "24", hargaEmas: "", nilaiTaksiran: "", uangPinjaman: "", tanggalGadai: new Date().toISOString().split("T")[0], tenor: "120", catatan: "" });
   const [gadaiSDId, setGadaiSDId] = useState("");
@@ -1026,6 +1027,7 @@ export default function App() {
     setShowGoalUsage(null);
     setSelectedGoal(null);
     setSelectedCategory(null);
+    setSelectedFamilyLogUser(null);
     setSelectedSD(null);
     setSetupMode(null);
     setActiveTab("dashboard");
@@ -3189,6 +3191,7 @@ export default function App() {
     setShowForm(false);
     setSelectedTransaction(null);
     setSelectedCategory(null);
+    setSelectedFamilyLogUser(null);
     setSetupMode(null);
     setTempPin("");
     setPinConfirm("");
@@ -3449,7 +3452,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 8. Legend warna goal dihapus; warna kategori, subkategori, priority badge, progress bar, dan card accent tetap aktif di semua kategori/subkategori.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 9. Family Log di Transaksi sekarang bisa diklik per user dan membuka detail log transaksi per user pada periode aktif.
           </div>
         </div>
       </div>
@@ -5014,13 +5017,14 @@ export default function App() {
         <SettingsCenterModal />
         <ActivityLogModal />
         {(() => {
-          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedCategory || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
+          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedCategory || selectedFamilyLogUser || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
           const closeCurrentPopup = () => {
             setShowSettingsCenter(false);
             setShowActivityLogModal(false);
             setShowForm(false);
             setSelectedTransaction(null);
             setSelectedCategory(null);
+            setSelectedFamilyLogUser(null);
             setSelectedSD(null);
             setShowSDForm(false);
             setShowWalletTransfer(false);
@@ -5185,6 +5189,62 @@ export default function App() {
           );
         })()}
 
+        {selectedFamilyLogUser && (() => {
+          const member = activeFamilyMembers.find(m => m.name === selectedFamilyLogUser) || { name: selectedFamilyLogUser, avatar: "👤" };
+          const rows = familyLogPeriodTxns.filter(t => t.user === selectedFamilyLogUser).sort((a,b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
+          const income = rows.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
+          const expense = rows.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
+          return (
+            <div onClick={() => setSelectedFamilyLogUser(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "18px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "14px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Family Log Detail</div>
+                    <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>{member.avatar || "👤"} {member.name}</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>{rangeLabel} · {rows.length} transaksi</div>
+                  </div>
+                  <button onClick={() => setSelectedFamilyLogUser(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer" }}>×</button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.18)" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Pemasukan</div>
+                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#86efac" }}>+{formatRupiah(income)}</div>
+                  </div>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.18)" }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Pengeluaran</div>
+                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#fca5a5" }}>-{formatRupiah(expense)}</div>
+                  </div>
+                </div>
+
+                {rows.length === 0 ? (
+                  <div style={{ padding: "18px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "12px", textAlign: "center" }}>Belum ada transaksi untuk user ini pada periode {rangeLabel}.</div>
+                ) : (
+                  <div style={{ display: "grid", gap: "8px" }}>
+                    {rows.map(tx => {
+                      const cat = getCategoryInfo(tx.category, tx);
+                      const sign = tx.type === "income" ? "+" : "-";
+                      const color = tx.type === "income" ? "#86efac" : "#fca5a5";
+                      return (
+                        <button key={tx.id} onClick={() => { setSelectedFamilyLogUser(null); setSelectedTransaction(tx); }} style={{ width: "100%", textAlign: "left", padding: "11px", borderRadius: "14px", background: "rgba(15,23,42,0.52)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>{cat.icon} {cat.label}</div>
+                              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px" }}>{tx.date || String(tx.createdAt || "").slice(0,10)} · {tx.sumberDanaName || "Belum tercatat"}</div>
+                              {tx.note && <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{tx.note}</div>}
+                            </div>
+                            <div style={{ flexShrink: 0, textAlign: "right", fontSize: "12px", color, fontWeight: 900 }}>{sign}{formatRupiah(tx.amount || 0)}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>{APP_VERSION}</div>
@@ -5321,16 +5381,17 @@ export default function App() {
                     const income = txns.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
                     const expense = txns.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
                     return (
-                      <div key={member.id || member.name} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", alignItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.46)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <button key={member.id || member.name} onClick={() => setSelectedFamilyLogUser(member.name)} style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", alignItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.46)", border: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", textAlign: "left" }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff" }}>{member.avatar || "👤"} {member.name}</div>
-                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{txns.length} transaksi periode ini</div>
+                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{txns.length} transaksi periode ini · klik untuk detail</div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: "11px", color: "#86efac", fontWeight: 900 }}>+{formatRupiah(income)}</div>
                           <div style={{ fontSize: "11px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(expense)}</div>
+                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px", fontWeight: 900 }}>Lihat →</div>
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
