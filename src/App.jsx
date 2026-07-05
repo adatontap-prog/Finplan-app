@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 3";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 4";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3423,7 +3423,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 3. Portfolio asset detail aktif: aset bisa dibuka, diedit, punya Asset Log, dan sticky Back/Home tidak lagi menutup Portfolio.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 4. Wallet/Finance layout dirapikan: user scope di atas, Financial Position setelah scope, Uang Saku dan Pinjaman digabung sebagai action row, filter wallet dipindah sebelum daftar wallet.
           </div>
         </div>
       </div>
@@ -6093,30 +6093,26 @@ export default function App() {
                 3. Jika salah ketik, gunakan Rename atau Merge agar data transaksi lama tidak hilang.<br />4. Pinjaman/Loan berada di area Finance. Gadai adalah salah satu jenis pinjaman.
               </div>
             </div>
-            {canViewLoans && (
-              <button onClick={() => setActiveTab("gadai")} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "13px", fontWeight: 900, marginBottom: "12px", cursor: "pointer", textAlign: "left" }}>
-                🏦 Pinjaman / Loan <span style={{ color: "#94a3b8", fontSize: "11px", fontWeight: 700 }}>· Gadai dan jenis pinjaman lain</span>
-              </button>
-            )}
-            {/* User filter */}
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden", marginBottom: "16px" }}>
-              {activeFamilyMembers.filter(member => canAccessSelectedWalletUser(member.name)).map(member => { const u = member.name; return (
-                <button key={u} onClick={() => setWalletFilterUser(u)} style={{
-                  padding: "6px 14px", borderRadius: "20px", border: "none", cursor: "pointer",
-                  whiteSpace: "nowrap", fontSize: "12px", fontWeight: 700, flexShrink: 0,
-                  background: walletFilterUser === u ? "#6366f1" : "rgba(255,255,255,0.07)",
-                  color: walletFilterUser === u ? "#fff" : "#888",
-                }}>{member.avatar || "👤"} {u} {u === currentUser ? "(saya)" : ""}</button>
-              );})}
+            {/* Finance user scope */}
+            <div style={{ padding: "12px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center", marginBottom: "9px" }}>
+                <div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", letterSpacing: "1px", fontWeight: 900, textTransform: "uppercase" }}>Kelola Finance Untuk</div>
+                  <div style={{ fontSize: "13px", color: "#fff", fontWeight: 900, marginTop: "2px" }}>{walletFilterUser || currentUser}</div>
+                </div>
+                <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Scope</div>
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", overflowX: "hidden" }}>
+                {activeFamilyMembers.filter(member => canAccessSelectedWalletUser(member.name)).map(member => { const u = member.name; return (
+                  <button key={u} onClick={() => setWalletFilterUser(u)} style={{
+                    padding: "7px 11px", borderRadius: "14px", border: "1px solid " + (walletFilterUser === u ? "rgba(99,102,241,0.36)" : "rgba(255,255,255,0.06)"), cursor: "pointer",
+                    whiteSpace: "nowrap", fontSize: "11px", fontWeight: 900, flexShrink: 0,
+                    background: walletFilterUser === u ? "rgba(99,102,241,0.95)" : "rgba(255,255,255,0.06)",
+                    color: walletFilterUser === u ? "#fff" : "#94a3b8",
+                  }}>{member.avatar || "👤"} {u === currentUser ? u + " (saya)" : u}</button>
+                );})}
+              </div>
             </div>
-            <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "10px" }}>
-              {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif/nonaktif"}
-            </button>
-            {canManageAllWallets && (
-              <button onClick={() => { resetWalletTransferForm(); setShowWalletTransfer(true); }} style={{ width: "100%", padding: "12px", borderRadius: "14px", border: "1px solid rgba(16,185,129,0.26)", background: "rgba(16,185,129,0.11)", color: "#86efac", fontSize: "13px", fontWeight: 900, marginBottom: "14px", cursor: "pointer" }}>
-                💸 Uang Saku / Transfer Wallet
-              </button>
-            )}
             {!canViewAllWallets && (
               <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.22)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "14px" }}>
                 🔒 Mode own-wallet aktif. Role {currentRole} hanya melihat wallet dan transaksi milik sendiri.
@@ -6149,6 +6145,23 @@ export default function App() {
                 </div>
               );
             })()}
+
+            <div style={{ display: "grid", gridTemplateColumns: canManageAllWallets && canViewLoans ? "1fr 1fr" : "1fr", gap: "8px", marginBottom: "10px" }}>
+              {canManageAllWallets && (
+                <button onClick={() => { resetWalletTransferForm(); setShowWalletTransfer(true); }} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(16,185,129,0.26)", background: "rgba(16,185,129,0.11)", color: "#86efac", fontSize: "12px", fontWeight: 900, cursor: "pointer", textAlign: "left" }}>
+                  💸 Uang Saku<br /><span style={{ color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>Transfer Wallet</span>
+                </button>
+              )}
+              {canViewLoans && (
+                <button onClick={() => setActiveTab("gadai")} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 900, cursor: "pointer", textAlign: "left" }}>
+                  🏦 Pinjaman / Loan<br /><span style={{ color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>Gadai & pinjaman lain</span>
+                </button>
+              )}
+            </div>
+
+            <button onClick={() => setShowArchivedWallets(prev => !prev)} style={{ width: "100%", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: showArchivedWallets ? "rgba(245,158,11,0.12)" : "rgba(255,255,255,0.04)", color: showArchivedWallets ? "#fbbf24" : "#94a3b8", fontSize: "12px", fontWeight: 900, marginBottom: "12px" }}>
+              {showArchivedWallets ? "📦 Menampilkan arsip/nonaktif" : "✅ Hanya sumber dana aktif"}
+            </button>
 
             {/* Daftar sumber dana */}
             {sumberDanaList.filter(sd => sd.user === (canViewAllWallets ? walletFilterUser : currentUser) && (showArchivedWallets || getSumberDanaStatus(sd) !== "archived")).length === 0 ? (
