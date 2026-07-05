@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 6";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 7";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -326,17 +326,17 @@ const SAVINGS_GOALS = [
 ];
 
 const CATEGORY_GROUPS = [
-  { id: "education", label: "🎓 Pendidikan", color: "#6366f1" },
-  { id: "future", label: "🏠 Masa Depan", color: "#f59e0b" },
-  { id: "pension", label: "👴 Pensiun", color: "#14b8a6" },
-  { id: "health", label: "🏥 Kesehatan", color: "#ef4444" },
-  { id: "custom", label: "✨ Custom", color: "#a855f7" },
+  { id: "education", label: "🎓 Pendidikan", color: "#6366f1", hint: "biru" },
+  { id: "future", label: "🏠 Masa Depan", color: "#10b981", hint: "hijau" },
+  { id: "pension", label: "👴 Pensiun", color: "#14b8a6", hint: "teal" },
+  { id: "health", label: "🏥 Kesehatan", color: "#ef4444", hint: "merah" },
+  { id: "custom", label: "✨ Custom", color: "#8b5cf6", hint: "ungu" },
 ];
 
 const EDUCATION_CHILDREN = [
-  { id: "aroon", label: "📚 Aroon" },
-  { id: "arunika", label: "📚 Arunika" },
-  { id: "arkaja", label: "📚 Arkaja" },
+  { id: "aroon", label: "📚 Aroon", color: "#60a5fa" },
+  { id: "arunika", label: "📚 Arunika", color: "#ec4899" },
+  { id: "arkaja", label: "📚 Arkaja", color: "#f59e0b" },
 ];
 
 function getGoalStageLabel(goal) {
@@ -1652,7 +1652,8 @@ export default function App() {
 
   function getGoalCategoryColor(category = "custom") {
     const colors = {
-      aroon: "#6366f1",
+      education: "#6366f1",
+      aroon: "#60a5fa",
       arunika: "#ec4899",
       arkaja: "#f59e0b",
       future: "#10b981",
@@ -1661,6 +1662,13 @@ export default function App() {
       custom: "#8b5cf6",
     };
     return colors[category] || "#6366f1";
+  }
+
+  function getGoalPriorityMeta(priority = "Penting") {
+    const p = String(priority || "").toLowerCase();
+    if (p.includes("wajib")) return { label: "Wajib", color: "#fca5a5", bg: "rgba(239,68,68,0.16)", border: "rgba(239,68,68,0.36)" };
+    if (p.includes("opsional")) return { label: "Opsional", color: "#cbd5e1", bg: "rgba(148,163,184,0.13)", border: "rgba(148,163,184,0.26)" };
+    return { label: "Penting", color: "#fbbf24", bg: "rgba(245,158,11,0.15)", border: "rgba(245,158,11,0.34)" };
   }
 
   function resetGoalBuilderForm(seedCategory = null) {
@@ -3050,7 +3058,25 @@ export default function App() {
     const isActive = activeTab === key || (key === "dompet" && activeTab === "gadai");
     return { flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: isActive ? "#6366f1" : "transparent", color: isActive ? "#fff" : "#666", transition: "all 0.2s" };
   };
-  const savTabStyle = (key) => ({ padding: "8px 10px", border: "none", cursor: "pointer", borderRadius: "16px", fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap", flex: "1 1 130px", minWidth: 0, textAlign: "center", background: savingsTab === key ? "#6366f1" : "rgba(255,255,255,0.07)", color: savingsTab === key ? "#fff" : "#888" });
+  const savTabStyle = (key) => {
+    const color = CATEGORY_GROUPS.find(g => g.id === key)?.color || getGoalCategoryColor(key);
+    const active = savingsTab === key;
+    return {
+      padding: "8px 10px",
+      border: "1px solid " + (active ? color + "99" : color + "33"),
+      cursor: "pointer",
+      borderRadius: "16px",
+      fontSize: "11px",
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      flex: "1 1 130px",
+      minWidth: 0,
+      textAlign: "center",
+      background: active ? "linear-gradient(135deg," + color + "," + color + "bb)" : color + "18",
+      color: active ? "#fff" : color,
+      boxShadow: active ? "0 0 0 1px " + color + "44 inset" : "none",
+    };
+  };
   const inputStyle = { width: "100%", background: "rgba(0,0,0,0.4)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px", padding: "12px 14px", color: "#fff", fontSize: "14px", fontWeight: 600, outline: "none", boxSizing: "border-box" };
   const selectedAssetType = ASSET_TYPES.find(a => a.id === assetForm.assetType);
 
@@ -3423,7 +3449,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 6. Dashboard dibersihkan: Family Log dan snapshot kategori dipindahkan ke Transaksi; Dashboard fokus ke saldo, Net Worth Console, warning, dan insight utama.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 7. Goal Color Pattern aktif: kategori, subkategori pendidikan, priority badge, progress bar, dan card accent memakai warna konsisten agar mudah ditandai.
           </div>
         </div>
       </div>
@@ -4469,7 +4495,7 @@ export default function App() {
             </div>
 
             <div style={{ padding: "10px 12px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "11px", lineHeight: 1.45 }}>
-              Warna goal otomatis mengikuti kategori agar form tetap bersih.
+              Warna goal otomatis mengikuti Color Pattern kategori agar gampang ditandai.
             </div>
             <input value={goalBuilderForm.desc} onChange={(e) => setGoalBuilderForm(prev => ({ ...prev, desc: e.target.value }))} placeholder="Deskripsi/catatan goal" style={inputStyle} />
 
@@ -5612,6 +5638,17 @@ export default function App() {
               <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "8px", padding: "4px 10px", fontSize: "10px", cursor: "pointer", fontWeight: 700 }}>{loadingPrices ? "⏳" : "🔄"}</button>
             </div>
 
+            {/* Color Pattern */}
+            <div style={{ padding: "12px", marginBottom: "12px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>Color Pattern Goal</div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "8px" }}>
+                {CATEGORY_GROUPS.map(g => <span key={g.id} style={{ padding: "5px 8px", borderRadius: "999px", background: g.color + "18", border: "1px solid " + g.color + "44", color: g.color, fontSize: "10px", fontWeight: 900 }}>{g.label}</span>)}
+              </div>
+              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                {["Wajib","Penting","Opsional"].map(p => { const m = getGoalPriorityMeta(p); return <span key={p} style={{ padding: "4px 8px", borderRadius: "999px", background: m.bg, border: "1px solid " + m.border, color: m.color, fontSize: "10px", fontWeight: 900 }}>{p}</span>; })}
+              </div>
+            </div>
+
             {/* Total */}
             <div style={{ padding: "16px", marginBottom: "12px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(99,102,241,0.15),rgba(124,58,237,0.15))", border: "1px solid rgba(99,102,241,0.2)" }}>
               <div style={{ fontSize: "11px", color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Goal Engine Preview · Dana nyata vs target</div>
@@ -5645,11 +5682,12 @@ export default function App() {
                   const target = goals.reduce((s,g) => s + g.targetAmount, 0);
                   const current = goals.reduce((s,g) => s + calcGoalValue(g.id), 0);
                   const active = selectedEducationChild === child.id;
-                  return <button key={child.id} onClick={() => setSelectedEducationChild(child.id)} style={{ padding: "12px 8px", borderRadius: "14px", border: "1px solid " + (active ? "rgba(99,102,241,0.45)" : "rgba(255,255,255,0.06)"), background: active ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)", color: active ? "#fff" : "#cbd5e1", textAlign: "left", cursor: "pointer" }}>
+                  const childColor = child.color || getGoalCategoryColor(child.id);
+                  return <button key={child.id} onClick={() => setSelectedEducationChild(child.id)} style={{ padding: "12px 8px", borderRadius: "14px", border: "1px solid " + (active ? childColor + "99" : childColor + "33"), background: active ? childColor + "22" : "rgba(255,255,255,0.04)", color: active ? "#fff" : "#cbd5e1", textAlign: "left", cursor: "pointer", borderLeft: "4px solid " + childColor }}>
                     <div style={{ fontSize: "12px", fontWeight: 900 }}>{child.label}</div>
                     <div style={{ fontSize: "10px", color: active ? "#c7d2fe" : "#64748b", marginTop: "3px" }}>{formatRupiah(current)}</div>
                     <div style={{ height: "4px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginTop: "7px" }}>
-                      <div style={{ height: "100%", width: Math.min((current / Math.max(target, 1)) * 100, 100) + "%", background: "#6366f1" }} />
+                      <div style={{ height: "100%", width: Math.min((current / Math.max(target, 1)) * 100, 100) + "%", background: childColor }} />
                     </div>
                   </button>;
                 })}
@@ -5666,9 +5704,10 @@ export default function App() {
               const groupTitle = savingsTab === "education"
                 ? (EDUCATION_CHILDREN.find(c => c.id === selectedEducationChild)?.label || "Pendidikan")
                 : (CATEGORY_GROUPS.find(g => g.id === savingsTab)?.label || "Goals");
+              const groupColor = savingsTab === "education" ? getGoalCategoryColor(selectedEducationChild) : getGoalCategoryColor(savingsTab);
 
               return <>
-                <div style={{ padding: "13px 14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ padding: "13px 14px", marginBottom: "12px", borderRadius: "16px", background: "linear-gradient(135deg," + groupColor + "14,rgba(255,255,255,0.035))", border: "1px solid " + groupColor + "44", borderLeft: "4px solid " + groupColor }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{groupTitle}</div>
@@ -5709,15 +5748,17 @@ export default function App() {
                   const remaining = Math.max(goal.targetAmount - currentVal, 0);
                   const monthlyNeeded = remaining > 0 ? Math.ceil(remaining / Math.max(goal.yearsLeft * 12, 1)) : 0;
                   const priority = getGoalPriorityLabel(goal);
+                  const priorityMeta = getGoalPriorityMeta(priority);
+                  const goalAccent = getGoalCategoryColor(goal.category || savingsTab || "custom");
                   const stage = getGoalStageLabel(goal);
 
                   return (
-                    <div key={goal.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div key={goal.id} style={{ padding: "14px", marginBottom: "10px", borderRadius: "16px", background: "linear-gradient(135deg," + goalAccent + "12,rgba(255,255,255,0.045))", border: "1px solid " + goalAccent + "44", borderLeft: "4px solid " + goalAccent }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "10px" }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: "7px", flexWrap: "wrap" }}>
                             <div style={{ fontSize: "14px", fontWeight: 900, color: "#fff" }}>{goal.icon} {stage}</div>
-                            <span style={{ padding: "3px 7px", borderRadius: "999px", background: priority === "Wajib" ? "rgba(239,68,68,0.14)" : "rgba(99,102,241,0.14)", color: priority === "Wajib" ? "#fca5a5" : "#c7d2fe", fontSize: "10px", fontWeight: 900 }}>{priority}</span>
+                            <span style={{ padding: "3px 7px", borderRadius: "999px", background: priorityMeta.bg, border: "1px solid " + priorityMeta.border, color: priorityMeta.color, fontSize: "10px", fontWeight: 900 }}>{priority}</span>
                             <span style={{ padding: "3px 7px", borderRadius: "999px", background: goal.sourceType === "custom" ? "rgba(168,85,247,0.14)" : "rgba(255,255,255,0.06)", color: goal.sourceType === "custom" ? "#d8b4fe" : "#94a3b8", fontSize: "10px", fontWeight: 900 }}>{goal.sourceType === "custom" ? "Custom" : "Template"}</span>
                           </div>
                           <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>{goal.desc} · {goal.yearsLeft} thn lagi</div>
@@ -5734,7 +5775,7 @@ export default function App() {
                       </div>
 
                       <div style={{ height: "8px", background: "rgba(255,255,255,0.08)", borderRadius: "10px", overflow: "hidden", marginBottom: "7px" }}>
-                        <div style={{ height: "100%", borderRadius: "10px", width: pct + "%", background: "linear-gradient(90deg," + goal.color + "," + goal.color + "99)", transition: "width 0.8s ease" }} />
+                        <div style={{ height: "100%", borderRadius: "10px", width: pct + "%", background: "linear-gradient(90deg," + goalAccent + "," + goalAccent + "99)", transition: "width 0.8s ease" }} />
                       </div>
 
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px", marginBottom: "9px" }}>
