@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 4";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 5";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3423,7 +3423,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 4. Wallet/Finance layout dirapikan: user scope di atas, Financial Position setelah scope, Uang Saku dan Pinjaman digabung sebagai action row, filter wallet dipindah sebelum daftar wallet.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 5. Loan UI dirapikan: Gadai diposisikan sebagai subtipe Loan, kalkulator berada di Submodul Gadai, dan tombol bawah menjadi Tambah Loan dengan konteks tipe Gadai.
           </div>
         </div>
       </div>
@@ -4682,9 +4682,9 @@ export default function App() {
         <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "16px" }}>
             <div>
-              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Phase 6.2 · Loan Engine</div>
-              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Catat Pinjaman Gadai</div>
-              <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Pencairan gadai menambah wallet dan menambah kewajiban. Ini bukan pemasukan murni.</div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Loan Engine · Subtipe Gadai</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Tambah Loan · Gadai</div>
+              <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "6px", lineHeight: 1.5 }}>Gadai adalah salah satu jenis Loan. Pencairan menambah wallet dan menambah kewajiban, bukan pemasukan murni.</div>
             </div>
             <button onClick={() => { setShowGadaiForm(false); setGadaiSDId(""); }} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
           </div>
@@ -4749,7 +4749,7 @@ export default function App() {
           )}
 
           <button onClick={addGadai} disabled={!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId} style={{ width: "100%", marginTop: "16px", padding: "14px", borderRadius: "16px", border: "none", background: (!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId) ? "rgba(255,255,255,0.10)" : "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "15px", fontWeight: 900, cursor: (!gadaiForm.namaBarang || !gadaiForm.beratGram || !gadaiSDId) ? "not-allowed" : "pointer" }}>
-            Catat Pencairan Pinjaman
+            Simpan Loan Gadai
           </button>
         </div>
       </div>
@@ -5938,10 +5938,25 @@ export default function App() {
               </div>
             )}
 
+            {/* Submodule Loan Type */}
+            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "8px" }}>Tipe Loan</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                <div style={{ padding: "10px", borderRadius: "13px", background: "rgba(245,158,11,0.14)", border: "1px solid rgba(245,158,11,0.30)", color: "#fbbf24", fontSize: "12px", fontWeight: 900 }}>🏦 Gadai</div>
+                <div style={{ padding: "10px", borderRadius: "13px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)", color: "#64748b", fontSize: "12px", fontWeight: 900 }}>➕ Loan lain nanti</div>
+              </div>
+            </div>
+
+            {/* Gadai Submodule */}
+            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.055)", border: "1px solid rgba(245,158,11,0.16)" }}>
+              <div style={{ fontSize: "11px", color: "#fbbf24", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "4px" }}>Submodul Gadai</div>
+              <div style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.55 }}>Kalkulator dan daftar di bawah ini khusus untuk tipe Loan Gadai. Nanti tipe pinjaman lain masuk di submodul loan masing-masing.</div>
+            </div>
+
             {/* Kalkulator Gadai */}
             <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: showGadaiCalc ? "14px" : "0" }}>
-                <div style={{ fontSize: "14px", fontWeight: 800 }}>🏦 Kalkulator Gadai Emas</div>
+                <div style={{ fontSize: "14px", fontWeight: 800 }}>🏦 Gadai Emas · Kalkulator</div>
                 <button onClick={() => setShowGadaiCalc(!showGadaiCalc)} style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.3)", color: "#fbbf24", borderRadius: "8px", padding: "6px 12px", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>{showGadaiCalc ? "Tutup" : "Buka"}</button>
               </div>
 
@@ -6013,13 +6028,13 @@ export default function App() {
               )}
             </div>
 
-            {/* Daftar Pinjaman / Gadai */}
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Daftar Pinjaman / Gadai</div>
+            {/* Daftar Loan · Gadai */}
+            <div style={{ fontSize: "12px", fontWeight: 700, color: "#666", letterSpacing: "1px", textTransform: "uppercase", marginBottom: "12px" }}>Daftar Loan · Gadai</div>
 
             {gadaiList.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>
                 <div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div>
-                <div style={{ fontSize: "14px" }}>Belum ada pinjaman/gadai tercatat</div>
+                <div style={{ fontSize: "14px" }}>Belum ada loan gadai tercatat</div>
               </div>
             ) : gadaiList.map(g => {
               const { tglJatuh, sisa } = hitungSisaHari(g.tanggalGadai, g.tenor);
@@ -6074,9 +6089,9 @@ export default function App() {
               );
             })}
 
-            {/* Tombol Catat Gadai */}
+            {/* Tombol Tambah Loan */}
             {currentUser === ADMIN_USER && (
-              <button onClick={() => setShowGadaiForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Catat Pinjaman Gadai</button>
+              <button onClick={() => setShowGadaiForm(true)} style={{ width: "100%", padding: "14px", borderRadius: "14px", border: "2px dashed rgba(245,158,11,0.4)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "14px", cursor: "pointer", fontWeight: 700, marginTop: "8px" }}>+ Tambah Loan <span style={{ color: "#94a3b8", fontSize: "11px", fontWeight: 800 }}>· Tipe: Gadai</span></button>
             )}
           </div>
         )}
@@ -6154,7 +6169,7 @@ export default function App() {
               )}
               {canViewLoans && (
                 <button onClick={() => setActiveTab("gadai")} style={{ width: "100%", padding: "13px", borderRadius: "16px", border: "1px solid rgba(245,158,11,0.28)", background: "rgba(245,158,11,0.10)", color: "#fbbf24", fontSize: "12px", fontWeight: 900, cursor: "pointer", textAlign: "left" }}>
-                  🏦 Pinjaman / Loan<br /><span style={{ color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>Gadai & pinjaman lain</span>
+                  🏦 Pinjaman / Loan<br /><span style={{ color: "#94a3b8", fontSize: "10px", fontWeight: 700 }}>Gadai dan tipe loan lain</span>
                 </button>
               )}
             </div>
