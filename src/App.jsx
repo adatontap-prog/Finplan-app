@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5f hotfix 2";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5g";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1436,6 +1436,26 @@ export default function App() {
   const topExpenseShare = topExpenseEntry && visibleExpense > 0 ? Math.round((Number(topExpenseEntry[1] || 0) / visibleExpense) * 100) : 0;
   const averageVisibleExpense = visibleExpenseCount > 0 ? visibleExpense / visibleExpenseCount : 0;
   const biggestExpenseShare = biggestVisibleExpense && visibleExpense > 0 ? Math.round((Number(biggestVisibleExpense.amount || 0) / visibleExpense) * 100) : 0;
+  const visibleUncategorizedCount = displayTxns.filter(t => !t.category).length;
+  const visibleNoSourceCount = displayTxns.filter(t => !(t.sumberDanaName || t.sumberDanaId || t.sourceFund)).length;
+  const visibleNoNoteCount = displayTxns.filter(t => !(t.note || t.notes)).length;
+  const highExpenseThreshold = averageVisibleExpense > 0 ? Math.max(averageVisibleExpense * 2, 250000) : 0;
+  const highExpenseCount = highExpenseThreshold > 0 ? displayTxns.filter(t => t.type === "expense" && Number(t.amount || 0) >= highExpenseThreshold).length : 0;
+  const transactionQualityPenalty = (visibleUncategorizedCount * 8) + (visibleNoSourceCount * 8) + (visibleNoNoteCount * 3) + (highExpenseCount * 5) + (visibleNetFlow < 0 ? 10 : 0);
+  const transactionQualityScore = displayTxns.length === 0 ? 100 : Math.max(0, Math.min(100, 100 - transactionQualityPenalty));
+  const transactionQualityTone = transactionQualityScore >= 80 ? "#86efac" : transactionQualityScore >= 60 ? "#fbbf24" : "#fca5a5";
+  const transactionReviewSignals = [
+    visibleUncategorizedCount > 0 ? { label: `${visibleUncategorizedCount} tanpa kategori`, tone: "amber" } : null,
+    visibleNoSourceCount > 0 ? { label: `${visibleNoSourceCount} tanpa sumber dana`, tone: "amber" } : null,
+    visibleNoNoteCount > 0 ? { label: `${visibleNoNoteCount} tanpa catatan`, tone: "muted" } : null,
+    highExpenseCount > 0 ? { label: `${highExpenseCount} expense besar`, tone: "red" } : null,
+    visibleNetFlow < 0 ? { label: "net filter negatif", tone: "red" } : null,
+  ].filter(Boolean);
+  const transactionQualityText = displayTxns.length === 0
+    ? "Belum ada data tampil untuk direview pada filter ini."
+    : transactionReviewSignals.length === 0
+      ? "Data transaksi tampil sudah rapi: kategori, sumber dana, dan catatan utama aman."
+      : "Review signal membantu menemukan transaksi yang perlu dirapikan sebelum analisis keuangan lanjut.";
   const transactionInsightText = displayTxns.length === 0
     ? (filteredPeriodTxns.length === 0 ? "Tidak ada transaksi pada periode ini." : "Tidak ada transaksi yang cocok dengan filter aktif.")
     : visibleExpense > visibleIncome
@@ -3529,7 +3549,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.5f hotfix 2. Transaction Category Drilldown stabil: scope kosong dan filter uncategorized diperbaiki.
+            FinPlan v1.1.0 phase 6.7.5g. Transaction Quality Review aktif: kategori, sumber dana, catatan, dan outlier expense dicek lebih jelas.
           </div>
         </div>
       </div>
@@ -5503,6 +5523,31 @@ export default function App() {
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Avg Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{visibleExpenseCount ? formatRupiah(averageVisibleExpense) : "Belum ada"}</div></div>
                 </div>
                 <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}${biggestExpenseShare ? ` (${biggestExpenseShare}% dari expense tampil)` : ""}.` : ""}</div>
+              </div>
+
+              <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "center" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaction Quality Review</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "4px" }}>{transactionQualityText}</div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: "22px", color: transactionQualityTone, fontWeight: 900 }}>{transactionQualityScore}</div>
+                    <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>score</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                  {(transactionReviewSignals.length ? transactionReviewSignals : [{ label: "tidak ada signal besar", tone: "green" }]).map(signal => {
+                    const toneMap = {
+                      green: { color: "#86efac", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.20)" },
+                      amber: { color: "#fbbf24", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.20)" },
+                      red: { color: "#fca5a5", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.20)" },
+                      muted: { color: "#cbd5e1", background: "rgba(148,163,184,0.08)", border: "1px solid rgba(148,163,184,0.14)" },
+                    };
+                    const tone = toneMap[signal.tone] || toneMap.muted;
+                    return <span key={signal.label} style={{ padding: "6px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 900, ...tone }}>{signal.label}</span>;
+                  })}
+                </div>
               </div>
 
               {periodCategoryDrilldown.length > 0 && (
