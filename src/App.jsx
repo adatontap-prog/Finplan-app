@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 10";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5d";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -621,6 +621,10 @@ export default function App() {
   const [dateRangeMode, setDateRangeMode] = useState("month");
   const [showPeriodPicker, setShowPeriodPicker] = useState(false);
   const [filterUser, setFilterUser] = useState("semua");
+  const [txSearch, setTxSearch] = useState("");
+  const [txTypeFilter, setTxTypeFilter] = useState("all");
+  const [txCategoryFilter, setTxCategoryFilter] = useState("all");
+  const [txSortMode, setTxSortMode] = useState("newest");
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState("");
   const [sending, setSending] = useState(false);
@@ -1377,14 +1381,47 @@ export default function App() {
   const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
   const familyLogPeriodTxns = (canViewAllTransactionsNow ? transactions : userTxns).filter(isTxnInSelectedRange);
   const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
-  const monthTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
-  const displayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
-  const totalIncome = filteredPeriodTxns.filter(t => t.type === "income").reduce((s, t) => s + t.amount, 0);
-  const totalExpense = filteredPeriodTxns.filter(t => t.type === "expense").reduce((s, t) => s + t.amount, 0);
+  const baseDisplayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
+  const normalizedTxSearch = txSearch.trim().toLowerCase();
+  const txCategoryOptions = CATEGORIES.filter(c => txTypeFilter === "all" || c.type === txTypeFilter);
+  const displayTxns = baseDisplayTxns
+    .filter(t => {
+      const typeOk = txTypeFilter === "all" || t.type === txTypeFilter;
+      const categoryOk = txCategoryFilter === "all" || t.category === txCategoryFilter;
+      const cat = getCategoryInfo(t.category, t);
+      const searchable = [
+        t.note, t.notes, t.date, t.user, t.userName, t.sumberDanaName, t.sumberDanaId, t.sourceFund, cat.label, cat.icon, t.type
+      ].filter(Boolean).join(" ").toLowerCase();
+      const searchOk = !normalizedTxSearch || searchable.includes(normalizedTxSearch);
+      return typeOk && categoryOk && searchOk;
+    })
+    .sort((a, b) => {
+      const aDate = getTxnDate(a)?.getTime() || 0;
+      const bDate = getTxnDate(b)?.getTime() || 0;
+      const aAmount = Number(a.amount || 0);
+      const bAmount = Number(b.amount || 0);
+      if (txSortMode === "oldest") return aDate - bDate;
+      if (txSortMode === "biggest") return bAmount - aAmount;
+      if (txSortMode === "smallest") return aAmount - bAmount;
+      return bDate - aDate;
+    });
+  const totalIncome = filteredPeriodTxns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const totalExpense = filteredPeriodTxns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
   const balance = totalIncome - totalExpense;
+  const visibleIncome = displayTxns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const visibleExpense = displayTxns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const visibleNetFlow = visibleIncome - visibleExpense;
   const expenseByCategory = {};
-  monthTxns.filter(t => t.type === "expense").forEach(t => { expenseByCategory[t.category] = (expenseByCategory[t.category] || 0) + t.amount; });
-  const usersWithData = [...new Set(transactions.map(t => t.user))];
+  displayTxns.filter(t => t.type === "expense").forEach(t => { expenseByCategory[t.category || "uncategorized"] = (expenseByCategory[t.category || "uncategorized"] || 0) + Number(t.amount || 0); });
+  const topExpenseEntry = Object.entries(expenseByCategory).sort((a,b) => b[1] - a[1])[0] || null;
+  const topExpenseCategory = topExpenseEntry ? getCategoryInfo(topExpenseEntry[0]) : null;
+  const biggestVisibleExpense = displayTxns.filter(t => t.type === "expense").sort((a,b) => Number(b.amount || 0) - Number(a.amount || 0))[0] || null;
+  const transactionInsightText = displayTxns.length === 0
+    ? "Tidak ada transaksi yang cocok dengan filter aktif."
+    : visibleExpense > visibleIncome
+      ? "Pengeluaran terlihat lebih besar dari pemasukan pada hasil filter ini. Cek kategori terbesar sebelum menambah transaksi baru."
+      : "Arus kas hasil filter masih positif atau seimbang. Gunakan sorting untuk cek transaksi terbesar.";
+  const usersWithData = [...new Set(transactions.map(t => t.user || t.userName || "Tanpa User"))];
   const barMax = Math.max(...Object.values(expenseByCategory), 1);
 
   const invTypeLabel = { usd: "\uD83D\uDCB5 USD", lm: "\uD83E\uDD47 LM Antam", jewelry: "\uD83D\uDC8D Perhiasan" };
@@ -3452,7 +3489,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 10. Family Log Detail dipoles: summary income/expense/net flow, empty state, fallback data kosong, dan alur back Transaksi → Detail User → Detail Transaksi lebih aman.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5d. Transaction Intelligence Cleanup: search, filter tipe/kategori, sorting transaksi, insight periode, dan list transaksi yang lebih aman untuk mobile.
           </div>
         </div>
       </div>
@@ -5371,11 +5408,50 @@ export default function App() {
         {activeTab === "history" && (
           <div style={{ padding: "0 20px" }}>
             <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(15,23,42,0.68)", border: "1px solid rgba(99,102,241,0.18)" }}>
-              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaksi</div>
-              <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan & Riwayat</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "10px" }}>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(16,185,129,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pemasukan</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#86efac" }}>{formatRupiah(totalIncome)}</div></div>
-                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(239,68,68,0.10)" }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pengeluaran</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#fca5a5" }}>{formatRupiah(totalExpense)}</div></div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+                <div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaksi · Intelligence</div>
+                  <div style={{ fontSize: "16px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>Ringkasan, Filter & Riwayat</div>
+                </div>
+                <div style={{ fontSize: "10px", color: "#94a3b8", textAlign: "right", lineHeight: 1.4 }}>{displayTxns.length} tampil<br />{filteredPeriodTxns.length} periode</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: "8px", marginTop: "10px" }}>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(16,185,129,0.10)", minWidth: 0 }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pemasukan Periode</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#86efac", overflowWrap: "anywhere" }}>{formatRupiah(totalIncome)}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(239,68,68,0.10)", minWidth: 0 }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Pengeluaran Periode</div><div style={{ fontSize: "14px", fontWeight: 900, color: "#fca5a5", overflowWrap: "anywhere" }}>{formatRupiah(totalExpense)}</div></div>
+                <div style={{ padding: "10px", borderRadius: "14px", background: "rgba(99,102,241,0.10)", minWidth: 0 }}><div style={{ fontSize: "10px", color: "#94a3b8" }}>Net Flow Periode</div><div style={{ fontSize: "14px", fontWeight: 900, color: balance >= 0 ? "#86efac" : "#fca5a5", overflowWrap: "anywhere" }}>{balance >= 0 ? "+" : "-"}{formatRupiah(Math.abs(balance))}</div></div>
+              </div>
+            </div>
+
+            <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "9px" }}>Transaction Filter</div>
+              <input value={txSearch} onChange={(e) => setTxSearch(e.target.value)} placeholder="Cari catatan, user, kategori, sumber dana..." style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: "8px" }} />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))", gap: "8px" }}>
+                <select value={txTypeFilter} onChange={(e) => { setTxTypeFilter(e.target.value); setTxCategoryFilter("all"); }} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}>
+                  <option value="all">Semua tipe</option>
+                  <option value="income">Pemasukan</option>
+                  <option value="expense">Pengeluaran</option>
+                </select>
+                <select value={txCategoryFilter} onChange={(e) => setTxCategoryFilter(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}>
+                  <option value="all">Semua kategori</option>
+                  {txCategoryOptions.map(cat => <option key={cat.id} value={cat.id}>{cat.icon} {cat.label}</option>)}
+                </select>
+                <select value={txSortMode} onChange={(e) => setTxSortMode(e.target.value)} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}>
+                  <option value="newest">Terbaru</option>
+                  <option value="oldest">Terlama</option>
+                  <option value="biggest">Nominal terbesar</option>
+                  <option value="smallest">Nominal terkecil</option>
+                </select>
+              </div>
+              {(txSearch || txTypeFilter !== "all" || txCategoryFilter !== "all" || txSortMode !== "newest") && (
+                <button onClick={() => { setTxSearch(""); setTxTypeFilter("all"); setTxCategoryFilter("all"); setTxSortMode("newest"); }} style={{ width: "100%", marginTop: "8px", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Reset Filter</button>
+              )}
+              <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.55)", border: "1px solid rgba(99,102,241,0.12)" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Hasil Filter</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{displayTxns.length} transaksi</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Net Filter</div><div style={{ fontSize: "13px", color: visibleNetFlow >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{visibleNetFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(visibleNetFlow))}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Top Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{topExpenseEntry ? `${topExpenseCategory?.icon || "🧾"} ${topExpenseCategory?.label || "Tanpa Kategori"}` : "Belum ada"}</div></div>
+                </div>
+                <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}.` : ""}</div>
               </div>
             </div>
 
@@ -5427,22 +5503,27 @@ export default function App() {
               </div>
             )}
 
-            {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}>Memuat data...</div>
-            : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 0", color: "#444" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px" }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#555" }}>Debug: {transactions.length} transaksi terbaca</div></div>
+            {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#94a3b8" }}>Memuat data...</div>
+            : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8", borderRadius: "18px", background: "rgba(255,255,255,0.035)", border: "1px dashed rgba(255,255,255,0.12)" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px", color: "#cbd5e1", fontWeight: 800 }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#64748b" }}>Coba ubah periode, user, search, tipe, atau kategori.</div></div>
             : displayTxns.map(t => {
               const cat = getCategoryInfo(t.category, t);
+              const txDate = t.date || String(t.createdAt || "").slice(0,10) || "Tanpa Tanggal";
+              const txUser = t.user || t.userName || "Tanpa User";
+              const txSource = t.sumberDanaName || t.sumberDanaId || t.sourceFund || "Tanpa Sumber Dana";
+              const txNote = t.note || t.notes || "Tidak ada catatan";
               return (
-                <div key={t.id} onClick={() => setSelectedTransaction(t)} style={{ cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", marginBottom: "8px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", transition: "all 0.15s" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div style={{ fontSize: "22px" }}>{cat ? cat.icon : ""}</div>
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: 600 }}>{cat ? cat.label : ""}</div>
-                      <div style={{ fontSize: "11px", color: "#555" }}>{t.user} - {t.note || t.date}</div>
+                <div key={t.id || `${txDate}-${txUser}-${t.amount}-${txNote}`} onClick={() => setSelectedTransaction(t)} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "center", padding: "13px 14px", marginBottom: "8px", borderRadius: "14px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", transition: "all 0.15s", boxSizing: "border-box" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: "12px", minWidth: 0 }}>
+                    <div style={{ fontSize: "22px", flexShrink: 0 }}>{cat?.icon || "🧾"}</div>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", overflowWrap: "anywhere" }}>{cat?.label || "Tanpa Kategori"}</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px", overflowWrap: "anywhere" }}>{txUser} · {txDate}</div>
+                      <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px", overflowWrap: "anywhere" }}>{txSource} · {txNote}</div>
                     </div>
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: t.type === "income" ? "#34d399" : "#f87171" }}>{t.type === "income" ? "+" : "-"}{formatRupiah(t.amount)}</div>
-                    <div style={{ fontSize: "16px", color: "#444" }}>💰</div>
+                  <div style={{ textAlign: "right", minWidth: "88px", flexShrink: 0 }}>
+                    <div style={{ fontSize: "13px", fontWeight: 900, color: t.type === "income" ? "#34d399" : "#f87171" }}>{t.type === "income" ? "+" : "-"}{formatRupiah(t.amount || 0)}</div>
+                    <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px" }}>Detail →</div>
                   </div>
                 </div>
               );
