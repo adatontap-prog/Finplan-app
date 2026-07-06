@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5f";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5f hotfix 1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1430,6 +1430,8 @@ export default function App() {
     return Object.values(map).sort((a,b) => (b.expense - a.expense) || (b.income - a.income) || (b.count - a.count));
   }
   const periodCategoryDrilldown = buildCategoryDrilldown(filteredPeriodTxns).slice(0, 6);
+  const visibleIncomeCount = displayTxns.filter(t => t.type === "income").length;
+  const visibleExpenseCount = displayTxns.filter(t => t.type === "expense").length;
   const topExpenseShare = topExpenseEntry && visibleExpense > 0 ? Math.round((Number(topExpenseEntry[1] || 0) / visibleExpense) * 100) : 0;
   const averageVisibleExpense = visibleExpenseCount > 0 ? visibleExpense / visibleExpenseCount : 0;
   const biggestExpenseShare = biggestVisibleExpense && visibleExpense > 0 ? Math.round((Number(biggestVisibleExpense.amount || 0) / visibleExpense) * 100) : 0;
@@ -1440,8 +1442,6 @@ export default function App() {
       : "Arus kas hasil filter masih positif atau seimbang. Gunakan drilldown kategori untuk membaca pola transaksi.";
   const activeTransactionFilterCount = [normalizedTxSearch, txTypeFilter !== "all", txCategoryFilter !== "all", txSortMode !== "newest"].filter(Boolean).length;
   const hasTransactionFilters = activeTransactionFilterCount > 0;
-  const visibleIncomeCount = displayTxns.filter(t => t.type === "income").length;
-  const visibleExpenseCount = displayTxns.filter(t => t.type === "expense").length;
   const transactionScopeNote = filteredPeriodTxns.length === 0
     ? `Periode ${rangeLabel} belum punya transaksi untuk scope ${selectedScopeLabel}.`
     : hasTransactionFilters
@@ -3527,7 +3527,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5f. Transaction Category Drilldown: kategori transaksi lebih mudah dibaca, top kategori bisa diklik cepat, dan insight expense lebih jelas.
+            FinPlan v1.1.0 phase 6.7.5f hotfix 1. Transaction Category Drilldown stabil: runtime counter expense diperbaiki dan insight kategori tetap aktif.
           </div>
         </div>
       </div>
