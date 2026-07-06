@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5e";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5f";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1416,11 +1416,28 @@ export default function App() {
   const topExpenseEntry = Object.entries(expenseByCategory).sort((a,b) => b[1] - a[1])[0] || null;
   const topExpenseCategory = topExpenseEntry ? getCategoryInfo(topExpenseEntry[0]) : null;
   const biggestVisibleExpense = displayTxns.filter(t => t.type === "expense").sort((a,b) => Number(b.amount || 0) - Number(a.amount || 0))[0] || null;
+  function buildCategoryDrilldown(rows) {
+    const map = {};
+    rows.forEach(t => {
+      const id = t.category || "uncategorized";
+      const meta = getCategoryInfo(id, t);
+      const amount = Number(t.amount || 0);
+      if (!map[id]) map[id] = { id, label: meta?.label || "Tanpa Kategori", icon: meta?.icon || "🧾", type: t.type || "expense", income: 0, expense: 0, count: 0 };
+      if (t.type === "income") map[id].income += amount;
+      if (t.type === "expense") map[id].expense += amount;
+      map[id].count += 1;
+    });
+    return Object.values(map).sort((a,b) => (b.expense - a.expense) || (b.income - a.income) || (b.count - a.count));
+  }
+  const periodCategoryDrilldown = buildCategoryDrilldown(filteredPeriodTxns).slice(0, 6);
+  const topExpenseShare = topExpenseEntry && visibleExpense > 0 ? Math.round((Number(topExpenseEntry[1] || 0) / visibleExpense) * 100) : 0;
+  const averageVisibleExpense = visibleExpenseCount > 0 ? visibleExpense / visibleExpenseCount : 0;
+  const biggestExpenseShare = biggestVisibleExpense && visibleExpense > 0 ? Math.round((Number(biggestVisibleExpense.amount || 0) / visibleExpense) * 100) : 0;
   const transactionInsightText = displayTxns.length === 0
     ? (filteredPeriodTxns.length === 0 ? "Tidak ada transaksi pada periode ini." : "Tidak ada transaksi yang cocok dengan filter aktif.")
     : visibleExpense > visibleIncome
-      ? "Pengeluaran terlihat lebih besar dari pemasukan pada hasil filter ini. Cek kategori terbesar sebelum menambah transaksi baru."
-      : "Arus kas hasil filter masih positif atau seimbang. Gunakan sorting untuk cek transaksi terbesar.";
+      ? `Pengeluaran terlihat lebih besar dari pemasukan pada hasil filter ini. ${topExpenseCategory ? `${topExpenseCategory.label} mengambil ${topExpenseShare}% dari expense tampil.` : "Cek kategori terbesar sebelum menambah transaksi baru."}`
+      : "Arus kas hasil filter masih positif atau seimbang. Gunakan drilldown kategori untuk membaca pola transaksi.";
   const activeTransactionFilterCount = [normalizedTxSearch, txTypeFilter !== "all", txCategoryFilter !== "all", txSortMode !== "newest"].filter(Boolean).length;
   const hasTransactionFilters = activeTransactionFilterCount > 0;
   const visibleIncomeCount = displayTxns.filter(t => t.type === "income").length;
@@ -3510,7 +3527,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5e. Transaction Period Integrity: periode transaksi lebih konsisten, quick period chip, reset filter aman, dan back detail transaksi lebih stack-aware.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5f. Transaction Category Drilldown: kategori transaksi lebih mudah dibaca, top kategori bisa diklik cepat, dan insight expense lebih jelas.
           </div>
         </div>
       </div>
@@ -5479,11 +5496,40 @@ export default function App() {
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Hasil Filter</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{displayTxns.length} transaksi</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Net Filter</div><div style={{ fontSize: "13px", color: visibleNetFlow >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{visibleNetFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(visibleNetFlow))}</div></div>
-                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Top Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{topExpenseEntry ? `${topExpenseCategory?.icon || "🧾"} ${topExpenseCategory?.label || "Tanpa Kategori"}` : "Belum ada"}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Top Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{topExpenseEntry ? `${topExpenseCategory?.icon || "🧾"} ${topExpenseCategory?.label || "Tanpa Kategori"} · ${topExpenseShare}%` : "Belum ada"}</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Komposisi</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>📥 {visibleIncomeCount} · 📤 {visibleExpenseCount}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Avg Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{visibleExpenseCount ? formatRupiah(averageVisibleExpense) : "Belum ada"}</div></div>
                 </div>
-                <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}.` : ""}</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}${biggestExpenseShare ? ` (${biggestExpenseShare}% dari expense tampil)` : ""}.` : ""}</div>
               </div>
+
+              {periodCategoryDrilldown.length > 0 && (
+                <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                    <div>
+                      <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Category Drilldown</div>
+                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>Klik kategori untuk filter cepat periode aktif.</div>
+                    </div>
+                    <button onClick={() => { setTxSearch(""); setTxTypeFilter("all"); setTxCategoryFilter("all"); setTxSortMode("newest"); }} style={{ padding: "7px 9px", borderRadius: "11px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "10px", fontWeight: 900, cursor: "pointer", flexShrink: 0 }}>Clear</button>
+                  </div>
+                  <div style={{ display: "grid", gap: "7px" }}>
+                    {periodCategoryDrilldown.map(stat => {
+                      const isActive = txCategoryFilter === stat.id;
+                      const value = stat.expense > 0 ? stat.expense : stat.income;
+                      const labelTone = stat.expense > 0 ? "#fca5a5" : "#86efac";
+                      return (
+                        <button key={stat.id} onClick={() => { setTxSearch(""); setTxTypeFilter(stat.expense > 0 ? "expense" : "income"); setTxCategoryFilter(stat.id); setTxSortMode("biggest"); }} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid " + (isActive ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.06)"), background: isActive ? "rgba(99,102,241,0.16)" : "rgba(15,23,42,0.42)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.icon} {stat.label}</div>
+                            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{stat.count} transaksi periode ini</div>
+                          </div>
+                          <div style={{ textAlign: "right", color: labelTone, fontSize: "11px", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.expense > 0 ? "-" : "+"}{formatRupiah(value)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {canViewAllTransactions && (
