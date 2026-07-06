@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5h";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5i";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1442,6 +1442,18 @@ export default function App() {
   const visibleNoNoteCount = displayTxns.filter(t => !(t.note || t.notes)).length;
   const highExpenseThreshold = averageVisibleExpense > 0 ? Math.max(averageVisibleExpense * 2, 250000) : 0;
   const highExpenseCount = highExpenseThreshold > 0 ? displayTxns.filter(t => t.type === "expense" && Number(t.amount || 0) >= highExpenseThreshold).length : 0;
+  function getTransactionReviewReasons(tx) {
+    const reasons = [];
+    if (!tx?.category) reasons.push("Tanpa kategori");
+    if (!(tx?.sumberDanaName || tx?.sumberDanaId || tx?.sourceFund)) reasons.push("Tanpa sumber dana");
+    if (!(tx?.note || tx?.notes)) reasons.push("Tanpa catatan");
+    if (highExpenseThreshold > 0 && tx?.type === "expense" && Number(tx?.amount || 0) >= highExpenseThreshold) reasons.push("Expense besar");
+    return reasons;
+  }
+  const transactionReviewQueue = displayTxns
+    .map(tx => ({ tx, reasons: getTransactionReviewReasons(tx) }))
+    .filter(item => item.reasons.length > 0)
+    .slice(0, 4);
   const transactionQualityPenalty = (visibleUncategorizedCount * 8) + (visibleNoSourceCount * 8) + (visibleNoNoteCount * 3) + (highExpenseCount * 5) + (visibleNetFlow < 0 ? 10 : 0);
   const transactionQualityScore = displayTxns.length === 0 ? 100 : Math.max(0, Math.min(100, 100 - transactionQualityPenalty));
   const transactionQualityTone = transactionQualityScore >= 80 ? "#86efac" : transactionQualityScore >= 60 ? "#fbbf24" : "#fca5a5";
@@ -3555,7 +3567,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.5h. Transaction Intelligence dibuat lebih ringkas dengan compact mode agar halaman Transaksi tetap clean.
+            FinPlan v1.1.0 phase 6.7.5i. Transaction Review Queue ditambahkan agar transaksi yang perlu dirapikan lebih cepat ditemukan.
           </div>
         </div>
       </div>
@@ -5563,6 +5575,41 @@ export default function App() {
                           return <span key={signal.label} style={{ padding: "6px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 900, ...tone }}>{signal.label}</span>;
                         })}
                       </div>
+                    </div>
+
+                    <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.42)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Review Queue</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "3px" }}>Prioritas transaksi yang perlu dicek sebelum data dipakai untuk engine berikutnya.</div>
+                        </div>
+                        <div style={{ fontSize: "18px", color: transactionQualityTone, fontWeight: 900, flexShrink: 0 }}>{transactionReviewQueue.length}</div>
+                      </div>
+                      {transactionReviewQueue.length === 0 ? (
+                        <div style={{ padding: "10px", borderRadius: "13px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.14)", color: "#86efac", fontSize: "11px", fontWeight: 800 }}>Tidak ada transaksi prioritas review pada filter aktif.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: "7px" }}>
+                          {transactionReviewQueue.map(({ tx, reasons }) => {
+                            const cat = getCategoryInfo(tx.category, tx);
+                            const txDate = tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal";
+                            const txUser = tx.user || tx.userName || "Tanpa User";
+                            const queueKey = tx.id || `${txDate}-${txUser}-${tx.amount}-${reasons.join("-")}`;
+                            return (
+                              <button key={queueKey} onClick={() => setSelectedTransaction(tx)} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.04)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{cat?.icon || "🧾"} {cat?.label || "Tanpa Kategori"}</div>
+                                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px", overflowWrap: "anywhere" }}>{txUser} · {txDate}</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginTop: "6px" }}>{reasons.map(reason => <span key={reason} style={{ padding: "4px 6px", borderRadius: "999px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.18)", color: "#fbbf24", fontSize: "9px", fontWeight: 900 }}>{reason}</span>)}</div>
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                                  <div style={{ fontSize: "11px", color: tx.type === "income" ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{tx.type === "income" ? "+" : "-"}{formatRupiah(tx.amount || 0)}</div>
+                                  <div style={{ fontSize: "9px", color: "#64748b", marginTop: "3px" }}>Detail →</div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
 
                     {periodCategoryDrilldown.length > 0 && (
