@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5f hotfix 1";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5f hotfix 2";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1387,7 +1387,8 @@ export default function App() {
   const displayTxns = baseDisplayTxns
     .filter(t => {
       const typeOk = txTypeFilter === "all" || t.type === txTypeFilter;
-      const categoryOk = txCategoryFilter === "all" || t.category === txCategoryFilter;
+      const txnCategoryId = t.category || "uncategorized";
+      const categoryOk = txCategoryFilter === "all" || txnCategoryId === txCategoryFilter;
       const cat = getCategoryInfo(t.category, t);
       const searchable = [
         t.note, t.notes, t.date, t.user, t.userName, t.sumberDanaName, t.sumberDanaId, t.sourceFund, cat.label, cat.icon, t.type
@@ -1440,10 +1441,11 @@ export default function App() {
     : visibleExpense > visibleIncome
       ? `Pengeluaran terlihat lebih besar dari pemasukan pada hasil filter ini. ${topExpenseCategory ? `${topExpenseCategory.label} mengambil ${topExpenseShare}% dari expense tampil.` : "Cek kategori terbesar sebelum menambah transaksi baru."}`
       : "Arus kas hasil filter masih positif atau seimbang. Gunakan drilldown kategori untuk membaca pola transaksi.";
+  const transactionScopeLabel = canViewAllTransactionsNow && filterUser === "semua" ? "Family/Semua" : (filterUser || currentUser);
   const activeTransactionFilterCount = [normalizedTxSearch, txTypeFilter !== "all", txCategoryFilter !== "all", txSortMode !== "newest"].filter(Boolean).length;
   const hasTransactionFilters = activeTransactionFilterCount > 0;
   const transactionScopeNote = filteredPeriodTxns.length === 0
-    ? `Periode ${rangeLabel} belum punya transaksi untuk scope ${selectedScopeLabel}.`
+    ? `Periode ${rangeLabel} belum punya transaksi untuk scope ${transactionScopeLabel}.`
     : hasTransactionFilters
       ? `${activeTransactionFilterCount} filter aktif dari ${filteredPeriodTxns.length} transaksi periode.`
       : `Menampilkan semua transaksi periode ${rangeLabel}.`;
@@ -3527,7 +3529,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.5f hotfix 1. Transaction Category Drilldown stabil: runtime counter expense diperbaiki dan insight kategori tetap aktif.
+            FinPlan v1.1.0 phase 6.7.5f hotfix 2. Transaction Category Drilldown stabil: scope kosong dan filter uncategorized diperbaiki.
           </div>
         </div>
       </div>
