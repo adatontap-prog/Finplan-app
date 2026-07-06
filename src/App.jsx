@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 9";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5c Hotfix 10";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3317,7 +3317,7 @@ export default function App() {
     if (tx?.refType === "loan_payment" || note.includes("bunga/biaya pinjaman") || note.includes("pinjaman") || note.includes("gadai")) {
       return { id: "pinjaman", label: "Pinjaman / Loan", icon: "🏦", type: "expense" };
     }
-    return CATEGORIES.find(c => c.id === categoryId) || { label: categoryId || "Tanpa kategori", icon: "🧾" };
+    return CATEGORIES.find(c => c.id === categoryId) || { id: categoryId || "uncategorized", label: categoryId || "Tanpa Kategori", icon: "🧾" };
   }
 
   function getTypeInfo(type) {
@@ -3452,7 +3452,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 9. Family Log di Transaksi sekarang bisa diklik per user dan membuka detail log transaksi per user pada periode aktif.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5c Hotfix 10. Family Log Detail dipoles: summary income/expense/net flow, empty state, fallback data kosong, dan alur back Transaksi → Detail User → Detail Transaksi lebih aman.
           </div>
         </div>
       </div>
@@ -4858,7 +4858,7 @@ export default function App() {
     const cat = getCategoryInfo(tx.category, tx);
     const typeInfo = getTypeInfo(tx.type);
     return (
-      <div onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99999, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+      <div onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100001, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
         <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "82vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
             <div>
@@ -4868,12 +4868,12 @@ export default function App() {
             <button onClick={() => setSelectedTransaction(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
           </div>
           <div style={{ marginTop: "18px", display: "grid", gap: "10px" }}>
-            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Kategori</div><div style={{ fontSize: "15px", fontWeight: 800 }}>{cat.icon} {cat.label}</div></div>
+            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Kategori</div><div style={{ fontSize: "15px", fontWeight: 800 }}>{cat.icon || "🧾"} {cat.label || "Tanpa Kategori"}</div></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Tanggal</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.date || "-"}</div></div>
-              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>User</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.user || "-"}</div></div>
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Tanggal</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal"}</div></div>
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>User</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.user || tx.userName || "Tanpa User"}</div></div>
             </div>
-            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || tx.sumberDanaId || "Belum tercatat"}</div></div>
+            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || tx.sumberDanaId || tx.sourceFund || "Tanpa Sumber Dana"}</div></div>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || "Tidak ada catatan"}</div></div>
             {canDeleteTransaction(tx) ? (
               <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini? Data masuk Recycle Bin dan bisa direstore."); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi · Recycle Bin</button>
@@ -5190,56 +5190,69 @@ export default function App() {
         })()}
 
         {selectedFamilyLogUser && (() => {
-          const member = activeFamilyMembers.find(m => m.name === selectedFamilyLogUser) || { name: selectedFamilyLogUser, avatar: "👤" };
-          const rows = familyLogPeriodTxns.filter(t => t.user === selectedFamilyLogUser).sort((a,b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
-          const income = rows.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
-          const expense = rows.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
+          const member = activeFamilyMembers.find(m => m.name === selectedFamilyLogUser) || { name: selectedFamilyLogUser || "Tanpa User", avatar: "👤" };
+          const rows = familyLogPeriodTxns.filter(t => (t.user || t.userName || "Tanpa User") === selectedFamilyLogUser).sort((a,b) => String(b.date || b.createdAt || "").localeCompare(String(a.date || a.createdAt || "")));
+          const income = rows.filter(t => t.type === "income").reduce((s,t) => s + Number(t.amount || 0), 0);
+          const expense = rows.filter(t => t.type === "expense").reduce((s,t) => s + Number(t.amount || 0), 0);
+          const netFlow = income - expense;
           return (
             <div onClick={() => setSelectedFamilyLogUser(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100000, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
-              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "90vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "18px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
+              <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "460px", maxHeight: "90vh", overflowY: "auto", overflowX: "hidden", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "18px", boxSizing: "border-box", color: "#e8e8f0", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "flex-start", marginBottom: "14px" }}>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: "11px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Family Log Detail</div>
-                    <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginTop: "4px" }}>{member.avatar || "👤"} {member.name}</div>
+                    <div style={{ fontSize: "22px", color: "#fff", fontWeight: 900, marginTop: "4px", overflowWrap: "anywhere" }}>{member.avatar || "👤"} {member.name || "Tanpa User"}</div>
                     <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px" }}>{rangeLabel} · {rows.length} transaksi</div>
                   </div>
-                  <button onClick={() => setSelectedFamilyLogUser(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer" }}>×</button>
+                  <button onClick={() => setSelectedFamilyLogUser(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
                 </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
-                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.18)" }}>
-                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Pemasukan</div>
-                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#86efac" }}>+{formatRupiah(income)}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px", marginBottom: "12px" }}>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.18)", minWidth: 0 }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Total Income Periode</div>
+                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#86efac", overflowWrap: "anywhere" }}>+{formatRupiah(income)}</div>
                   </div>
-                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.18)" }}>
-                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Pengeluaran</div>
-                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#fca5a5" }}>-{formatRupiah(expense)}</div>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.18)", minWidth: 0 }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Total Expense Periode</div>
+                    <div style={{ fontSize: "15px", fontWeight: 900, color: "#fca5a5", overflowWrap: "anywhere" }}>-{formatRupiah(expense)}</div>
+                  </div>
+                  <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.18)", minWidth: 0 }}>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Net Flow Periode</div>
+                    <div style={{ fontSize: "15px", fontWeight: 900, color: netFlow >= 0 ? "#86efac" : "#fca5a5", overflowWrap: "anywhere" }}>{netFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(netFlow))}</div>
                   </div>
                 </div>
 
                 {rows.length === 0 ? (
-                  <div style={{ padding: "18px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", color: "#94a3b8", fontSize: "12px", textAlign: "center" }}>Belum ada transaksi untuk user ini pada periode {rangeLabel}.</div>
+                  <div style={{ padding: "20px", borderRadius: "18px", background: "rgba(255,255,255,0.04)", border: "1px dashed rgba(255,255,255,0.14)", color: "#94a3b8", fontSize: "12px", textAlign: "center", lineHeight: 1.6 }}>
+                    <div style={{ fontSize: "24px", marginBottom: "6px" }}>🧾</div>
+                    Belum ada transaksi untuk user ini pada periode {rangeLabel}. Family Log akan terisi otomatis setelah transaksi dibuat.
+                  </div>
                 ) : (
                   <div style={{ display: "grid", gap: "8px" }}>
                     {rows.map(tx => {
                       const cat = getCategoryInfo(tx.category, tx);
                       const sign = tx.type === "income" ? "+" : "-";
                       const color = tx.type === "income" ? "#86efac" : "#fca5a5";
+                      const txDate = tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal";
+                      const txSource = tx.sumberDanaName || tx.sumberDanaId || tx.sourceFund || "Tanpa Sumber Dana";
+                      const txNote = tx.note || tx.notes || "Tidak ada catatan";
                       return (
-                        <button key={tx.id} onClick={() => { setSelectedFamilyLogUser(null); setSelectedTransaction(tx); }} style={{ width: "100%", textAlign: "left", padding: "11px", borderRadius: "14px", background: "rgba(15,23,42,0.52)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer" }}>
+                        <button key={tx.id || `${txDate}-${tx.amount}-${txNote}`} onClick={() => setSelectedTransaction(tx)} style={{ width: "100%", textAlign: "left", padding: "12px", borderRadius: "14px", background: "rgba(15,23,42,0.52)", border: "1px solid rgba(255,255,255,0.06)", cursor: "pointer", boxSizing: "border-box" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
                             <div style={{ minWidth: 0 }}>
-                              <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>{cat.icon} {cat.label}</div>
-                              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px" }}>{tx.date || String(tx.createdAt || "").slice(0,10)} · {tx.sumberDanaName || "Belum tercatat"}</div>
-                              {tx.note && <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.35 }}>{tx.note}</div>}
+                              <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{cat.icon || "🧾"} {cat.label || "Tanpa Kategori"}</div>
+                              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px", overflowWrap: "anywhere" }}>{txDate} · {txSource}</div>
+                              <div style={{ fontSize: "10px", color: tx.note || tx.notes ? "#94a3b8" : "#64748b", marginTop: "4px", lineHeight: 1.35, overflowWrap: "anywhere" }}>{txNote}</div>
                             </div>
-                            <div style={{ flexShrink: 0, textAlign: "right", fontSize: "12px", color, fontWeight: 900 }}>{sign}{formatRupiah(tx.amount || 0)}</div>
+                            <div style={{ flexShrink: 0, textAlign: "right", fontSize: "12px", color, fontWeight: 900, minWidth: "84px" }}>{sign}{formatRupiah(tx.amount || 0)}</div>
                           </div>
                         </button>
                       );
                     })}
                   </div>
                 )}
+
+                <button onClick={() => setSelectedFamilyLogUser(null)} style={{ width: "100%", marginTop: "12px", padding: "12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>← Kembali ke Transaksi</button>
               </div>
             </div>
           );
@@ -5377,19 +5390,20 @@ export default function App() {
                 </div>
                 <div style={{ display: "grid", gap: "8px" }}>
                   {activeFamilyMembers.map(member => {
-                    const txns = familyLogPeriodTxns.filter(t => t.user === member.name);
-                    const income = txns.filter(t => t.type === "income").reduce((s,t) => s + (t.amount || 0), 0);
-                    const expense = txns.filter(t => t.type === "expense").reduce((s,t) => s + (t.amount || 0), 0);
+                    const txns = familyLogPeriodTxns.filter(t => (t.user || t.userName || "Tanpa User") === member.name);
+                    const income = txns.filter(t => t.type === "income").reduce((s,t) => s + Number(t.amount || 0), 0);
+                    const expense = txns.filter(t => t.type === "expense").reduce((s,t) => s + Number(t.amount || 0), 0);
+                    const netFlow = income - expense;
                     return (
-                      <button key={member.id || member.name} onClick={() => setSelectedFamilyLogUser(member.name)} style={{ width: "100%", display: "grid", gridTemplateColumns: "1fr auto", gap: "8px", alignItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.46)", border: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", textAlign: "left" }}>
+                      <button key={member.id || member.name} onClick={() => setSelectedFamilyLogUser(member.name)} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "10px", borderRadius: "14px", background: "rgba(15,23,42,0.46)", border: "1px solid rgba(255,255,255,0.05)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff" }}>{member.avatar || "👤"} {member.name}</div>
+                          <div style={{ fontSize: "12px", fontWeight: 900, color: "#fff", overflowWrap: "anywhere" }}>{member.avatar || "👤"} {member.name || "Tanpa User"}</div>
                           <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{txns.length} transaksi periode ini · klik untuk detail</div>
                         </div>
                         <div style={{ textAlign: "right", flexShrink: 0 }}>
                           <div style={{ fontSize: "11px", color: "#86efac", fontWeight: 900 }}>+{formatRupiah(income)}</div>
                           <div style={{ fontSize: "11px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(expense)}</div>
-                          <div style={{ fontSize: "10px", color: "#64748b", marginTop: "3px", fontWeight: 900 }}>Lihat →</div>
+                          <div style={{ fontSize: "10px", color: netFlow >= 0 ? "#86efac" : "#fca5a5", marginTop: "3px", fontWeight: 900 }}>Net {netFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(netFlow))} →</div>
                         </div>
                       </button>
                     );
