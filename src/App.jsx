@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5d";
+const APP_VERSION = "FinPlan v1.1.0 Family Edition · Phase 6.7.5e";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1381,7 +1381,7 @@ export default function App() {
   const filteredPeriodTxns = userTxns.filter(isTxnInSelectedRange);
   const familyLogPeriodTxns = (canViewAllTransactionsNow ? transactions : userTxns).filter(isTxnInSelectedRange);
   const filteredMonthTxns = filteredPeriodTxns; // legacy alias for existing summary code
-  const baseDisplayTxns = filteredPeriodTxns.length > 0 ? filteredPeriodTxns : userTxns.slice(0, 50);
+  const baseDisplayTxns = filteredPeriodTxns; // Phase 6.7.5e: respect selected period; do not fallback to other periods
   const normalizedTxSearch = txSearch.trim().toLowerCase();
   const txCategoryOptions = CATEGORIES.filter(c => txTypeFilter === "all" || c.type === txTypeFilter);
   const displayTxns = baseDisplayTxns
@@ -1417,10 +1417,31 @@ export default function App() {
   const topExpenseCategory = topExpenseEntry ? getCategoryInfo(topExpenseEntry[0]) : null;
   const biggestVisibleExpense = displayTxns.filter(t => t.type === "expense").sort((a,b) => Number(b.amount || 0) - Number(a.amount || 0))[0] || null;
   const transactionInsightText = displayTxns.length === 0
-    ? "Tidak ada transaksi yang cocok dengan filter aktif."
+    ? (filteredPeriodTxns.length === 0 ? "Tidak ada transaksi pada periode ini." : "Tidak ada transaksi yang cocok dengan filter aktif.")
     : visibleExpense > visibleIncome
       ? "Pengeluaran terlihat lebih besar dari pemasukan pada hasil filter ini. Cek kategori terbesar sebelum menambah transaksi baru."
       : "Arus kas hasil filter masih positif atau seimbang. Gunakan sorting untuk cek transaksi terbesar.";
+  const activeTransactionFilterCount = [normalizedTxSearch, txTypeFilter !== "all", txCategoryFilter !== "all", txSortMode !== "newest"].filter(Boolean).length;
+  const hasTransactionFilters = activeTransactionFilterCount > 0;
+  const visibleIncomeCount = displayTxns.filter(t => t.type === "income").length;
+  const visibleExpenseCount = displayTxns.filter(t => t.type === "expense").length;
+  const transactionScopeNote = filteredPeriodTxns.length === 0
+    ? `Periode ${rangeLabel} belum punya transaksi untuk scope ${selectedScopeLabel}.`
+    : hasTransactionFilters
+      ? `${activeTransactionFilterCount} filter aktif dari ${filteredPeriodTxns.length} transaksi periode.`
+      : `Menampilkan semua transaksi periode ${rangeLabel}.`;
+  function resetTransactionFilters() {
+    setTxSearch("");
+    setTxTypeFilter("all");
+    setTxCategoryFilter("all");
+    setTxSortMode("newest");
+  }
+  function setTransactionQuickPeriod(mode) {
+    const d = new Date();
+    setSelectedDate(toLocalDateInput(d));
+    setFilterMonth(d.getMonth());
+    setDateRangeMode(mode);
+  }
   const usersWithData = [...new Set(transactions.map(t => t.user || t.userName || "Tanpa User"))];
   const barMax = Math.max(...Object.values(expenseByCategory), 1);
 
@@ -3489,7 +3510,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 Family Edition Phase 6.7.5d. Transaction Intelligence Cleanup: search, filter tipe/kategori, sorting transaksi, insight periode, dan list transaksi yang lebih aman untuk mobile.
+            FinPlan v1.1.0 Family Edition Phase 6.7.5e. Transaction Period Integrity: periode transaksi lebih konsisten, quick period chip, reset filter aman, dan back detail transaksi lebih stack-aware.
           </div>
         </div>
       </div>
@@ -5054,8 +5075,10 @@ export default function App() {
         <SettingsCenterModal />
         <ActivityLogModal />
         {(() => {
-          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedCategory || selectedFamilyLogUser || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
+          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedTransaction || selectedCategory || selectedFamilyLogUser || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
           const closeCurrentPopup = () => {
+            if (selectedTransaction) { setSelectedTransaction(null); return; }
+            if (selectedFamilyLogUser) { setSelectedFamilyLogUser(null); return; }
             setShowSettingsCenter(false);
             setShowActivityLogModal(false);
             setShowForm(false);
@@ -5424,6 +5447,13 @@ export default function App() {
 
             <div style={{ padding: "14px", marginBottom: "12px", borderRadius: "18px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "9px" }}>Transaction Filter</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "8px", marginBottom: "8px" }}>
+                {[{ id: "day", label: "Hari ini" }, { id: "week", label: "7 hari" }, { id: "month", label: "Bulan ini" }].map(opt => {
+                  const active = dateRangeMode === opt.id;
+                  return <button key={opt.id} onClick={() => setTransactionQuickPeriod(opt.id)} style={{ padding: "9px 7px", borderRadius: "13px", border: "1px solid " + (active ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.08)"), background: active ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.05)", color: active ? "#c7d2fe" : "#cbd5e1", fontSize: "11px", fontWeight: 900, cursor: "pointer" }}>{opt.label}</button>;
+                })}
+              </div>
+              <div style={{ marginBottom: "8px", padding: "9px 10px", borderRadius: "13px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(255,255,255,0.05)", color: "#94a3b8", fontSize: "10px", lineHeight: 1.45 }}>{transactionScopeNote}</div>
               <input value={txSearch} onChange={(e) => setTxSearch(e.target.value)} placeholder="Cari catatan, user, kategori, sumber dana..." style={{ ...inputStyle, width: "100%", boxSizing: "border-box", marginBottom: "8px" }} />
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(128px, 1fr))", gap: "8px" }}>
                 <select value={txTypeFilter} onChange={(e) => { setTxTypeFilter(e.target.value); setTxCategoryFilter("all"); }} style={{ ...inputStyle, width: "100%", boxSizing: "border-box" }}>
@@ -5442,14 +5472,15 @@ export default function App() {
                   <option value="smallest">Nominal terkecil</option>
                 </select>
               </div>
-              {(txSearch || txTypeFilter !== "all" || txCategoryFilter !== "all" || txSortMode !== "newest") && (
-                <button onClick={() => { setTxSearch(""); setTxTypeFilter("all"); setTxCategoryFilter("all"); setTxSortMode("newest"); }} style={{ width: "100%", marginTop: "8px", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Reset Filter</button>
+              {hasTransactionFilters && (
+                <button onClick={resetTransactionFilters} style={{ width: "100%", marginTop: "8px", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Reset Filter</button>
               )}
               <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.55)", border: "1px solid rgba(99,102,241,0.12)" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Hasil Filter</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{displayTxns.length} transaksi</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Net Filter</div><div style={{ fontSize: "13px", color: visibleNetFlow >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{visibleNetFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(visibleNetFlow))}</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Top Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{topExpenseEntry ? `${topExpenseCategory?.icon || "🧾"} ${topExpenseCategory?.label || "Tanpa Kategori"}` : "Belum ada"}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Komposisi</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>📥 {visibleIncomeCount} · 📤 {visibleExpenseCount}</div></div>
                 </div>
                 <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}.` : ""}</div>
               </div>
@@ -5504,7 +5535,7 @@ export default function App() {
             )}
 
             {(loading && transactions.length === 0) ? <div style={{ textAlign: "center", padding: "40px 0", color: "#94a3b8" }}>Memuat data...</div>
-            : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8", borderRadius: "18px", background: "rgba(255,255,255,0.035)", border: "1px dashed rgba(255,255,255,0.12)" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px", color: "#cbd5e1", fontWeight: 800 }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#64748b" }}>Coba ubah periode, user, search, tipe, atau kategori.</div></div>
+            : displayTxns.length === 0 ? <div style={{ textAlign: "center", padding: "40px 16px", color: "#94a3b8", borderRadius: "18px", background: "rgba(255,255,255,0.035)", border: "1px dashed rgba(255,255,255,0.12)" }}><div style={{ fontSize: "40px", marginBottom: "12px" }}>🧾</div><div style={{ fontSize: "14px", color: "#cbd5e1", fontWeight: 800 }}>{dataError || (transactions.length === 0 ? "Data Firestore belum terbaca" : "Tidak ada transaksi untuk filter ini")}</div><div style={{ fontSize: "11px", marginTop: "8px", color: "#64748b" }}>Coba ubah periode, user, search, tipe, atau kategori. Data dari periode lain tidak ditampilkan agar riwayat tetap akurat.</div></div>
             : displayTxns.map(t => {
               const cat = getCategoryInfo(t.category, t);
               const txDate = t.date || String(t.createdAt || "").slice(0,10) || "Tanpa Tanggal";
