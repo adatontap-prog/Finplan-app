@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5g";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5h";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -625,6 +625,7 @@ export default function App() {
   const [txTypeFilter, setTxTypeFilter] = useState("all");
   const [txCategoryFilter, setTxCategoryFilter] = useState("all");
   const [txSortMode, setTxSortMode] = useState("newest");
+  const [txIntelligenceCompact, setTxIntelligenceCompact] = useState(true);
   const [loading, setLoading] = useState(true);
   const [dataError, setDataError] = useState("");
   const [sending, setSending] = useState(false);
@@ -1456,6 +1457,11 @@ export default function App() {
     : transactionReviewSignals.length === 0
       ? "Data transaksi tampil sudah rapi: kategori, sumber dana, dan catatan utama aman."
       : "Review signal membantu menemukan transaksi yang perlu dirapikan sebelum analisis keuangan lanjut.";
+  const transactionCompactText = displayTxns.length === 0
+    ? (filteredPeriodTxns.length === 0 ? "Periode ini masih kosong. Tambah transaksi dulu sebelum membaca intelligence." : "Tidak ada transaksi yang cocok dengan filter aktif.")
+    : transactionQualityScore >= 80
+      ? "Data periode aktif cukup rapi. Buka detail hanya jika ingin cek kategori dan signal lebih dalam."
+      : "Ada signal yang perlu dirapikan. Buka detail untuk review kategori, sumber dana, catatan, dan expense besar.";
   const transactionInsightText = displayTxns.length === 0
     ? (filteredPeriodTxns.length === 0 ? "Tidak ada transaksi pada periode ini." : "Tidak ada transaksi yang cocok dengan filter aktif.")
     : visibleExpense > visibleIncome
@@ -3549,7 +3555,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.5g. Transaction Quality Review aktif: kategori, sumber dana, catatan, dan outlier expense dicek lebih jelas.
+            FinPlan v1.1.0 phase 6.7.5h. Transaction Intelligence dibuat lebih ringkas dengan compact mode agar halaman Transaksi tetap clean.
           </div>
         </div>
       </div>
@@ -5515,68 +5521,80 @@ export default function App() {
                 <button onClick={resetTransactionFilters} style={{ width: "100%", marginTop: "8px", padding: "10px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "12px", fontWeight: 900, cursor: "pointer" }}>Reset Filter</button>
               )}
               <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.55)", border: "1px solid rgba(99,102,241,0.12)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "10px" }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaction Intelligence</div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "3px" }}>Compact mode menjaga halaman Transaksi tetap clean.</div>
+                  </div>
+                  <button onClick={() => setTxIntelligenceCompact(v => !v)} style={{ padding: "7px 10px", borderRadius: "12px", border: "1px solid rgba(255,255,255,0.08)", background: txIntelligenceCompact ? "rgba(99,102,241,0.16)" : "rgba(255,255,255,0.05)", color: txIntelligenceCompact ? "#c7d2fe" : "#cbd5e1", fontSize: "10px", fontWeight: 900, cursor: "pointer", flexShrink: 0 }}>
+                    {txIntelligenceCompact ? "Detail" : "Ringkas"}
+                  </button>
+                </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: "8px" }}>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Hasil Filter</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{displayTxns.length} transaksi</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Net Filter</div><div style={{ fontSize: "13px", color: visibleNetFlow >= 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{visibleNetFlow >= 0 ? "+" : "-"}{formatRupiah(Math.abs(visibleNetFlow))}</div></div>
+                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Quality Score</div><div style={{ fontSize: "13px", color: transactionQualityTone, fontWeight: 900 }}>{transactionQualityScore}/100</div></div>
                   <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Top Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{topExpenseEntry ? `${topExpenseCategory?.icon || "🧾"} ${topExpenseCategory?.label || "Tanpa Kategori"} · ${topExpenseShare}%` : "Belum ada"}</div></div>
-                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Komposisi</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>📥 {visibleIncomeCount} · 📤 {visibleExpenseCount}</div></div>
-                  <div><div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800 }}>Avg Expense</div><div style={{ fontSize: "13px", color: "#fff", fontWeight: 900 }}>{visibleExpenseCount ? formatRupiah(averageVisibleExpense) : "Belum ada"}</div></div>
                 </div>
-                <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{transactionInsightText}{biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}${biggestExpenseShare ? ` (${biggestExpenseShare}% dari expense tampil)` : ""}.` : ""}</div>
-              </div>
+                <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginTop: "8px" }}>{txIntelligenceCompact ? transactionCompactText : transactionInsightText}{!txIntelligenceCompact && biggestVisibleExpense ? ` Transaksi expense terbesar: ${formatRupiah(biggestVisibleExpense.amount || 0)}${biggestExpenseShare ? ` (${biggestExpenseShare}% dari expense tampil)` : ""}.` : ""}</div>
 
-              <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "center" }}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Transaction Quality Review</div>
-                    <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "4px" }}>{transactionQualityText}</div>
-                  </div>
-                  <div style={{ textAlign: "right", flexShrink: 0 }}>
-                    <div style={{ fontSize: "22px", color: transactionQualityTone, fontWeight: 900 }}>{transactionQualityScore}</div>
-                    <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>score</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
-                  {(transactionReviewSignals.length ? transactionReviewSignals : [{ label: "tidak ada signal besar", tone: "green" }]).map(signal => {
-                    const toneMap = {
-                      green: { color: "#86efac", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.20)" },
-                      amber: { color: "#fbbf24", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.20)" },
-                      red: { color: "#fca5a5", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.20)" },
-                      muted: { color: "#cbd5e1", background: "rgba(148,163,184,0.08)", border: "1px solid rgba(148,163,184,0.14)" },
-                    };
-                    const tone = toneMap[signal.tone] || toneMap.muted;
-                    return <span key={signal.label} style={{ padding: "6px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 900, ...tone }}>{signal.label}</span>;
-                  })}
-                </div>
-              </div>
-
-              {periodCategoryDrilldown.length > 0 && (
-                <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                    <div>
-                      <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Category Drilldown</div>
-                      <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>Klik kategori untuk filter cepat periode aktif.</div>
+                {!txIntelligenceCompact && (
+                  <>
+                    <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(15,23,42,0.48)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "10px", alignItems: "center" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Quality Review</div>
+                          <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45, marginTop: "4px" }}>{transactionQualityText}</div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: "22px", color: transactionQualityTone, fontWeight: 900 }}>{transactionQualityScore}</div>
+                          <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>score</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginTop: "10px" }}>
+                        {(transactionReviewSignals.length ? transactionReviewSignals : [{ label: "tidak ada signal besar", tone: "green" }]).map(signal => {
+                          const toneMap = {
+                            green: { color: "#86efac", background: "rgba(16,185,129,0.10)", border: "1px solid rgba(16,185,129,0.20)" },
+                            amber: { color: "#fbbf24", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.20)" },
+                            red: { color: "#fca5a5", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.20)" },
+                            muted: { color: "#cbd5e1", background: "rgba(148,163,184,0.08)", border: "1px solid rgba(148,163,184,0.14)" },
+                          };
+                          const tone = toneMap[signal.tone] || toneMap.muted;
+                          return <span key={signal.label} style={{ padding: "6px 8px", borderRadius: "999px", fontSize: "10px", fontWeight: 900, ...tone }}>{signal.label}</span>;
+                        })}
+                      </div>
                     </div>
-                    <button onClick={() => { setTxSearch(""); setTxTypeFilter("all"); setTxCategoryFilter("all"); setTxSortMode("newest"); }} style={{ padding: "7px 9px", borderRadius: "11px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "10px", fontWeight: 900, cursor: "pointer", flexShrink: 0 }}>Clear</button>
-                  </div>
-                  <div style={{ display: "grid", gap: "7px" }}>
-                    {periodCategoryDrilldown.map(stat => {
-                      const isActive = txCategoryFilter === stat.id;
-                      const value = stat.expense > 0 ? stat.expense : stat.income;
-                      const labelTone = stat.expense > 0 ? "#fca5a5" : "#86efac";
-                      return (
-                        <button key={stat.id} onClick={() => { setTxSearch(""); setTxTypeFilter(stat.expense > 0 ? "expense" : "income"); setTxCategoryFilter(stat.id); setTxSortMode("biggest"); }} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid " + (isActive ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.06)"), background: isActive ? "rgba(99,102,241,0.16)" : "rgba(15,23,42,0.42)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.icon} {stat.label}</div>
-                            <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{stat.count} transaksi periode ini</div>
+
+                    {periodCategoryDrilldown.length > 0 && (
+                      <div style={{ marginTop: "10px", padding: "12px", borderRadius: "15px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+                          <div>
+                            <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Category Drilldown</div>
+                            <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>Klik kategori untuk filter cepat periode aktif.</div>
                           </div>
-                          <div style={{ textAlign: "right", color: labelTone, fontSize: "11px", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.expense > 0 ? "-" : "+"}{formatRupiah(value)}</div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+                          <button onClick={() => { setTxSearch(""); setTxTypeFilter("all"); setTxCategoryFilter("all"); setTxSortMode("newest"); }} style={{ padding: "7px 9px", borderRadius: "11px", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.05)", color: "#cbd5e1", fontSize: "10px", fontWeight: 900, cursor: "pointer", flexShrink: 0 }}>Clear</button>
+                        </div>
+                        <div style={{ display: "grid", gap: "7px" }}>
+                          {periodCategoryDrilldown.map(stat => {
+                            const isActive = txCategoryFilter === stat.id;
+                            const value = stat.expense > 0 ? stat.expense : stat.income;
+                            const labelTone = stat.expense > 0 ? "#fca5a5" : "#86efac";
+                            return (
+                              <button key={stat.id} onClick={() => { setTxSearch(""); setTxTypeFilter(stat.expense > 0 ? "expense" : "income"); setTxCategoryFilter(stat.id); setTxSortMode("biggest"); }} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid " + (isActive ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.06)"), background: isActive ? "rgba(99,102,241,0.16)" : "rgba(15,23,42,0.42)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.icon} {stat.label}</div>
+                                  <div style={{ fontSize: "10px", color: "#64748b", marginTop: "2px" }}>{stat.count} transaksi periode ini</div>
+                                </div>
+                                <div style={{ textAlign: "right", color: labelTone, fontSize: "11px", fontWeight: 900, overflowWrap: "anywhere" }}>{stat.expense > 0 ? "-" : "+"}{formatRupiah(value)}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
             {canViewAllTransactions && (
