@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.6";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.6 hotfix 4";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -78,11 +78,30 @@ const CATEGORIES = [
   { id: "transport", label: "Transport", icon: "\uD83D\uDE97", type: "expense" },
   { id: "belanja", label: "Belanja", icon: "\uD83D\uDECD", type: "expense" },
   { id: "tagihan", label: "Tagihan", icon: "\uD83D\uDCC4", type: "expense" },
+  { id: "pendidikan_anak", label: "Pendidikan Anak", icon: "\uD83C\uDF93", type: "expense" },
+  { id: "kesehatan_anak", label: "Kesehatan Anak", icon: "\uD83C\uDFE5", type: "expense" },
+  { id: "kebutuhan_anak", label: "Kebutuhan Anak", icon: "\uD83E\uDDF8", type: "expense" },
+  { id: "hiburan_anak", label: "Hiburan Anak", icon: "\uD83C\uDFA1", type: "expense" },
+  { id: "tabungan_anak", label: "Tabungan Anak", icon: "\uD83D\uDCB0", type: "expense" },
+  { id: "anak_lainnya", label: "Lainnya Anak", icon: "\uD83D\uDC76", type: "expense" },
   { id: "pinjaman", label: "Pinjaman / Loan", icon: "\uD83C\uDFE6", type: "expense" },
   { id: "hiburan", label: "Hiburan", icon: "\uD83C\uDFAC", type: "expense" },
   { id: "kesehatan", label: "Kesehatan", icon: "\uD83C\uDFE5", type: "expense" },
   { id: "tabungan", label: "Tabungan", icon: "\uD83C\uDFE6", type: "expense" },
   { id: "lainnya_ex", label: "Lainnya", icon: "\u2796", type: "expense" },
+];
+
+const CHILD_EXPENSE_CATEGORY_IDS = ["pendidikan_anak", "kesehatan_anak", "kebutuhan_anak", "hiburan_anak", "tabungan_anak", "anak_lainnya"];
+
+const CATEGORY_INPUT_GROUPS = [
+  { id: "daily", label: "Harian", hint: "makan, transport, belanja", categoryIds: ["makan", "transport", "belanja"] },
+  { id: "child", label: "Anak", hint: "pendidikan, kesehatan, kebutuhan", categoryIds: CHILD_EXPENSE_CATEGORY_IDS },
+  { id: "commitment", label: "Komitmen", hint: "tagihan, pinjaman, tabungan", categoryIds: ["tagihan", "pinjaman", "tabungan"] },
+  { id: "lifestyle", label: "Lifestyle & Lainnya", hint: "hiburan, kesehatan umum, lainnya", categoryIds: ["hiburan", "kesehatan", "lainnya_ex"] },
+];
+
+const INCOME_INPUT_GROUPS = [
+  { id: "income", label: "Income", hint: "sumber pemasukan", categoryIds: ["gaji", "freelance", "investasi", "lainnya_in"] },
 ];
 
 const MONTHS = ["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agt","Sep","Okt","Nov","Des"];
@@ -573,6 +592,19 @@ export default function App() {
   const [showGadaiForm, setShowGadaiForm] = useState(false);
   const [showGadaiCalc, setShowGadaiCalc] = useState(false);
   const [selectedTransaction, setSelectedTransaction] = useState(null);
+  const [transactionEditMode, setTransactionEditMode] = useState(false);
+  const [transactionEditStatus, setTransactionEditStatus] = useState("");
+  const [transactionGoalLinkForm, setTransactionGoalLinkForm] = useState({ goalId: "", status: "" });
+  const [transactionEditForm, setTransactionEditForm] = useState({
+    type: "expense",
+    category: "makan",
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+    user: "",
+    sumberDanaId: "",
+    note: "",
+    revisionReason: "",
+  });
   const [selectedInvestment, setSelectedInvestment] = useState(null);
   const [investmentEditMode, setInvestmentEditMode] = useState(false);
   const [investmentEditForm, setInvestmentEditForm] = useState({ assetType: "lm", qty: "", costBasis: "", ticker: "", note: "", manualPrice: "", buyDate: "" });
@@ -610,7 +642,7 @@ export default function App() {
   const [assetSDId, setAssetSDId] = useState("");
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("finplan_user") || "");
-  const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] });
+  const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0], user: currentUser || "" });
   const [invForm, setInvForm] = useState({ type: "usd", amount: "", buyPrice: "", note: "", buyDate: new Date().toISOString().split("T")[0] });
   const [savingsInput, setSavingsInput] = useState("");
   const [savingsInputDisplay, setSavingsInputDisplay] = useState("");
@@ -711,6 +743,11 @@ export default function App() {
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (activeTab === "savings" && !marketPrices) loadPrices(); }, [activeTab]);
   useEffect(() => { if (currentUser && !walletFilterUser) setWalletFilterUser(currentUser); }, [currentUser]);
+  useEffect(() => {
+    setTransactionEditMode(false);
+    setTransactionEditStatus("");
+    setTransactionGoalLinkForm({ goalId: "", status: "" });
+  }, [selectedTransaction?.id]);
 
   // ===== FAMILY EDITION V1.1 PHASE 2 =====
   // Members are stored in Firebase, but the default family list stays as a safe fallback.
@@ -2057,6 +2094,114 @@ export default function App() {
       .sort((a, b) => String(b.createdAt || b.date || "").localeCompare(String(a.createdAt || a.date || "")));
   }
 
+  function getGoalLinkSuggestionsForTransaction(tx) {
+    const beneficiary = String(tx?.user || tx?.userName || "").toLowerCase();
+    const category = String(tx?.category || "").toLowerCase();
+    const note = String(tx?.note || tx?.notes || "").toLowerCase();
+    return (savingsGoals || [])
+      .filter(g => g.status !== "archived")
+      .map(g => {
+        const label = String(g.label || g.id || "").toLowerCase();
+        const goalCategory = String(g.category || "").toLowerCase();
+        let score = 0;
+        if (beneficiary && label.includes(beneficiary)) score += 4;
+        if (beneficiary && goalCategory.includes(beneficiary)) score += 3;
+        if (category.includes("pendidikan") && label.includes("pendidikan")) score += 3;
+        if (category.includes("pendidikan") && (label.includes("sd") || label.includes("sekolah"))) score += 3;
+        if (category.includes("kesehatan") && (label.includes("kesehatan") || label.includes("health"))) score += 2;
+        if (note && label && note.includes(label.slice(0, Math.min(label.length, 8)))) score += 1;
+        return { ...g, _linkScore: score };
+      })
+      .sort((a, b) => Number(b._linkScore || 0) - Number(a._linkScore || 0) || String(a.label || "").localeCompare(String(b.label || "")));
+  }
+
+  async function linkExistingTransactionToGoalUsage(tx) {
+    if (!tx?.id) return;
+    if (!isOwner) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Link transaksi ke Goal hanya untuk Owner." }));
+      return;
+    }
+    if (tx.type !== "expense") {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Hanya transaksi expense yang bisa mengurangi Goal." }));
+      return;
+    }
+    if (tx.goalId || tx.goalUsageId) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "✅ Transaksi ini sudah terhubung ke Goal." }));
+      return;
+    }
+    const goalId = transactionGoalLinkForm.goalId;
+    if (!goalId) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Pilih Goal yang akan dikurangi." }));
+      return;
+    }
+    const goal = savingsGoals.find(g => String(g.id) === String(goalId));
+    if (!goal) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Goal tidak ditemukan." }));
+      return;
+    }
+
+    const amount = Number(tx.amount || 0);
+    const currentCash = Number(savingsData[goalId] || 0);
+    if (!amount || amount <= 0) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Nominal transaksi tidak valid." }));
+      return;
+    }
+    if (currentCash <= 0) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Dana tunai Goal masih Rp 0. Transaksi bisa dicatat sebagai expense, tapi belum ada saldo Goal yang bisa dikurangi." }));
+      return;
+    }
+
+    const usedAmount = Math.min(amount, currentCash);
+    const goalLabel = goal.label || goalId;
+    const confirmText = usedAmount < amount
+      ? "Dana tunai Goal lebih kecil dari transaksi. Kurangi Goal " + goalLabel + " sebesar " + formatRupiah(usedAmount) + " dari transaksi " + formatRupiah(amount) + "? Wallet tidak akan dipotong ulang."
+      : "Hubungkan transaksi " + formatRupiah(amount) + " ke Goal " + goalLabel + " dan kurangi saldo Goal? Wallet tidak akan dipotong ulang karena transaksi sudah tercatat sebagai expense.";
+    const ok = window.confirm(confirmText);
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    setTransactionGoalLinkForm(prev => ({ ...prev, status: "Merekonsiliasi transaksi ke Goal..." }));
+
+    const newGoalCash = { ...savingsData, [goalId]: Math.max(currentCash - usedAmount, 0) };
+    await setDoc(doc(db, "savings", "goals"), newGoalCash);
+    setSavingsData(newGoalCash);
+
+    const usageRef = await addDoc(collection(db, "goalUsage"), {
+      goalId,
+      goalLabel,
+      mode: "cash",
+      amount: usedAmount,
+      originalTransactionAmount: amount,
+      category: tx.category || "linked_transaction",
+      usedFor: tx.note || tx.notes || "Transaksi expense yang direkonsiliasi ke Goal",
+      note: "Linked from existing transaction. Wallet ledger tidak dipotong ulang.",
+      date: tx.date || String(tx.createdAt || "").slice(0, 10) || new Date().toISOString().split("T")[0],
+      sourceTransactionId: tx.id,
+      linkedWithoutWalletMutation: true,
+      createdBy: currentUser,
+      createdAt: now,
+    });
+
+    const updateData = {
+      goalId,
+      goalLabel,
+      goalUsageId: usageRef.id,
+      goalLinkedAt: now,
+      goalLinkedBy: currentUser || "Owner",
+      goalLinkedAmount: usedAmount,
+      goalLinkMode: "existing_expense_reconciliation",
+      updatedAt: now,
+      updatedBy: currentUser || "Owner",
+    };
+    await setDoc(doc(db, "transactions", tx.id), updateData, { merge: true });
+
+    await addActivityLog("transaction_goal_reconciled", "Owner menghubungkan transaksi " + formatRupiah(amount) + " ke Goal " + goalLabel + " dan mengurangi saldo Goal " + formatRupiah(usedAmount) + ".");
+    syncToSheets("transactionGoalReconciled", { id: tx.id, goalId, goalLabel, amount, usedAmount, user: currentUser, createdAt: now });
+
+    setSelectedTransaction({ ...tx, ...updateData });
+    setTransactionGoalLinkForm({ goalId: "", status: "✅ Transaksi sudah dihubungkan ke Goal. Saldo Goal berkurang tanpa memotong wallet ulang." });
+  }
+
   async function useGoalFunds() {
     const goalId = showGoalUsage;
     if (!goalId) return;
@@ -2214,13 +2359,14 @@ export default function App() {
     const amt = parseAmount(form.amount);
     if (!amt || !form.date || !transactionSDId) return;
     const sd = sumberDanaList.find(s => s.id === transactionSDId);
-    const txData = { type: form.type, category: form.category, amount: amt, note: form.note, date: form.date, user: currentUser, sumberDanaId: transactionSDId, sumberDanaName: sd?.name || "", createdAt: new Date().toISOString() };
+    const txUser = form.user || currentUser || "Tanpa User";
+    const txData = { type: form.type, category: form.category, amount: amt, note: form.note, date: form.date, user: txUser, userName: txUser, createdBy: currentUser || txUser, sumberDanaId: transactionSDId, sumberDanaName: sd?.name || "", createdAt: new Date().toISOString() };
     const docRef = await addDoc(collection(db, "transactions"), txData);
     await logLedger(transactionSDId, form.type === "income" ? amt : -amt, (form.type === "income" ? "Pemasukan" : "Pengeluaran") + ": " + (form.note || CATEGORIES.find(c=>c.id===form.category)?.label||""), "transaction", docRef.id);
     // Sync ke Google Sheets
     syncToSheets("addTransaction", { ...txData, id: docRef.id });
     await addActivityLog("transaction_created", (form.type === "income" ? "Tambah pemasukan" : "Tambah pengeluaran") + ": " + formatRupiah(amt));
-    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0] }); setAmountDisplay(""); setTransactionSDId("");
+    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0], user: currentUser || "" }); setAmountDisplay(""); setTransactionSDId("");
   }
 
   async function addInvestment() {
@@ -2444,6 +2590,128 @@ export default function App() {
     syncToSheets("deleteTransaction", { id, softDelete: true });
     return true;
   }
+
+  function startOwnerTransactionRevision(tx) {
+    if (!tx) return;
+    if (!isOwner) {
+      showAccessNotice("Revisi kesalahan input transaksi hanya untuk Owner.");
+      return;
+    }
+    const txType = tx.type === "income" ? "income" : "expense";
+    const fallbackCategory = (txType === "income" ? INCOME_CATS : EXPENSE_CATS)[0]?.id || "";
+    setTransactionEditForm({
+      type: txType,
+      category: tx.category || fallbackCategory,
+      amount: String(tx.amount || ""),
+      date: tx.date || String(tx.createdAt || "").slice(0, 10) || new Date().toISOString().split("T")[0],
+      user: tx.user || tx.userName || currentUser || "",
+      sumberDanaId: tx.sumberDanaId || tx.sourceFundId || "",
+      note: tx.note || tx.notes || "",
+      revisionReason: "",
+    });
+    setTransactionEditStatus("");
+    setTransactionEditMode(true);
+  }
+
+  function changeOwnerTransactionType(nextType) {
+    const safeType = nextType === "income" ? "income" : "expense";
+    const nextCategory = (safeType === "income" ? INCOME_CATS : EXPENSE_CATS)[0]?.id || "";
+    setTransactionEditForm(prev => ({ ...prev, type: safeType, category: nextCategory }));
+  }
+
+  async function saveOwnerTransactionRevision(tx) {
+    if (!tx?.id) return;
+    if (!isOwner) {
+      showAccessNotice("Revisi kesalahan input transaksi hanya untuk Owner.");
+      return;
+    }
+
+    const amount = parseAmount(transactionEditForm.amount);
+    const type = transactionEditForm.type === "income" ? "income" : "expense";
+    const categoryFallback = (type === "income" ? INCOME_CATS : EXPENSE_CATS)[0]?.id || "";
+    const category = transactionEditForm.category || categoryFallback;
+    const date = transactionEditForm.date || new Date().toISOString().split("T")[0];
+    const user = transactionEditForm.user || currentUser || tx.user || tx.userName || "Tanpa User";
+    const sumberDanaId = transactionEditForm.sumberDanaId || tx.sumberDanaId || "";
+    const source = sumberDanaList.find(sd => String(sd.id) === String(sumberDanaId));
+    const note = transactionEditForm.note || "";
+    const revisionReason = transactionEditForm.revisionReason || "Revisi kesalahan input data";
+
+    if (!amount) {
+      setTransactionEditStatus("⚠️ Nominal wajib diisi.");
+      return;
+    }
+    if (!sumberDanaId) {
+      setTransactionEditStatus("⚠️ Sumber dana wajib dipilih agar saldo wallet tetap akurat.");
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const updateData = {
+      type,
+      category,
+      amount,
+      date,
+      user,
+      userName: user,
+      sumberDanaId,
+      sumberDanaName: source?.name || tx.sumberDanaName || tx.sourceFund || "",
+      sourceFundId: sumberDanaId,
+      sourceFund: source?.name || tx.sumberDanaName || tx.sourceFund || "",
+      note,
+      notes: note,
+      updatedAt: now,
+      updatedBy: currentUser || "Owner",
+      ownerRevisedAt: now,
+      ownerRevisedBy: currentUser || "Owner",
+      revisionReason,
+    };
+
+    setTransactionEditStatus("Menyimpan revisi...");
+    await setDoc(doc(db, "transactions", tx.id), updateData, { merge: true });
+
+    const relatedLedger = sumberDanaLedger.filter(l => l.refType === "transaction" && l.refId === tx.id);
+    const signedAmount = type === "income" ? amount : -amount;
+    const categoryInfo = getCategoryInfo(category, { ...tx, ...updateData });
+    const ledgerNote = (type === "income" ? "Pemasukan" : "Pengeluaran") + ": " + (note || categoryInfo?.label || "Revisi transaksi");
+    if (relatedLedger[0]?.id) {
+      await setDoc(doc(db, "sumberDanaLedger", relatedLedger[0].id), {
+        sumberDanaId,
+        amount: signedAmount,
+        note: ledgerNote,
+        refType: "transaction",
+        refId: tx.id,
+        updatedAt: now,
+        updatedBy: currentUser || "Owner",
+        ownerRevised: true,
+      }, { merge: true });
+      for (const extraLedger of relatedLedger.slice(1)) {
+        if (extraLedger?.id) await deleteDoc(doc(db, "sumberDanaLedger", extraLedger.id));
+      }
+    } else {
+      await addDoc(collection(db, "sumberDanaLedger"), {
+        sumberDanaId,
+        amount: signedAmount,
+        note: ledgerNote,
+        refType: "transaction",
+        refId: tx.id,
+        createdAt: now,
+        createdBy: currentUser || "Owner",
+        ownerRevised: true,
+      });
+    }
+
+    await addActivityLog(
+      "transaction_owner_revised",
+      "Owner revisi transaksi " + formatRupiah(tx.amount || 0) + " → " + formatRupiah(amount) + " · " + (tx.user || tx.userName || "-") + " → " + user + " · alasan: " + revisionReason
+    );
+    syncToSheets("updateTransaction", { id: tx.id, ...updateData });
+
+    setSelectedTransaction({ ...tx, ...updateData });
+    setTransactionEditMode(false);
+    setTransactionEditStatus("✅ Revisi transaksi tersimpan. Saldo wallet ikut dikoreksi.");
+  }
+
   async function deleteInvestment(id) {
     if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin menghapus investasi.");
@@ -3435,6 +3703,14 @@ export default function App() {
     return CATEGORIES.find(c => c.id === categoryId) || { id: categoryId || "uncategorized", label: categoryId || "Tanpa Kategori", icon: "🧾" };
   }
 
+  function getInputCategoryGroups(type = "expense") {
+    const groups = type === "income" ? INCOME_INPUT_GROUPS : CATEGORY_INPUT_GROUPS;
+    return groups.map(group => ({
+      ...group,
+      categories: group.categoryIds.map(id => CATEGORIES.find(c => c.id === id)).filter(Boolean),
+    })).filter(group => group.categories.length > 0);
+  }
+
   function getTypeInfo(type) {
     if (type === "income") return { label: "Pemasukan", icon: "📥", color: "#34d399" };
     if (type === "expense") return { label: "Pengeluaran", icon: "📤", color: "#f87171" };
@@ -3784,6 +4060,19 @@ export default function App() {
     if (!showForm) return null;
     const activeFundingSources = sumberDanaList.filter(sd => isSumberDanaActive(sd));
     const selectableFundingSources = myFundingSources.length > 0 ? myFundingSources : activeFundingSources;
+    const transactionUserOptions = [...new Set([currentUser, ...(activeFamilyMembers || []).map(m => m.name), "Anak-anak", "Keluarga", ...USERS].filter(Boolean))];
+    const selectedTransactionUser = form.user || currentUser || transactionUserOptions[0] || "";
+    const selectedCategoryInfo = getCategoryInfo(form.category);
+    const inputCategoryGroups = getInputCategoryGroups(form.type);
+    const isChildExpenseInput = form.type === "expense" && CHILD_EXPENSE_CATEGORY_IDS.includes(form.category);
+    const childInputExamples = {
+      pendidikan_anak: "SPP Aroon Juli 2026 / buku sekolah / seragam",
+      kesehatan_anak: "Dokter Aroon / obat / vaksin / vitamin",
+      kebutuhan_anak: "Susu / popok / baju / perlengkapan anak",
+      hiburan_anak: "Playground / berenang / mainan anak",
+      tabungan_anak: "Setoran tabungan anak / celengan pendidikan",
+      anak_lainnya: "Kebutuhan anak lain yang belum masuk kategori",
+    };
     return (
       <div onClick={() => setShowForm(false)} style={{
         position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99997,
@@ -3809,18 +4098,39 @@ export default function App() {
           </div>
 
           <div style={{ marginBottom: "12px" }}>
-            <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Kategori</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-              {(form.type === "income" ? INCOME_CATS : EXPENSE_CATS).map(c => (
-                <button key={c.id} onClick={() => setForm({...form, category: c.id})} style={{
-                  padding: "10px", borderRadius: "12px",
-                  border: form.category === c.id ? "1px solid #6366f1" : "1px solid rgba(255,255,255,0.08)",
-                  background: form.category === c.id ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.05)",
-                  color: "#fff", fontWeight: 800, textAlign: "left"
-                }}>{c.icon} {c.label}</button>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+              <div style={{ fontSize: "12px", color: "#888" }}>Kategori</div>
+              <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900, background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.22)", borderRadius: "999px", padding: "5px 9px", whiteSpace: "nowrap" }}>
+                {selectedCategoryInfo.icon} {selectedCategoryInfo.label}
+              </div>
+            </div>
+            <div style={{ display: "grid", gap: "10px" }}>
+              {inputCategoryGroups.map(group => (
+                <div key={group.id} style={{ padding: "10px", borderRadius: "16px", background: group.id === "child" && isChildExpenseInput ? "rgba(99,102,241,0.12)" : "rgba(255,255,255,0.035)", border: group.id === "child" && isChildExpenseInput ? "1px solid rgba(99,102,241,0.26)" : "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "baseline", marginBottom: "8px" }}>
+                    <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900 }}>{group.label}</div>
+                    <div style={{ fontSize: "10px", color: "#64748b", fontWeight: 800, textAlign: "right" }}>{group.hint}</div>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {group.categories.map(c => (
+                      <button key={c.id} onClick={() => setForm({...form, category: c.id})} style={{
+                        padding: "9px 11px", borderRadius: "999px",
+                        border: form.category === c.id ? "1px solid #818cf8" : "1px solid rgba(255,255,255,0.08)",
+                        background: form.category === c.id ? "rgba(99,102,241,0.30)" : "rgba(255,255,255,0.05)",
+                        color: "#fff", fontWeight: 900, textAlign: "left", fontSize: "12px", whiteSpace: "nowrap"
+                      }}>{c.icon} {c.label}</button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
+
+          {isChildExpenseInput && (
+            <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.22)", color: "#c7d2fe", fontSize: "12px", lineHeight: 1.5, fontWeight: 800, marginBottom: "12px" }}>
+              👨‍👩‍👧 Biaya anak: kategori menjawab <b>untuk apa</b>, Beneficiary menjawab <b>untuk siapa</b>. Pilih nama anak untuk biaya personal, atau <b>Anak-anak/Keluarga</b> untuk biaya bersama.
+            </div>
+          )}
 
           <div style={{ display: "grid", gap: "10px" }}>
             <div>
@@ -3844,6 +4154,13 @@ export default function App() {
               <input type="date" value={form.date} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setForm(prev => ({...prev, date: e.target.value}))} style={inputStyle} />
             </div>
             <div>
+              <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Untuk / Beneficiary</div>
+              <select value={selectedTransactionUser} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setForm(prev => ({ ...prev, user: e.target.value }))} style={inputStyle}>
+                {transactionUserOptions.map(name => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <div style={{ fontSize: "10px", color: "#64748b", marginTop: "5px", lineHeight: 1.4 }}>Pilih penerima manfaat transaksi. Untuk biaya anak, pilih nama anak; untuk biaya bersama, pilih Anak-anak atau Keluarga.</div>
+            </div>
+            <div>
               <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Sumber Dana</div>
               <select value={transactionSDId} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setTransactionSDId(e.target.value)} style={inputStyle}>
                 <option value="">Pilih sumber dana</option>
@@ -3857,7 +4174,7 @@ export default function App() {
                     onClick={(e) => e.stopPropagation()}
                     onTouchStart={(e) => e.stopPropagation()}
                     onChange={(e) => setForm(prev => ({ ...prev, note: e.target.value }))}
-                    placeholder="Contoh: makan siang, BBM, owner draw"
+                    placeholder={isChildExpenseInput ? ("Contoh: " + (childInputExamples[form.category] || "kebutuhan anak")) : "Contoh: makan siang, BBM, owner draw"}
                     style={inputStyle}
                   />
             </div>
@@ -4972,26 +5289,136 @@ export default function App() {
     const tx = selectedTransaction;
     const cat = getCategoryInfo(tx.category, tx);
     const typeInfo = getTypeInfo(tx.type);
+    const editType = transactionEditForm.type === "income" ? "income" : "expense";
+    const editCategories = editType === "income" ? INCOME_CATS : EXPENSE_CATS;
+    const editCurrentSource = tx.sumberDanaId ? sumberDanaList.find(sd => String(sd.id) === String(tx.sumberDanaId)) : null;
+    const goalLinkOptions = getGoalLinkSuggestionsForTransaction(tx);
+    const linkedGoal = tx.goalId ? savingsGoals.find(g => String(g.id) === String(tx.goalId)) : null;
+    const selectedGoalLink = transactionGoalLinkForm.goalId ? savingsGoals.find(g => String(g.id) === String(transactionGoalLinkForm.goalId)) : null;
+    const editFundingSources = sumberDanaList
+      .filter(sd => isSumberDanaActive(sd) || String(sd.id) === String(transactionEditForm.sumberDanaId || tx.sumberDanaId || ""))
+      .sort((a, b) => String(a.user || "").localeCompare(String(b.user || "")) || String(a.name || "").localeCompare(String(b.name || "")));
+    const closeTransactionDetail = () => {
+      setTransactionEditMode(false);
+      setTransactionEditStatus("");
+      setSelectedTransaction(null);
+    };
     return (
-      <div onClick={() => setSelectedTransaction(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100001, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+      <div onClick={closeTransactionDetail} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 100001, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
         <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "82vh", overflowY: "auto", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
             <div>
               <div style={{ fontSize: "12px", letterSpacing: "2px", textTransform: "uppercase", color: typeInfo.color, fontWeight: 800 }}>{typeInfo.icon} {typeInfo.label}</div>
               <div style={{ fontSize: "28px", fontWeight: 900, color: tx.type === "income" ? "#34d399" : "#f87171", marginTop: "8px" }}>{tx.type === "income" ? "+" : "-"}{formatFull(tx.amount || 0)}</div>
             </div>
-            <button onClick={() => setSelectedTransaction(null)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
+            <button onClick={closeTransactionDetail} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800 }}>×</button>
           </div>
           <div style={{ marginTop: "18px", display: "grid", gap: "10px" }}>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Kategori</div><div style={{ fontSize: "15px", fontWeight: 800 }}>{cat.icon || "🧾"} {cat.label || "Tanpa Kategori"}</div></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
               <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Tanggal</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal"}</div></div>
-              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>User</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.user || tx.userName || "Tanpa User"}</div></div>
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Untuk / Beneficiary</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.user || tx.userName || "Tanpa User"}</div></div>
             </div>
-            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || tx.sumberDanaId || tx.sourceFund || "Tanpa Sumber Dana"}</div></div>
-            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || "Tidak ada catatan"}</div></div>
+            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || editCurrentSource?.name || tx.sumberDanaId || tx.sourceFund || "Tanpa Sumber Dana"}</div></div>
+            <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || tx.notes || "Tidak ada catatan"}</div></div>
+
+            {tx.goalId && (
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(245,158,11,0.09)", border: "1px solid rgba(245,158,11,0.22)" }}>
+                <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "4px", fontWeight: 900 }}>Terhubung ke Goal</div>
+                <div style={{ fontSize: "14px", fontWeight: 900, color: "#fde68a" }}>🎯 {linkedGoal?.label || tx.goalLabel || tx.goalId}</div>
+                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(tx.goalLinkedAmount || tx.amount || 0)}</div>
+              </div>
+            )}
+
+            {isOwner && !transactionEditMode && tx.type === "expense" && !tx.goalId && !tx.goalUsageId && (
+              <div style={{ padding: "14px", borderRadius: "18px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.20)", display: "grid", gap: "9px" }}>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Goal Reconciliation · Owner</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Untuk transaksi lama yang sebenarnya bagian dari Goal. Sistem akan mengurangi saldo Goal tanpa memotong wallet ulang.</div>
+                </div>
+                <select value={transactionGoalLinkForm.goalId} onChange={(e) => setTransactionGoalLinkForm(prev => ({ ...prev, goalId: e.target.value, status: "" }))} style={inputStyle}>
+                  <option value="">Pilih Goal yang terkait</option>
+                  {goalLinkOptions.map(g => <option key={g.id} value={g.id}>{g._linkScore > 0 ? "⭐ " : "🎯 "}{g.label || g.id} · Saldo {formatFull(calcGoalValue(g.id))}</option>)}
+                </select>
+                {selectedGoalLink && <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.4 }}>Saldo tunai Goal: {formatRupiah(savingsData[selectedGoalLink.id] || 0)}. Rekonsiliasi tidak membuat expense baru.</div>}
+                {transactionGoalLinkForm.status && <div style={{ padding: "9px 10px", borderRadius: "12px", background: transactionGoalLinkForm.status.startsWith("✅") ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)", color: transactionGoalLinkForm.status.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "11px", lineHeight: 1.45, fontWeight: 800 }}>{transactionGoalLinkForm.status}</div>}
+                <button onClick={() => linkExistingTransactionToGoalUsage(tx)} style={{ padding: "12px", borderRadius: "14px", border: "none", background: transactionGoalLinkForm.goalId ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.06)", color: transactionGoalLinkForm.goalId ? "#fff" : "#64748b", fontWeight: 900 }}>🎯 Hubungkan ke Goal</button>
+              </div>
+            )}
+
+            {isOwner && !transactionEditMode && (
+              <button onClick={() => startOwnerTransactionRevision(tx)} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(96,165,250,0.35)", background: "rgba(96,165,250,0.12)", color: "#93c5fd", fontWeight: 900, fontSize: "14px" }}>✏️ Revisi Kesalahan Input · Owner</button>
+            )}
+
+            {transactionEditMode && isOwner && (
+              <div style={{ marginTop: "6px", padding: "14px", borderRadius: "18px", background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.22)", display: "grid", gap: "10px" }}>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#93c5fd", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Owner Revision Mode</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5 }}>Gunakan hanya untuk koreksi salah input. Perubahan akan update transaksi, ledger wallet, dan Activity Log.</div>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <button onClick={() => changeOwnerTransactionType("expense")} style={{ padding: "11px", borderRadius: "14px", border: editType === "expense" ? "1px solid #f87171" : "1px solid rgba(255,255,255,0.08)", background: editType === "expense" ? "rgba(248,113,113,0.16)" : "rgba(255,255,255,0.04)", color: editType === "expense" ? "#fca5a5" : "#e8e8f0", fontWeight: 900 }}>📤 Expense</button>
+                  <button onClick={() => changeOwnerTransactionType("income")} style={{ padding: "11px", borderRadius: "14px", border: editType === "income" ? "1px solid #34d399" : "1px solid rgba(255,255,255,0.08)", background: editType === "income" ? "rgba(52,211,153,0.16)" : "rgba(255,255,255,0.04)", color: editType === "income" ? "#86efac" : "#e8e8f0", fontWeight: 900 }}>📥 Income</button>
+                </div>
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Nominal</div>
+                    <input value={transactionEditForm.amount} inputMode="numeric" onChange={(e) => setTransactionEditForm(prev => ({ ...prev, amount: e.target.value.replace(/[^0-9]/g, "") }))} style={inputStyle} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Tanggal</div>
+                    <input type="date" value={transactionEditForm.date} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, date: e.target.value }))} style={inputStyle} />
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Kategori</div>
+                  <select value={transactionEditForm.category} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, category: e.target.value }))} style={inputStyle}>
+                    {editCategories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.label}</option>)}
+                  </select>
+                  {transactionEditForm.type === "expense" && CHILD_EXPENSE_CATEGORY_IDS.includes(transactionEditForm.category) && <div style={{ fontSize: "10px", color: "#c7d2fe", marginTop: "6px", lineHeight: 1.4 }}>Untuk koreksi biaya anak, pastikan Beneficiary di bawah adalah anak / Anak-anak / Keluarga yang menerima manfaat, bukan selalu user yang menginput.</div>}
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Untuk / Beneficiary</div>
+                  <select value={transactionEditForm.user} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, user: e.target.value }))} style={inputStyle}>
+                    {[...new Set([...(activeFamilyMembers || []).map(m => m.name), tx.user, tx.userName, currentUser].filter(Boolean))].map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Sumber Dana</div>
+                  <select value={transactionEditForm.sumberDanaId} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, sumberDanaId: e.target.value }))} style={inputStyle}>
+                    <option value="">Pilih sumber dana</option>
+                    {editFundingSources.map(sd => <option key={sd.id} value={sd.id}>{sd.icon || "💵"} {sd.name} · {sd.user || "Family"} · {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Catatan</div>
+                  <input value={transactionEditForm.note} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, note: e.target.value }))} placeholder="Catatan transaksi" style={inputStyle} />
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginBottom: "5px" }}>Alasan revisi</div>
+                  <input value={transactionEditForm.revisionReason} onChange={(e) => setTransactionEditForm(prev => ({ ...prev, revisionReason: e.target.value }))} placeholder="Contoh: salah kategori / salah sumber dana / salah nominal" style={inputStyle} />
+                </div>
+
+                {transactionEditStatus && <div style={{ padding: "10px 12px", borderRadius: "13px", background: transactionEditStatus.startsWith("✅") ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)", color: transactionEditStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>{transactionEditStatus}</div>}
+
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                  <button onClick={() => { setTransactionEditMode(false); setTransactionEditStatus(""); }} style={{ padding: "12px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.10)", background: "rgba(255,255,255,0.05)", color: "#e8e8f0", fontWeight: 900 }}>Batal</button>
+                  <button onClick={() => saveOwnerTransactionRevision(tx)} style={{ padding: "12px", borderRadius: "14px", border: "none", background: "linear-gradient(135deg,#2563eb,#7c3aed)", color: "#fff", fontWeight: 900 }}>Simpan Revisi</button>
+                </div>
+              </div>
+            )}
+
+            {transactionEditStatus && !transactionEditMode && <div style={{ padding: "10px 12px", borderRadius: "13px", background: transactionEditStatus.startsWith("✅") ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)", color: transactionEditStatus.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>{transactionEditStatus}</div>}
+
             {canDeleteTransaction(tx) ? (
-              <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini? Data masuk Recycle Bin dan bisa direstore."); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) setSelectedTransaction(null); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi · Recycle Bin</button>
+              <button onClick={async () => { const ok = window.confirm("Hapus transaksi ini? Data masuk Recycle Bin dan bisa direstore."); if (!ok) return; const deleted = await deleteTransaction(tx.id); if (deleted !== false) closeTransactionDetail(); }} style={{ marginTop: "6px", width: "100%", padding: "14px", borderRadius: "16px", border: "1px solid rgba(248,113,113,0.35)", background: "rgba(248,113,113,0.12)", color: "#fca5a5", fontWeight: 900, fontSize: "14px" }}>Hapus Transaksi · Recycle Bin</button>
             ) : (
               <div style={{ marginTop: "6px", padding: "12px", borderRadius: "14px", border: "1px solid rgba(245,158,11,0.22)", background: "rgba(245,158,11,0.08)", color: "#fbbf24", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>Role {currentRole} tidak punya izin hapus transaksi ini. Member default hanya boleh mengubah data sendiri; Owner/Admin mengikuti permission.</div>
             )}
