@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.9";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.10";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -2224,6 +2224,70 @@ export default function App() {
 
     setSelectedTransaction({ ...tx, ...updateData });
     setTransactionGoalLinkForm({ goalId: "", status: "✅ Transaksi sudah dihubungkan ke Goal. Saldo Goal berkurang tanpa memotong wallet ulang." });
+  }
+
+
+  async function unlinkGoalUsageFromTransaction(tx) {
+    if (!tx?.id) return;
+    if (!isOwner) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Batalkan link Goal hanya untuk Owner." }));
+      return;
+    }
+    const goalId = tx.goalId || "";
+    const goalUsageId = tx.goalUsageId || "";
+    if (!goalId && !goalUsageId) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Transaksi ini belum terhubung ke Goal." }));
+      return;
+    }
+    const amount = Number(tx.goalLinkedAmount || tx.amount || 0);
+    if (!amount || amount <= 0) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Nominal link Goal tidak valid." }));
+      return;
+    }
+    const goal = savingsGoals.find(g => String(g.id) === String(goalId));
+    const goalLabel = goal?.label || tx.goalLabel || goalId || "Goal";
+    const ok = window.confirm("Batalkan link transaksi ini dari Goal " + goalLabel + "? Saldo tunai Goal akan dikembalikan " + formatRupiah(amount) + ". Wallet tidak berubah karena expense tetap tercatat.");
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    try {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "Membatalkan link Goal..." }));
+      if (goalId) {
+        const nextGoalCash = { ...savingsData, [goalId]: Number(savingsData[goalId] || 0) + amount };
+        await setDoc(doc(db, "savings", "goals"), nextGoalCash);
+        setSavingsData(nextGoalCash);
+      }
+      if (goalUsageId) {
+        try {
+          await deleteDoc(doc(db, "goalUsage", goalUsageId));
+        } catch (err) {
+          console.warn("goalUsage delete skipped", err);
+        }
+      }
+
+      const updateData = {
+        goalId: "",
+        goalLabel: "",
+        goalUsageId: "",
+        goalLinkedAmount: 0,
+        goalLinkMode: "goal_link_unlinked",
+        previousGoalId: goalId,
+        previousGoalLabel: goalLabel,
+        previousGoalUsageId: goalUsageId,
+        goalUnlinkedAt: now,
+        goalUnlinkedBy: currentUser || "Owner",
+        updatedAt: now,
+        updatedBy: currentUser || "Owner",
+      };
+      await setDoc(doc(db, "transactions", tx.id), updateData, { merge: true });
+      await addActivityLog("transaction_goal_unlinked", "Owner membatalkan link transaksi " + formatRupiah(amount) + " dari Goal " + goalLabel + ". Expense tetap tercatat dan wallet tidak berubah.");
+      syncToSheets("transactionGoalUnlinked", { id: tx.id, goalId, goalLabel, amount, user: currentUser, createdAt: now });
+      setSelectedTransaction({ ...tx, ...updateData });
+      setTransactionGoalLinkForm({ goalId: "", status: "✅ Link Goal dibatalkan. Saldo Goal dikembalikan, wallet tidak berubah." });
+    } catch (err) {
+      console.error(err);
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Gagal membatalkan link Goal. Cek koneksi lalu coba lagi." }));
+    }
   }
 
   async function useGoalFunds() {
@@ -5464,10 +5528,16 @@ export default function App() {
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Catatan</div><div style={{ fontSize: "14px", fontWeight: 700, lineHeight: 1.5 }}>{tx.note || tx.notes || "Tidak ada catatan"}</div></div>
 
             {tx.goalId && (
-              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(245,158,11,0.09)", border: "1px solid rgba(245,158,11,0.22)" }}>
-                <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "4px", fontWeight: 900 }}>Terhubung ke Goal</div>
-                <div style={{ fontSize: "14px", fontWeight: 900, color: "#fde68a" }}>🎯 {linkedGoal?.label || tx.goalLabel || tx.goalId}</div>
-                <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(tx.goalLinkedAmount || tx.amount || 0)}</div>
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(245,158,11,0.09)", border: "1px solid rgba(245,158,11,0.22)", display: "grid", gap: "9px" }}>
+                <div>
+                  <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "4px", fontWeight: 900 }}>Terhubung ke Goal</div>
+                  <div style={{ fontSize: "14px", fontWeight: 900, color: "#fde68a" }}>🎯 {linkedGoal?.label || tx.goalLabel || tx.goalId}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(tx.goalLinkedAmount || tx.amount || 0)}</div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>Expense tetap tercatat. Link Goal hanya mengurangi saldo Goal, bukan memotong wallet ulang.</div>
+                </div>
+                {isOwner && !transactionEditMode && (
+                  <button onClick={() => unlinkGoalUsageFromTransaction(tx)} style={{ width: "100%", padding: "10px 12px", borderRadius: "13px", border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.10)", color: "#fde68a", fontWeight: 900, fontSize: "12px" }}>↩️ Batalkan Link Goal · Owner</button>
+                )}
               </div>
             )}
 
