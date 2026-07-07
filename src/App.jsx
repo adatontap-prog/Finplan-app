@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.12";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.13";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -4172,7 +4172,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.6. Bundle Transaction Intelligence Cleanup: compact mode, quality review, category drilldown, review queue, dan mobile-safe fallback.
+            FinPlan v1.1.0 phase 6.7.13. Goal Link Audit Status untuk menjaga sinkronisasi transaksi dan Goal tanpa mengubah UI utama.
           </div>
         </div>
       </div>
@@ -5648,6 +5648,21 @@ export default function App() {
     const selectedGoalLink = transactionGoalLinkForm.goalId ? savingsGoals.find(g => String(g.id) === String(transactionGoalLinkForm.goalId)) : null;
     const pendingGoalAmount = Number(tx.goalPendingAmount || 0);
     const linkedGoalCashBalance = tx.goalId ? Number(savingsData[tx.goalId] || 0) : 0;
+    const goalLinkedAmount = Number(tx.goalLinkedAmount || tx.amount || 0);
+    const goalAuditModeLabel = tx.goalLinkMode === "direct_expense_input"
+      ? "Input langsung"
+      : tx.goalLinkMode === "existing_transaction_reconciliation"
+        ? "Rekonsiliasi transaksi lama"
+        : tx.goalLinkMode === "owner_revision_sync"
+          ? "Sinkron revisi Owner"
+          : tx.goalLinkMode || "Link Goal";
+    const goalLinkHealth = !tx.goalId
+      ? null
+      : pendingGoalAmount > 0
+        ? { label: "Pending settlement", color: "#fbbf24", bg: "rgba(251,191,36,0.10)", text: "Ada selisih yang belum dikurangi dari Goal." }
+        : goalLinkedAmount > Number(tx.amount || 0)
+          ? { label: "Perlu cek nominal", color: "#fca5a5", bg: "rgba(248,113,113,0.10)", text: "Nilai link Goal lebih besar dari nominal transaksi." }
+          : { label: "Tersinkron", color: "#86efac", bg: "rgba(16,185,129,0.10)", text: "Goal dan transaksi sudah sejajar." };
     const editFundingSources = sumberDanaList
       .filter(sd => isSumberDanaActive(sd) || String(sd.id) === String(transactionEditForm.sumberDanaId || tx.sumberDanaId || ""))
       .sort((a, b) => String(a.user || "").localeCompare(String(b.user || "")) || String(a.name || "").localeCompare(String(b.name || "")));
@@ -5680,7 +5695,20 @@ export default function App() {
                 <div>
                   <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "4px", fontWeight: 900 }}>Terhubung ke Goal</div>
                   <div style={{ fontSize: "14px", fontWeight: 900, color: "#fde68a" }}>🎯 {linkedGoal?.label || tx.goalLabel || tx.goalId}</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(tx.goalLinkedAmount || tx.amount || 0)}</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(goalLinkedAmount)}</div>
+                  {goalLinkHealth && <div style={{ marginTop: "8px", padding: "10px", borderRadius: "13px", background: goalLinkHealth.bg, border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px" }}>Goal Link Status</span>
+                      <span style={{ fontSize: "11px", color: goalLinkHealth.color, fontWeight: 900 }}>{goalLinkHealth.label}</span>
+                    </div>
+                    <div style={{ marginTop: "5px", fontSize: "10px", color: "#cbd5e1", lineHeight: 1.45 }}>{goalLinkHealth.text}</div>
+                  </div>}
+                  <div style={{ marginTop: "8px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px" }}>
+                    <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "3px" }}>Linked</div><div style={{ fontSize: "11px", fontWeight: 900, color: "#fde68a" }}>{formatRupiah(goalLinkedAmount)}</div></div>
+                    <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "3px" }}>Pending</div><div style={{ fontSize: "11px", fontWeight: 900, color: pendingGoalAmount > 0 ? "#fbbf24" : "#86efac" }}>{formatRupiah(pendingGoalAmount)}</div></div>
+                    <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "3px" }}>Mode</div><div style={{ fontSize: "11px", fontWeight: 900 }}>{goalAuditModeLabel}</div></div>
+                    <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.05)" }}><div style={{ fontSize: "9px", color: "#94a3b8", marginBottom: "3px" }}>Saldo Goal</div><div style={{ fontSize: "11px", fontWeight: 900 }}>{formatRupiah(linkedGoalCashBalance)}</div></div>
+                  </div>
                   {pendingGoalAmount > 0 && <div style={{ marginTop: "7px", padding: "9px 10px", borderRadius: "12px", background: "rgba(251,191,36,0.10)", color: "#fde68a", fontSize: "11px", lineHeight: 1.45, fontWeight: 800 }}>Ada selisih Goal pending {formatRupiah(pendingGoalAmount)}. Ini biasanya terjadi setelah Owner menaikkan nominal transaksi. Saldo Goal tersedia: {formatRupiah(linkedGoalCashBalance)}.</div>}
                   <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>Expense tetap tercatat. Link Goal hanya mengurangi saldo Goal, bukan memotong wallet ulang.</div>
                 </div>
