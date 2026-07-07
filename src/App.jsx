@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.11";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.12";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -2287,6 +2287,103 @@ export default function App() {
     } catch (err) {
       console.error(err);
       setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Gagal membatalkan link Goal. Cek koneksi lalu coba lagi." }));
+    }
+  }
+
+  async function settlePendingGoalAmountForTransaction(tx) {
+    if (!tx?.id) return;
+    if (!isOwner) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Penyelesaian selisih Goal hanya untuk Owner." }));
+      return;
+    }
+    if (tx.type !== "expense") {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Hanya transaksi expense yang bisa mengurangi Goal." }));
+      return;
+    }
+    const goalId = tx.goalId || "";
+    if (!goalId) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Transaksi ini belum punya link Goal." }));
+      return;
+    }
+    const pendingAmount = Number(tx.goalPendingAmount || 0);
+    if (!pendingAmount || pendingAmount <= 0) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "✅ Tidak ada selisih Goal yang perlu diselesaikan." }));
+      return;
+    }
+    const currentCash = Number(savingsData[goalId] || 0);
+    if (currentCash <= 0) {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Saldo tunai Goal masih Rp 0, jadi selisih belum bisa dikurangi dari Goal." }));
+      return;
+    }
+    const goal = savingsGoals.find(g => String(g.id) === String(goalId));
+    const goalLabel = goal?.label || tx.goalLabel || goalId || "Goal";
+    const settleAmount = Math.min(pendingAmount, currentCash);
+    const ok = window.confirm("Kurangi saldo Goal " + goalLabel + " sebesar " + formatRupiah(settleAmount) + " untuk menyelesaikan selisih transaksi ini? Wallet tidak akan dipotong ulang.");
+    if (!ok) return;
+
+    const now = new Date().toISOString();
+    try {
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "Menyelesaikan selisih Goal..." }));
+      const nextGoalCash = { ...savingsData, [goalId]: Math.max(currentCash - settleAmount, 0) };
+      await setDoc(doc(db, "savings", "goals"), nextGoalCash);
+      setSavingsData(nextGoalCash);
+
+      const previousLinkedAmount = Number(tx.goalLinkedAmount || 0);
+      const nextLinkedAmount = previousLinkedAmount + settleAmount;
+      const remainingPendingAmount = Math.max(pendingAmount - settleAmount, 0);
+      let nextGoalUsageId = tx.goalUsageId || "";
+
+      if (nextGoalUsageId) {
+        await setDoc(doc(db, "goalUsage", nextGoalUsageId), {
+          amount: nextLinkedAmount,
+          originalTransactionAmount: Number(tx.amount || nextLinkedAmount),
+          category: tx.category || "linked_transaction",
+          usedFor: tx.note || tx.notes || "Transaksi expense terhubung ke Goal",
+          note: "Goal usage diperbarui dari penyelesaian selisih pending. Wallet ledger tidak dipotong ulang.",
+          date: tx.date || String(tx.createdAt || "").slice(0, 10) || new Date().toISOString().split("T")[0],
+          updatedAt: now,
+          updatedBy: currentUser || "Owner",
+          pendingSettlementSynced: true,
+        }, { merge: true });
+      } else {
+        const usageRef = await addDoc(collection(db, "goalUsage"), {
+          goalId,
+          goalLabel,
+          mode: "cash",
+          amount: nextLinkedAmount,
+          originalTransactionAmount: Number(tx.amount || nextLinkedAmount),
+          category: tx.category || "linked_transaction",
+          usedFor: tx.note || tx.notes || "Transaksi expense terhubung ke Goal",
+          note: "Goal usage dibuat saat penyelesaian selisih pending. Wallet ledger tidak dipotong ulang.",
+          date: tx.date || String(tx.createdAt || "").slice(0, 10) || new Date().toISOString().split("T")[0],
+          sourceTransactionId: tx.id,
+          linkedWithoutWalletMutation: true,
+          createdBy: currentUser || "Owner",
+          createdAt: now,
+          pendingSettlementCreated: true,
+        });
+        nextGoalUsageId = usageRef.id;
+      }
+
+      const updateData = {
+        goalUsageId: nextGoalUsageId,
+        goalLinkedAmount: nextLinkedAmount,
+        goalPendingAmount: remainingPendingAmount,
+        goalPendingSettledAt: now,
+        goalPendingSettledBy: currentUser || "Owner",
+        goalPendingLastSettledAmount: settleAmount,
+        goalPendingSettlementStatus: remainingPendingAmount > 0 ? "partial" : "settled",
+        updatedAt: now,
+        updatedBy: currentUser || "Owner",
+      };
+      await setDoc(doc(db, "transactions", tx.id), updateData, { merge: true });
+      await addActivityLog("transaction_goal_pending_settled", "Owner menyelesaikan selisih Goal " + goalLabel + " sebesar " + formatRupiah(settleAmount) + ". Wallet tidak berubah.");
+      syncToSheets("transactionGoalPendingSettled", { id: tx.id, goalId, goalLabel, amount: settleAmount, remainingPendingAmount, user: currentUser, createdAt: now });
+      setSelectedTransaction({ ...tx, ...updateData });
+      setTransactionGoalLinkForm({ goalId: "", status: remainingPendingAmount > 0 ? "✅ Sebagian selisih Goal diselesaikan. Sisa pending: " + formatRupiah(remainingPendingAmount) + "." : "✅ Selisih Goal selesai. Saldo Goal sudah dikurangi tanpa memotong wallet ulang." });
+    } catch (err) {
+      console.error(err);
+      setTransactionGoalLinkForm(prev => ({ ...prev, status: "⚠️ Gagal menyelesaikan selisih Goal. Cek koneksi lalu coba lagi." }));
     }
   }
 
@@ -5549,6 +5646,8 @@ export default function App() {
     const goalLinkOptions = getGoalLinkSuggestionsForTransaction(tx);
     const linkedGoal = tx.goalId ? savingsGoals.find(g => String(g.id) === String(tx.goalId)) : null;
     const selectedGoalLink = transactionGoalLinkForm.goalId ? savingsGoals.find(g => String(g.id) === String(transactionGoalLinkForm.goalId)) : null;
+    const pendingGoalAmount = Number(tx.goalPendingAmount || 0);
+    const linkedGoalCashBalance = tx.goalId ? Number(savingsData[tx.goalId] || 0) : 0;
     const editFundingSources = sumberDanaList
       .filter(sd => isSumberDanaActive(sd) || String(sd.id) === String(transactionEditForm.sumberDanaId || tx.sumberDanaId || ""))
       .sort((a, b) => String(a.user || "").localeCompare(String(b.user || "")) || String(a.name || "").localeCompare(String(b.name || "")));
@@ -5582,8 +5681,13 @@ export default function App() {
                   <div style={{ fontSize: "11px", color: "#fbbf24", marginBottom: "4px", fontWeight: 900 }}>Terhubung ke Goal</div>
                   <div style={{ fontSize: "14px", fontWeight: 900, color: "#fde68a" }}>🎯 {linkedGoal?.label || tx.goalLabel || tx.goalId}</div>
                   <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Diperhitungkan sebagai pemakaian Goal: {formatRupiah(tx.goalLinkedAmount || tx.amount || 0)}</div>
+                  {pendingGoalAmount > 0 && <div style={{ marginTop: "7px", padding: "9px 10px", borderRadius: "12px", background: "rgba(251,191,36,0.10)", color: "#fde68a", fontSize: "11px", lineHeight: 1.45, fontWeight: 800 }}>Ada selisih Goal pending {formatRupiah(pendingGoalAmount)}. Ini biasanya terjadi setelah Owner menaikkan nominal transaksi. Saldo Goal tersedia: {formatRupiah(linkedGoalCashBalance)}.</div>}
                   <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.45 }}>Expense tetap tercatat. Link Goal hanya mengurangi saldo Goal, bukan memotong wallet ulang.</div>
                 </div>
+                {transactionGoalLinkForm.status && <div style={{ padding: "9px 10px", borderRadius: "12px", background: transactionGoalLinkForm.status.startsWith("✅") ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)", color: transactionGoalLinkForm.status.startsWith("✅") ? "#86efac" : "#fbbf24", fontSize: "11px", lineHeight: 1.45, fontWeight: 800 }}>{transactionGoalLinkForm.status}</div>}
+                {isOwner && !transactionEditMode && pendingGoalAmount > 0 && (
+                  <button onClick={() => settlePendingGoalAmountForTransaction(tx)} style={{ width: "100%", padding: "10px 12px", borderRadius: "13px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.10)", color: "#86efac", fontWeight: 900, fontSize: "12px" }}>✅ Selesaikan Selisih Goal · Owner</button>
+                )}
                 {isOwner && !transactionEditMode && (
                   <button onClick={() => unlinkGoalUsageFromTransaction(tx)} style={{ width: "100%", padding: "10px 12px", borderRadius: "13px", border: "1px solid rgba(251,191,36,0.25)", background: "rgba(251,191,36,0.10)", color: "#fde68a", fontWeight: 900, fontSize: "12px" }}>↩️ Batalkan Link Goal · Owner</button>
                 )}
