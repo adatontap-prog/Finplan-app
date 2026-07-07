@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.7";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.8";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3523,7 +3523,28 @@ export default function App() {
   const INCOME_CATS = CATEGORIES.filter(c => c.type === "income");
   const tabStyle = (key) => {
     const isActive = activeTab === key || (key === "dompet" && activeTab === "gadai");
-    return { flex: "1 1 118px", minWidth: 0, padding: "8px 8px", border: "none", cursor: "pointer", borderRadius: "10px", fontSize: "10px", fontWeight: 700, whiteSpace: "nowrap", textAlign: "center", background: isActive ? "#6366f1" : "transparent", color: isActive ? "#fff" : "#666", transition: "all 0.2s" };
+    return {
+      flex: "1 1 0",
+      minWidth: 0,
+      minHeight: "52px",
+      padding: "7px 4px 6px",
+      border: "none",
+      cursor: "pointer",
+      borderRadius: "18px",
+      fontSize: "10px",
+      fontWeight: 900,
+      whiteSpace: "nowrap",
+      textAlign: "center",
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: "3px",
+      background: isActive ? "linear-gradient(135deg,rgba(99,102,241,0.95),rgba(124,58,237,0.95))" : "transparent",
+      color: isActive ? "#fff" : "#94a3b8",
+      boxShadow: isActive ? "0 10px 28px rgba(99,102,241,0.28)" : "none",
+      transition: "all 0.2s",
+    };
   };
   const savTabStyle = (key) => {
     const color = CATEGORY_GROUPS.find(g => g.id === key)?.color || getGoalCategoryColor(key);
@@ -5659,7 +5680,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", width: "100%", overflowX: "hidden", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0" }}>
-      <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box" }}>
+      <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box", paddingBottom: showMainNav ? "100px" : "0" }}>
         <SettingsCenterModal />
         <ActivityLogModal />
         {(() => {
@@ -5906,24 +5927,24 @@ export default function App() {
           );
         })()}
 
-        <div style={{ padding: "28px 20px 8px", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div style={{ fontSize: "11px", letterSpacing: "3px", color: "#6366f1", fontWeight: 700, textTransform: "uppercase", marginBottom: "4px" }}>{APP_VERSION}</div>
-            <div style={{ fontSize: "20px", fontWeight: 800, color: "#fff" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "\uD83D\uDC51" : "\uD83D\uDC4B"}</div>
+        <div style={{ padding: "18px 20px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", position: "sticky", top: 0, zIndex: 50, background: "linear-gradient(180deg,rgba(10,10,15,0.96),rgba(10,10,15,0.82),rgba(10,10,15,0))", backdropFilter: "blur(10px)" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: "9px", letterSpacing: "2.4px", color: "#818cf8", fontWeight: 900, textTransform: "uppercase", marginBottom: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{APP_VERSION}</div>
+            <div style={{ fontSize: "20px", fontWeight: 900, color: "#fff", lineHeight: 1.1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Halo, {currentUser}! {currentUser === ADMIN_USER ? "\uD83D\uDC51" : "\uD83D\uDC4B"}</div>
           </div>
-          <div style={{ display: "flex", gap: "6px" }}>
-            <button onClick={() => setShowSettingsCenter(true)} style={{ background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.15)", color: "#e8e8f0", borderRadius: "10px", padding: "8px 12px", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>⚙️</button>
-            <button onClick={lockApp} style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.28)", color: "#fca5a5", borderRadius: "10px", padding: "8px 12px", fontSize: "13px", cursor: "pointer", fontWeight: 800 }}>🔐</button>
+          <div style={{ display: "flex", gap: "7px", flexShrink: 0 }}>
+            <button aria-label="Settings" onClick={() => setShowSettingsCenter(true)} style={{ width: "40px", height: "40px", background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#e8e8f0", borderRadius: "14px", padding: 0, fontSize: "14px", cursor: "pointer", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>⚙️</button>
+            <button aria-label="Lock" onClick={lockApp} style={{ width: "40px", height: "40px", background: "rgba(248,113,113,0.10)", border: "1px solid rgba(248,113,113,0.22)", color: "#fca5a5", borderRadius: "14px", padding: 0, fontSize: "14px", cursor: "pointer", fontWeight: 900, display: "flex", alignItems: "center", justifyContent: "center" }}>🔐</button>
           </div>
         </div>
 
         {showMainNav && (
-          <div style={{ margin: "0 20px 10px", background: "rgba(255,255,255,0.04)", borderRadius: "16px", padding: "5px", display: "flex", gap: "5px", flexWrap: "wrap", overflowX: "hidden", border: "1px solid rgba(255,255,255,0.06)" }}>
-            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}>🏠 Dashboard</button>}
-            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}>🧾 Transaksi</button>}
-            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}>🎯 Goals</button>}
-            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}>💼 Finance</button>}
-            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}>📈 Portfolio</button>}
+          <div style={{ position: "fixed", left: "50%", bottom: "12px", transform: "translateX(-50%)", width: "calc(100% - 28px)", maxWidth: "402px", padding: "7px", borderRadius: "24px", background: "rgba(15,15,28,0.94)", border: "1px solid rgba(255,255,255,0.10)", display: "flex", gap: "4px", zIndex: 99950, boxShadow: "0 -14px 44px rgba(0,0,0,0.44)", backdropFilter: "blur(16px)", boxSizing: "border-box" }}>
+            {hasPermission("dashboard") && <button style={tabStyle("dashboard")} onClick={() => setActiveTab("dashboard")}><span style={{ fontSize: "16px", lineHeight: 1 }}>🏠</span><span>Home</span></button>}
+            {hasPermission("history") && <button style={tabStyle("history")} onClick={() => setActiveTab("history")}><span style={{ fontSize: "16px", lineHeight: 1 }}>🧾</span><span>Transaksi</span></button>}
+            {canViewGoals && <button style={tabStyle("savings")} onClick={() => setActiveTab("savings")}><span style={{ fontSize: "16px", lineHeight: 1 }}>🎯</span><span>Goals</span></button>}
+            {canAccessWallets && <button style={tabStyle("dompet")} onClick={openWalletManager}><span style={{ fontSize: "16px", lineHeight: 1 }}>💼</span><span>Finance</span></button>}
+            {canViewInvestments && <button style={tabStyle("invest")} onClick={() => setActiveTab("invest")}><span style={{ fontSize: "16px", lineHeight: 1 }}>📈</span><span>Portfolio</span></button>}
           </div>
         )}
 
@@ -5931,7 +5952,7 @@ export default function App() {
           <div style={{ padding: "0 20px 6px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", padding: "8px 10px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase" }}>Filter Dashboard</div>
+                <div style={{ fontSize: "9px", color: "#64748b", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase" }}>Filter Periode</div>
                 <div style={{ fontSize: "12px", color: "#e5e7eb", fontWeight: 900, marginTop: "2px" }}>{rangeLabel} · {selectedScopeLabel}</div>
               </div>
               <button onClick={() => setShowPeriodPicker(true)} style={{ padding: "7px 10px", borderRadius: "11px", border: "1px solid rgba(99,102,241,0.26)", background: "rgba(99,102,241,0.12)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, cursor: "pointer", whiteSpace: "nowrap" }}>Ganti</button>
@@ -7116,7 +7137,7 @@ export default function App() {
         )}
 
         {hasPermission("transaction_add") && (activeTab === "dashboard" || activeTab === "history") && (
-          <button onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: "28px", right: "20px", width: "56px", height: "56px", borderRadius: "50%", border: "none", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "28px", boxShadow: "0 8px 32px rgba(99,102,241,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>+</button>
+          <button aria-label="Tambah transaksi" onClick={() => setShowForm(true)} style={{ position: "fixed", bottom: showMainNav ? "88px" : "28px", right: "max(18px, calc(50% - 194px))", width: "54px", height: "54px", borderRadius: "20px", border: "1px solid rgba(255,255,255,0.16)", cursor: "pointer", background: "linear-gradient(135deg,#6366f1,#7c3aed)", color: "#fff", fontSize: "26px", boxShadow: "0 12px 36px rgba(99,102,241,0.44)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 99960 }}>+</button>
         )}
 
 
