@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.8 hotfix 1";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.9";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1581,6 +1581,21 @@ export default function App() {
   ];
   const savingsGoals = allSavingsGoals.filter(g => g.status !== "archived");
   const archivedSavingsGoals = allSavingsGoals.filter(g => g.status === "archived");
+
+  const goalLinkReviewCandidates = earlyIsOwnerForScope
+    ? displayTxns
+        .filter(tx => tx.type === "expense" && !tx.goalId && !tx.goalUsageId)
+        .map(tx => {
+          const suggestions = getGoalLinkSuggestionsForTransaction(tx).filter(g => Number(g._linkScore || 0) > 0);
+          const topGoal = suggestions[0] || null;
+          const score = Number(topGoal?._linkScore || 0);
+          return { tx, topGoal, score };
+        })
+        .filter(item => item.topGoal && item.score > 0)
+        .sort((a, b) => Number(b.score || 0) - Number(a.score || 0) || Number(b.tx?.amount || 0) - Number(a.tx?.amount || 0))
+        .slice(0, 5)
+    : [];
+  const goalLinkReviewTotal = goalLinkReviewCandidates.length;
 
   const totalSavingsTarget = savingsGoals.reduce((s, g) => s + Number(g.targetAmount || 0), 0);
   const totalSavingsCurrent = savingsGoals.reduce((s, g) => s + calcGoalValue(g.id), 0);
@@ -6163,6 +6178,35 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
+                  {isOwner && goalLinkReviewTotal > 0 && (
+                    <div style={{ marginTop: "10px", padding: "11px", borderRadius: "14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: "#fbbf24", fontWeight: 900, textTransform: "uppercase" }}>Goal Link Review · Owner</div>
+                          <div style={{ fontSize: "11px", color: "#fde68a", lineHeight: 1.45, marginTop: "3px" }}>Expense yang kemungkinan bagian dari Goal, tapi belum terhubung.</div>
+                        </div>
+                        <div style={{ fontSize: "18px", color: "#fbbf24", fontWeight: 900, flexShrink: 0 }}>{goalLinkReviewTotal}</div>
+                      </div>
+                      <div style={{ display: "grid", gap: "7px" }}>
+                        {goalLinkReviewCandidates.map(({ tx, topGoal, score }) => {
+                          const cat = getCategoryInfo(tx.category, tx);
+                          const txDate = tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal";
+                          const txUser = tx.user || tx.userName || "Tanpa User";
+                          const candidateKey = tx.id || `${txDate}-${txUser}-${tx.amount}-${topGoal?.id || "goal"}`;
+                          return (
+                            <button key={candidateKey} onClick={() => { setSelectedTransaction(tx); setTransactionEditMode(false); setTransactionGoalLinkForm({ goalId: topGoal.id, status: "Saran otomatis dari Goal Link Review. Cek ulang sebelum hubungkan." }); }} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(245,158,11,0.16)", background: "rgba(15,23,42,0.42)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{cat?.icon || "🧾"} {cat?.label || "Tanpa Kategori"} · {txUser}</div>
+                                <div style={{ fontSize: "10px", color: "#fcd34d", marginTop: "2px", overflowWrap: "anywhere" }}>Saran: {topGoal?.label || topGoal?.id} · skor {score}</div>
+                              </div>
+                              <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: "11px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(tx.amount || 0)}</div><div style={{ fontSize: "9px", color: "#fbbf24", marginTop: "3px" }}>Review →</div></div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
 
                   {periodCategoryDrilldown.length > 0 && (
                     <div style={{ marginTop: "10px", padding: "11px", borderRadius: "14px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.06)" }}>
