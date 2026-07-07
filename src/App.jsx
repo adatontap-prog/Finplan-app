@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.6 hotfix 4";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.7";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -642,7 +642,15 @@ export default function App() {
   const [assetSDId, setAssetSDId] = useState("");
   const [showUserSelect, setShowUserSelect] = useState(false);
   const [currentUser, setCurrentUser] = useState(() => localStorage.getItem("finplan_user") || "");
-  const [form, setForm] = useState({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0], user: currentUser || "" });
+  const [form, setForm] = useState({
+    type: "expense",
+    category: "makan",
+    amount: "",
+    note: "",
+    date: new Date().toISOString().split("T")[0],
+    user: currentUser || "",
+    goalId: "",
+  });
   const [invForm, setInvForm] = useState({ type: "usd", amount: "", buyPrice: "", note: "", buyDate: new Date().toISOString().split("T")[0] });
   const [savingsInput, setSavingsInput] = useState("");
   const [savingsInputDisplay, setSavingsInputDisplay] = useState("");
@@ -2360,13 +2368,87 @@ export default function App() {
     if (!amt || !form.date || !transactionSDId) return;
     const sd = sumberDanaList.find(s => s.id === transactionSDId);
     const txUser = form.user || currentUser || "Tanpa User";
-    const txData = { type: form.type, category: form.category, amount: amt, note: form.note, date: form.date, user: txUser, userName: txUser, createdBy: currentUser || txUser, sumberDanaId: transactionSDId, sumberDanaName: sd?.name || "", createdAt: new Date().toISOString() };
+    const now = new Date().toISOString();
+    const directGoalId = form.type === "expense" ? (form.goalId || "") : "";
+    const directGoal = directGoalId ? savingsGoals.find(g => String(g.id) === String(directGoalId)) : null;
+    if (directGoalId && !directGoal) {
+      showAccessNotice("Goal tidak ditemukan. Pilih Goal ulang atau kosongkan link Goal.");
+      return;
+    }
+
+    let directGoalUsageAmount = 0;
+    if (directGoal) {
+      const goalCash = Number(savingsData[directGoalId] || 0);
+      if (goalCash <= 0) {
+        showAccessNotice("Dana tunai Goal masih Rp 0. Simpan sebagai expense biasa atau alokasikan dana ke Goal dulu.");
+        return;
+      }
+      directGoalUsageAmount = Math.min(amt, goalCash);
+      if (directGoalUsageAmount < amt) {
+        const okPartial = window.confirm("Dana tunai Goal " + (directGoal.label || directGoalId) + " hanya " + formatRupiah(goalCash) + ". Kurangi Goal sebesar saldo tersedia dan tetap catat expense " + formatRupiah(amt) + "?");
+        if (!okPartial) return;
+      } else {
+        const okGoal = window.confirm("Catat expense dan langsung kurangi Goal " + (directGoal.label || directGoalId) + " sebesar " + formatRupiah(amt) + "? Wallet hanya terpotong 1x.");
+        if (!okGoal) return;
+      }
+    }
+
+    const goalLinkData = directGoal ? {
+      goalId: directGoalId,
+      goalLabel: directGoal.label || directGoalId,
+      goalLinkedAt: now,
+      goalLinkedBy: currentUser || txUser,
+      goalLinkedAmount: directGoalUsageAmount,
+      goalLinkMode: "direct_expense_input",
+      goalPendingAmount: Math.max(amt - directGoalUsageAmount, 0),
+    } : {};
+
+    const txData = {
+      type: form.type,
+      category: form.category,
+      amount: amt,
+      note: form.note,
+      date: form.date,
+      user: txUser,
+      userName: txUser,
+      createdBy: currentUser || txUser,
+      sumberDanaId: transactionSDId,
+      sumberDanaName: sd?.name || "",
+      createdAt: now,
+      ...goalLinkData,
+    };
     const docRef = await addDoc(collection(db, "transactions"), txData);
     await logLedger(transactionSDId, form.type === "income" ? amt : -amt, (form.type === "income" ? "Pemasukan" : "Pengeluaran") + ": " + (form.note || CATEGORIES.find(c=>c.id===form.category)?.label||""), "transaction", docRef.id);
+
+    if (directGoal && directGoalUsageAmount > 0) {
+      const newGoalCash = { ...savingsData, [directGoalId]: Math.max(Number(savingsData[directGoalId] || 0) - directGoalUsageAmount, 0) };
+      await setDoc(doc(db, "savings", "goals"), newGoalCash);
+      setSavingsData(newGoalCash);
+      const usageRef = await addDoc(collection(db, "goalUsage"), {
+        goalId: directGoalId,
+        goalLabel: directGoal.label || directGoalId,
+        mode: "cash",
+        amount: directGoalUsageAmount,
+        originalTransactionAmount: amt,
+        category: form.category || "linked_transaction",
+        usedFor: form.note || "Expense langsung dari input transaksi",
+        note: "Linked from transaction input. Wallet ledger hanya dipotong oleh transaksi expense.",
+        date: form.date || new Date().toISOString().split("T")[0],
+        sourceTransactionId: docRef.id,
+        linkedWithoutWalletMutation: true,
+        createdBy: currentUser || txUser,
+        createdAt: now,
+      });
+      await setDoc(doc(db, "transactions", docRef.id), { goalUsageId: usageRef.id, updatedAt: now, updatedBy: currentUser || txUser }, { merge: true });
+      await addActivityLog("transaction_goal_direct_input", (currentUser || txUser) + " mencatat expense " + formatRupiah(amt) + " dan langsung mengurangi Goal " + (directGoal.label || directGoalId) + " sebesar " + formatRupiah(directGoalUsageAmount) + ".");
+      syncToSheets("transactionGoalDirectInput", { id: docRef.id, goalId: directGoalId, goalLabel: directGoal.label || directGoalId, amount: amt, usedAmount: directGoalUsageAmount, user: currentUser || txUser, createdAt: now });
+    } else {
+      await addActivityLog("transaction_created", (form.type === "income" ? "Tambah pemasukan" : "Tambah pengeluaran") + ": " + formatRupiah(amt));
+    }
+
     // Sync ke Google Sheets
     syncToSheets("addTransaction", { ...txData, id: docRef.id });
-    await addActivityLog("transaction_created", (form.type === "income" ? "Tambah pemasukan" : "Tambah pengeluaran") + ": " + formatRupiah(amt));
-    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0], user: currentUser || "" }); setAmountDisplay(""); setTransactionSDId("");
+    setShowForm(false); setForm({ type: "expense", category: "makan", amount: "", note: "", date: new Date().toISOString().split("T")[0], user: currentUser || "", goalId: "" }); setAmountDisplay(""); setTransactionSDId("");
   }
 
   async function addInvestment() {
@@ -4065,6 +4147,11 @@ export default function App() {
     const selectedCategoryInfo = getCategoryInfo(form.category);
     const inputCategoryGroups = getInputCategoryGroups(form.type);
     const isChildExpenseInput = form.type === "expense" && CHILD_EXPENSE_CATEGORY_IDS.includes(form.category);
+    const directGoalOptions = form.type === "expense"
+      ? getGoalLinkSuggestionsForTransaction({ category: form.category, note: form.note, user: selectedTransactionUser, userName: selectedTransactionUser })
+      : [];
+    const selectedDirectGoal = form.goalId ? savingsGoals.find(g => String(g.id) === String(form.goalId)) : null;
+    const selectedDirectGoalCash = selectedDirectGoal ? Number(savingsData[selectedDirectGoal.id] || 0) : 0;
     const childInputExamples = {
       pendidikan_anak: "SPP Aroon Juli 2026 / buku sekolah / seragam",
       kesehatan_anak: "Dokter Aroon / obat / vaksin / vitamin",
@@ -4093,8 +4180,8 @@ export default function App() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginBottom: "12px" }}>
-            <button onClick={() => setForm({...form, type: "expense", category: "makan"})} style={{ padding: "12px", borderRadius: "14px", border: "none", background: form.type === "expense" ? "#ef4444" : "rgba(255,255,255,0.08)", color: "#fff", fontWeight: 900 }}>📤 Expense</button>
-            <button onClick={() => setForm({...form, type: "income", category: "gaji"})} style={{ padding: "12px", borderRadius: "14px", border: "none", background: form.type === "income" ? "#10b981" : "rgba(255,255,255,0.08)", color: "#fff", fontWeight: 900 }}>📥 Income</button>
+            <button onClick={() => setForm({...form, type: "expense", category: "makan", goalId: ""})} style={{ padding: "12px", borderRadius: "14px", border: "none", background: form.type === "expense" ? "#ef4444" : "rgba(255,255,255,0.08)", color: "#fff", fontWeight: 900 }}>📤 Expense</button>
+            <button onClick={() => setForm({...form, type: "income", category: "gaji", goalId: ""})} style={{ padding: "12px", borderRadius: "14px", border: "none", background: form.type === "income" ? "#10b981" : "rgba(255,255,255,0.08)", color: "#fff", fontWeight: 900 }}>📥 Income</button>
           </div>
 
           <div style={{ marginBottom: "12px" }}>
@@ -4167,6 +4254,23 @@ export default function App() {
                 {selectableFundingSources.map(sd => <option key={sd.id} value={sd.id}>{sd.icon} {sd.name} · {formatFull(calcSumberDanaBalance(sd.id))}</option>)}
               </select>
             </div>
+            {form.type === "expense" && (
+              <div style={{ padding: "12px", borderRadius: "16px", background: form.goalId ? "rgba(16,185,129,0.10)" : "rgba(255,255,255,0.035)", border: form.goalId ? "1px solid rgba(16,185,129,0.24)" : "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "10px", marginBottom: "6px" }}>
+                  <div style={{ fontSize: "12px", color: "#888" }}>Hubungkan ke Goal</div>
+                  <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>Opsional</div>
+                </div>
+                <select value={form.goalId || ""} onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} onChange={(e) => setForm(prev => ({ ...prev, goalId: e.target.value }))} style={inputStyle}>
+                  <option value="">Tidak terkait Goal</option>
+                  {directGoalOptions.map(g => <option key={g.id} value={g.id}>{g.icon} {g.label} · dana {formatRupiah(savingsData[g.id] || 0)}</option>)}
+                </select>
+                <div style={{ fontSize: "10px", color: form.goalId ? "#86efac" : "#64748b", marginTop: "6px", lineHeight: 1.45 }}>
+                  {form.goalId
+                    ? `Expense tetap tercatat 1x, wallet terpotong 1x, dan Goal ${selectedDirectGoal?.label || "terpilih"} akan berkurang maksimal ${formatRupiah(selectedDirectGoalCash)}.`
+                    : "Gunakan jika transaksi ini memakai dana Goal. Untuk transaksi lama, tetap bisa hubungkan dari detail transaksi."}
+                </div>
+              </div>
+            )}
             <div>
               <div style={{ fontSize: "12px", color: "#888", marginBottom: "6px" }}>Catatan</div>
               <input
