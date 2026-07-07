@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.10";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.11";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -2808,7 +2808,55 @@ export default function App() {
       return;
     }
 
+    const isLinkedToGoal = Boolean(tx.goalId || tx.goalUsageId);
+    const oldGoalLinkedAmount = Number(tx.goalLinkedAmount || tx.amount || 0);
+    const oldGoalId = tx.goalId || "";
+    const oldGoalUsageId = tx.goalUsageId || "";
+    const linkedGoalLabel = tx.goalLabel || (oldGoalId ? (savingsGoals.find(g => String(g.id) === String(oldGoalId))?.label || oldGoalId) : "Goal");
+
+    if (isLinkedToGoal && type !== "expense") {
+      setTransactionEditStatus("⚠️ Transaksi yang sudah terhubung ke Goal tidak bisa diubah menjadi Income. Batalkan Link Goal dulu agar saldo Goal tetap aman.");
+      return;
+    }
+
     const now = new Date().toISOString();
+    let goalRevisionData = {};
+    let goalRevisionMessage = "";
+    if (isLinkedToGoal && oldGoalId) {
+      const nextGoalLinkedAmount = Math.min(amount, oldGoalLinkedAmount);
+      const refundToGoal = Math.max(oldGoalLinkedAmount - nextGoalLinkedAmount, 0);
+      const pendingGoalAmount = Math.max(amount - nextGoalLinkedAmount, 0);
+      goalRevisionData = {
+        goalLinkedAmount: nextGoalLinkedAmount,
+        goalPendingAmount: pendingGoalAmount,
+        goalRevisionSyncedAt: now,
+        goalRevisionSyncedBy: currentUser || "Owner",
+      };
+      if (refundToGoal > 0) {
+        const nextGoalCash = { ...savingsData, [oldGoalId]: Number(savingsData[oldGoalId] || 0) + refundToGoal };
+        await setDoc(doc(db, "savings", "goals"), nextGoalCash);
+        setSavingsData(nextGoalCash);
+        goalRevisionMessage = " Saldo Goal dikembalikan " + formatRupiah(refundToGoal) + " karena nominal transaksi lebih kecil.";
+      } else if (pendingGoalAmount > 0) {
+        goalRevisionMessage = " Nominal transaksi naik; tambahan " + formatRupiah(pendingGoalAmount) + " belum otomatis mengurangi Goal. Gunakan rekonsiliasi manual bila perlu.";
+      } else {
+        goalRevisionMessage = " Link Goal tetap sinkron.";
+      }
+      if (oldGoalUsageId) {
+        await setDoc(doc(db, "goalUsage", oldGoalUsageId), {
+          amount: nextGoalLinkedAmount,
+          originalTransactionAmount: amount,
+          category,
+          usedFor: note || tx.note || tx.notes || "Transaksi expense terhubung ke Goal",
+          note: "Goal usage disinkronkan dari Owner Revision. Wallet ledger tetap mengikuti transaksi.",
+          date,
+          updatedAt: now,
+          updatedBy: currentUser || "Owner",
+          ownerRevisionSynced: true,
+        }, { merge: true });
+      }
+    }
+
     const updateData = {
       type,
       category,
@@ -2827,6 +2875,7 @@ export default function App() {
       ownerRevisedAt: now,
       ownerRevisedBy: currentUser || "Owner",
       revisionReason,
+      ...goalRevisionData,
     };
 
     setTransactionEditStatus("Menyimpan revisi...");
@@ -2865,13 +2914,13 @@ export default function App() {
 
     await addActivityLog(
       "transaction_owner_revised",
-      "Owner revisi transaksi " + formatRupiah(tx.amount || 0) + " → " + formatRupiah(amount) + " · " + (tx.user || tx.userName || "-") + " → " + user + " · alasan: " + revisionReason
+      "Owner revisi transaksi " + formatRupiah(tx.amount || 0) + " → " + formatRupiah(amount) + " · " + (tx.user || tx.userName || "-") + " → " + user + " · alasan: " + revisionReason + (isLinkedToGoal ? " · Goal: " + linkedGoalLabel + " ikut disinkronkan." : "")
     );
-    syncToSheets("updateTransaction", { id: tx.id, ...updateData });
+    syncToSheets("updateTransaction", { id: tx.id, ...updateData, goalRevisionMessage });
 
     setSelectedTransaction({ ...tx, ...updateData });
     setTransactionEditMode(false);
-    setTransactionEditStatus("✅ Revisi transaksi tersimpan. Saldo wallet ikut dikoreksi.");
+    setTransactionEditStatus("✅ Revisi transaksi tersimpan. Saldo wallet ikut dikoreksi." + goalRevisionMessage);
   }
 
   async function deleteInvestment(id) {
@@ -5567,6 +5616,11 @@ export default function App() {
                   <div style={{ fontSize: "11px", color: "#93c5fd", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Owner Revision Mode</div>
                   <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5 }}>Gunakan hanya untuk koreksi salah input. Perubahan akan update transaksi, ledger wallet, dan Activity Log.</div>
                 </div>
+                {(tx.goalId || tx.goalUsageId) && (
+                  <div style={{ padding: "10px 11px", borderRadius: "14px", background: "rgba(245,158,11,0.10)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.45, fontWeight: 800 }}>
+                    🎯 Transaksi ini terhubung ke Goal. Revisi nominal akan disinkronkan ke Goal Usage. Jika ingin ubah menjadi Income, batalkan Link Goal dulu.
+                  </div>
+                )}
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
                   <button onClick={() => changeOwnerTransactionType("expense")} style={{ padding: "11px", borderRadius: "14px", border: editType === "expense" ? "1px solid #f87171" : "1px solid rgba(255,255,255,0.08)", background: editType === "expense" ? "rgba(248,113,113,0.16)" : "rgba(255,255,255,0.04)", color: editType === "expense" ? "#fca5a5" : "#e8e8f0", fontWeight: 900 }}>📤 Expense</button>
