@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.5i";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3567,7 +3567,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.5i. Transaction Review Queue ditambahkan agar transaksi yang perlu dirapikan lebih cepat ditemukan.
+            FinPlan v1.1.0 phase 6.7.6. Bundle Transaction Intelligence Cleanup: compact mode, quality review, category drilldown, review queue, dan mobile-safe fallback.
           </div>
         </div>
       </div>
