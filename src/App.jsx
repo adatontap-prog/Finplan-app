@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.16 hotfix 1";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.17";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3800,11 +3800,14 @@ export default function App() {
     return getSumberDanaStatus(sd) === "active";
   }
 
-  function openSumberDanaEditor(sd) {
+  function openSumberDanaEditor(sd, options = {}) {
     if (!sd) return;
     setSelectedSD(sd.id);
     setMergeTargetSDId("");
-    setWalletAdjustForm({ targetBalance: "", note: "" });
+    setWalletAdjustForm({
+      targetBalance: options.targetBalance !== undefined ? String(options.targetBalance) : "",
+      note: options.note || "",
+    });
     setSdForm({
       name: sd.name || "",
       icon: sd.icon || "💵",
@@ -4466,7 +4469,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.16 hotfix 1. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, serta rekonsiliasi ledger investasi/test/loan.
+            FinPlan v1.1.0 phase 6.7.17. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, rekonsiliasi ledger, serta baseline saldo real wallet.
           </div>
         </div>
       </div>
@@ -4633,6 +4636,13 @@ export default function App() {
       .map(sd => ({ ...sd, balance: calcSumberDanaBalance(sd.id), ledgerCount: sumberDanaLedger.filter(l => String(l.sumberDanaId) === String(sd.id)).length }))
       .filter(sd => Number(sd.balance || 0) < 0)
       .sort((a, b) => Number(a.balance || 0) - Number(b.balance || 0));
+    const legacyNoWalletTransactions = transactions.filter(tx => ["income", "expense"].includes(tx.type) && !tx.sumberDanaId);
+    const legacyNoWalletExpenseTotal = legacyNoWalletTransactions.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const legacyNoWalletIncomeTotal = legacyNoWalletTransactions.filter(tx => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const negativeRealWallets = negativeWallets.filter(sd => !String(sd.name || "").toLowerCase().includes("test"));
+    const baselineAdvisorText = negativeRealWallets.length > 0
+      ? "Masih ada wallet real negatif. Setelah ledger test/orphan bersih, ini biasanya berarti saldo awal atau pemasukan real belum dimasukkan."
+      : "Tidak ada wallet real negatif setelah cleanup. Tetap cek saldo real berkala.";
 
     const activeRecycle = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= new Date().toISOString());
     const expiredRecycle = recycleBin.filter(item => item.expiresAt && item.expiresAt < new Date().toISOString());
@@ -4764,6 +4774,36 @@ export default function App() {
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
             Activity Log saat ini dibatasi ke 50 data terbaru di listener. Untuk audit historis penuh nanti perlu pagination/export khusus. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+          </div>
+
+          <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.20)", marginBottom: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: "11px", letterSpacing: "1.4px", color: "#7dd3fc", fontWeight: 1000, textTransform: "uppercase" }}>Baseline & Legacy Advisor</div>
+                <div style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.5, marginTop: "6px" }}>{baselineAdvisorText}</div>
+              </div>
+              <div style={{ padding: "7px 9px", borderRadius: "999px", background: legacyNoWalletTransactions.length ? "rgba(245,158,11,0.14)" : "rgba(16,185,129,0.12)", color: legacyNoWalletTransactions.length ? "#fde68a" : "#86efac", fontSize: "10px", fontWeight: 1000, whiteSpace: "nowrap" }}>
+                {legacyNoWalletTransactions.length} legacy
+              </div>
+            </div>
+            {legacyNoWalletTransactions.length > 0 && (
+              <div style={{ marginTop: "10px", fontSize: "11px", color: "#bae6fd", lineHeight: 1.55 }}>
+                Ada <b>{legacyNoWalletTransactions.length}</b> transaksi lama tanpa wallet. Expense legacy: <b>{formatFull(legacyNoWalletExpenseTotal)}</b>, income legacy: <b>{formatFull(legacyNoWalletIncomeTotal)}</b>. Data ini tetap tercatat sebagai riwayat transaksi, tetapi tidak ikut membentuk saldo wallet ledger.
+              </div>
+            )}
+            {negativeRealWallets.length > 0 && (
+              <div style={{ display: "grid", gap: "7px", marginTop: "10px" }}>
+                {negativeRealWallets.slice(0, 3).map(sd => (
+                  <button key={sd.id} onClick={() => openSumberDanaEditor(sd, { note: "Baseline saldo real setelah audit ledger" })} style={{ width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(125,211,252,0.22)", background: "rgba(15,23,42,0.54)", color: "#fff", cursor: "pointer" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 900 }}>{sd.icon || "💵"} {sd.name || "Wallet"}</span>
+                      <span style={{ fontSize: "11px", fontWeight: 1000, color: "#fca5a5" }}>{formatFull(sd.balance || 0)}</span>
+                    </div>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "3px" }}>Klik untuk buka Penyesuaian Saldo dengan catatan baseline.</div>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {issueGroups.map(group => {
@@ -6882,6 +6922,11 @@ export default function App() {
                   {mostNegativeWallet && (
                     <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.5 }}>
                       Penyebab terbesar sementara: <b>{mostNegativeWallet.name}</b> {formatFull(mostNegativeWallet.walletBalance || 0)}. Buka wallet untuk lihat Log Wallet atau Penyesuaian Saldo.
+                    </div>
+                  )}
+                  {negativeWalletBreakdown.length > 0 && (
+                    <div style={{ marginTop: "9px", padding: "10px", borderRadius: "13px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.18)", fontSize: "11px", color: "#bae6fd", lineHeight: 1.5 }}>
+                      <b>Baseline Assistant:</b> jika Log Audit Center sudah aman tetapi wallet real masih negatif, masukkan saldo real terakhir lewat Penyesuaian Saldo. Ini membuat ledger baseline tanpa menghapus histori lama.
                     </div>
                   )}
                   {negativeWalletBreakdown.length === 0 && positiveWalletBreakdown.length > 0 && (
