@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14 hotfix 1";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14 hotfix 2";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1649,7 +1649,21 @@ export default function App() {
     (!financialScopeUser || sd.user === financialScopeUser) &&
     getSumberDanaStatus(sd) !== "archived"
   );
-  const financialWalletTotal = canViewFinancialSummaryNow ? financialWallets.reduce((sum, sd) => sum + calcSumberDanaBalance(sd.id), 0) : 0;
+  const financialWalletBreakdown = canViewFinancialSummaryNow ? financialWallets
+    .map(sd => {
+      const walletBalance = calcSumberDanaBalance(sd.id);
+      const walletLedgerCount = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).length;
+      const walletTransactionCount = transactions.filter(t => t.sumberDanaId === sd.id).length;
+      return { ...sd, walletBalance, walletLedgerCount, walletTransactionCount };
+    })
+    .sort((a, b) => Number(a.walletBalance || 0) - Number(b.walletBalance || 0)) : [];
+  const financialWalletTotal = canViewFinancialSummaryNow ? financialWalletBreakdown.reduce((sum, sd) => sum + Number(sd.walletBalance || 0), 0) : 0;
+  const negativeWalletBreakdown = financialWalletBreakdown.filter(sd => Number(sd.walletBalance || 0) < 0);
+  const mostNegativeWallet = negativeWalletBreakdown[0] || null;
+  const positiveWalletBreakdown = financialWalletBreakdown.filter(sd => Number(sd.walletBalance || 0) > 0);
+  const walletAuditLabel = negativeWalletBreakdown.length > 0
+    ? negativeWalletBreakdown.length + " wallet minus"
+    : "Wallet aman";
   const financialInvestmentTotal = (canViewFinancialSummaryNow && canViewInvestmentsNow) ? invSummary
     .filter(inv => !financialScopeUser || inv.createdBy === financialScopeUser || (!inv.createdBy && financialScopeUser === currentUser))
     .reduce((sum, inv) => sum + Number(inv.currentValue || 0), 0) : 0;
@@ -1662,7 +1676,13 @@ export default function App() {
   const financialGrossAssets = financialWalletTotal + financialGoalTotal + financialInvestmentTotal;
   const financialNetWorth = financialGrossAssets - financialLoanTotal;
   const financialDebtRatio = financialGrossAssets > 0 ? (financialLoanTotal / financialGrossAssets) * 100 : (financialLoanTotal > 0 ? 100 : 0);
-  const financialScore = Math.max(0, Math.min(100, Math.round(100 - (financialDebtRatio * 1.2) - (financialWalletTotal < 0 ? 15 : 0))));
+  const financialRawScore = 100
+    - (financialDebtRatio * 1.2)
+    - (financialWalletTotal < 0 ? 25 : 0)
+    - (financialNetWorth < 0 ? 25 : 0)
+    - (negativeWalletBreakdown.length > 1 ? 6 : 0);
+  const financialScoreCap = financialNetWorth < 0 ? 49 : (financialWalletTotal < 0 ? 59 : 100);
+  const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
   const financialStatus =
     financialScore >= 80 ? { label: "Sehat", color: "#34d399", bg: "rgba(16,185,129,0.14)" } :
     financialScore >= 60 ? { label: "Aman", color: "#a3e635", bg: "rgba(163,230,53,0.12)" } :
@@ -6405,9 +6425,47 @@ export default function App() {
                     <div style={{ fontSize: "14px", color: financialDebtRatio > 35 ? "#fca5a5" : "#c7d2fe", fontWeight: 900 }}>{financialDebtRatio.toFixed(1)}%</div>
                   </div>
                 </div>
-                {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Cek Log Wallet dan Penyesuaian Saldo jika saldo real berbeda.</div>}
+                {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
+
+              {earlyIsOwnerForScope && financialWalletBreakdown.length > 0 && (
+                <div style={{ marginTop: "10px", padding: "13px", borderRadius: "16px", background: negativeWalletBreakdown.length > 0 ? "rgba(239,68,68,0.09)" : "rgba(16,185,129,0.08)", border: negativeWalletBreakdown.length > 0 ? "1px solid rgba(239,68,68,0.20)" : "1px solid rgba(16,185,129,0.18)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start", marginBottom: "8px" }}>
+                    <div>
+                      <div style={{ fontSize: "10px", letterSpacing: "1.6px", color: negativeWalletBreakdown.length > 0 ? "#fecaca" : "#86efac", fontWeight: 900, textTransform: "uppercase" }}>Wallet Balance Audit · Owner</div>
+                      <div style={{ fontSize: "12px", color: "#cbd5e1", marginTop: "4px", lineHeight: 1.45 }}>Total Wallet = saldo awal + semua ledger sepanjang waktu. Tidak mengikuti filter periode.</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: negativeWalletBreakdown.length > 0 ? "rgba(239,68,68,0.16)" : "rgba(16,185,129,0.14)", color: negativeWalletBreakdown.length > 0 ? "#fecaca" : "#86efac", fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{walletAuditLabel}</div>
+                  </div>
+
+                  <div style={{ display: "grid", gap: "7px" }}>
+                    {(negativeWalletBreakdown.length > 0 ? negativeWalletBreakdown : financialWalletBreakdown).slice(0, 4).map(sd => (
+                      <button key={sd.id} onClick={() => openSumberDanaEditor(sd)} style={{ width: "100%", textAlign: "left", padding: "10px", borderRadius: "13px", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(15,23,42,0.58)", color: "#fff", cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "12px", fontWeight: 900, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sd.icon || "💵"} {sd.name || "Wallet"}</div>
+                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "2px" }}>{sd.user || "Family"} · {sd.walletLedgerCount || 0} ledger · {sd.walletTransactionCount || 0} transaksi</div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            <div style={{ fontSize: "12px", fontWeight: 900, color: Number(sd.walletBalance || 0) < 0 ? "#fca5a5" : "#86efac" }}>{formatFull(sd.walletBalance || 0)}</div>
+                            <div style={{ fontSize: "9px", color: "#64748b", marginTop: "2px" }}>klik cek/koreksi</div>
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {mostNegativeWallet && (
+                    <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.5 }}>
+                      Penyebab terbesar sementara: <b>{mostNegativeWallet.name}</b> {formatFull(mostNegativeWallet.walletBalance || 0)}. Buka wallet untuk lihat Log Wallet atau Penyesuaian Saldo.
+                    </div>
+                  )}
+                  {negativeWalletBreakdown.length === 0 && positiveWalletBreakdown.length > 0 && (
+                    <div style={{ marginTop: "9px", fontSize: "11px", color: "#86efac", lineHeight: 1.5 }}>Semua wallet aktif bernilai positif. Audit ini tetap bisa dipakai untuk cek saldo kumulatif.</div>
+                  )}
+                </div>
+              )}
             </div>
             ) : (
               <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "rgba(15,23,42,0.72)", border: "1px solid rgba(245,158,11,0.24)" }}>
