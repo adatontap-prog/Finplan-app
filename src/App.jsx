@@ -3622,6 +3622,57 @@ export default function App() {
     setWalletAdjustForm({ targetBalance: "", note: "" });
   }
 
+  async function createWalletBaselineAdjustment(sd, targetBalance = 0, noteExtra = "") {
+    if (!sd) return false;
+    if (!canAdjustWallets) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin membuat baseline saldo wallet.");
+      return false;
+    }
+    const target = Number(targetBalance || 0);
+    const current = calcSumberDanaBalance(sd.id);
+    const delta = target - current;
+    if (delta === 0) {
+      showAccessNotice("Saldo " + (sd.name || "wallet") + " sudah sama dengan baseline target.");
+      return false;
+    }
+    const ok = window.confirm(
+      "Buat baseline saldo real untuk " + (sd.name || "wallet") + "?\n\n" +
+      "Saldo FinPlan sekarang: " + formatFull(current) + "\n" +
+      "Saldo real target: " + formatFull(target) + "\n" +
+      "Ledger baseline: " + (delta >= 0 ? "+" : "-") + formatFull(Math.abs(delta)) + "\n\n" +
+      "Ini tidak menghapus histori lama. Sistem hanya membuat ledger baseline resmi."
+    );
+    if (!ok) return false;
+    const now = new Date().toISOString();
+    await addDoc(collection(db, "sumberDanaLedger"), {
+      sumberDanaId: sd.id,
+      amount: delta,
+      note: "Baseline saldo real wallet ke " + formatFull(target) + " · Wallet Baseline Final" + (noteExtra ? " · " + noteExtra : ""),
+      refType: "wallet_baseline_adjustment",
+      refId: sd.id,
+      createdAt: now,
+      createdBy: currentUser || "Owner",
+      baseline: true,
+      baselinePhase: "6.7.18",
+      previousBalance: current,
+      targetBalance: target,
+    });
+    await setDoc(doc(db, "sumberDana", sd.id), {
+      baselineAppliedAt: now,
+      baselineAppliedBy: currentUser || "Owner",
+      baselineTargetBalance: target,
+      baselinePreviousBalance: current,
+      baselineDelta: delta,
+      updatedAt: now,
+      updatedBy: currentUser || "Owner",
+    }, { merge: true });
+    await addActivityLog("wallet_baseline_adjustment", (currentUser || "Owner") + " membuat baseline saldo " + (sd.name || "wallet") + " dari " + formatFull(current) + " menjadi " + formatFull(target) + ".");
+    syncToSheets("walletBaselineAdjustment", { sumberDanaId: sd.id, targetBalance: target, previousBalance: current, delta, note: noteExtra || "Wallet Baseline Final", user: currentUser, createdAt: now });
+    setWalletAdjustForm({ targetBalance: "", note: "" });
+    window.alert("✅ Baseline saldo real tersimpan untuk " + (sd.name || "wallet") + ". Cek ulang Net Worth Console.");
+    return true;
+  }
+
   function resetWalletTransferForm() {
     setWalletTransferForm({
       sourceWalletId: "",
@@ -4469,7 +4520,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.17. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, rekonsiliasi ledger, serta baseline saldo real wallet.
+            FinPlan v1.1.0 phase 6.7.18. Wallet Baseline Final membantu Owner menutup gap saldo real setelah audit ledger bersih, tanpa menghapus histori lama.
           </div>
         </div>
       </div>
@@ -4498,6 +4549,7 @@ export default function App() {
       wallet_created: { label: "Wallet Dibuat", icon: "👛", tone: "green" },
       allowance_transfer: { label: "Uang Saku", icon: "💸", tone: "green" },
       wallet_transfer: { label: "Transfer Wallet", icon: "🔁", tone: "purple" },
+      wallet_baseline_adjustment: { label: "Baseline Saldo", icon: "🧭", tone: "green" },
       transaction_added: { label: "Transaksi Ditambah", icon: "➕", tone: "green" },
       transaction_deleted: { label: "Transaksi Dihapus", icon: "🗑️", tone: "red" },
       transaction_restored: { label: "Transaksi Dipulihkan", icon: "♻️", tone: "green" },
@@ -4640,9 +4692,15 @@ export default function App() {
     const legacyNoWalletExpenseTotal = legacyNoWalletTransactions.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     const legacyNoWalletIncomeTotal = legacyNoWalletTransactions.filter(tx => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     const negativeRealWallets = negativeWallets.filter(sd => !String(sd.name || "").toLowerCase().includes("test"));
-    const baselineAdvisorText = negativeRealWallets.length > 0
-      ? "Masih ada wallet real negatif. Setelah ledger test/orphan bersih, ini biasanya berarti saldo awal atau pemasukan real belum dimasukkan."
-      : "Tidak ada wallet real negatif setelah cleanup. Tetap cek saldo real berkala.";
+    const unresolvedCleanupCount = investmentLedgerOrphan.length + activeTestAllowanceRefs.length + loanLedgerOrphan.length + activeTestWalletAdjustments.length + ledgerWithoutWallet.length + orphanTransactionLedger.length + txDuplicateLedger.length + txWithoutLedger.length;
+    const baselineReady = unresolvedCleanupCount === 0;
+    const baselineComplete = baselineReady && negativeRealWallets.length === 0;
+    const baselinePhaseLabel = baselineComplete ? "Baseline selesai" : baselineReady ? "Siap baseline real" : "Selesaikan cleanup dulu";
+    const baselineAdvisorText = !baselineReady
+      ? "Masih ada isu ledger/test/orphan. Selesaikan cleanup sebelum menetapkan baseline saldo real."
+      : negativeRealWallets.length > 0
+        ? "Ledger test/orphan sudah bersih. Sekarang masukkan saldo real untuk wallet negatif agar engine naik ke mode siap Financial Engine."
+        : "Tidak ada wallet real negatif setelah cleanup. Baseline data siap untuk Financial Engine Cleanup.";
 
     const activeRecycle = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= new Date().toISOString());
     const expiredRecycle = recycleBin.filter(item => item.expiresAt && item.expiresAt < new Date().toISOString());
@@ -4756,6 +4814,19 @@ export default function App() {
             <div style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.55, marginTop: "10px" }}>{totalIssues} isu terdeteksi dari log aktif yang sedang terbaca di aplikasi.</div>
           </div>
 
+          <div style={{ padding: "13px", borderRadius: "18px", background: baselineComplete ? "rgba(16,185,129,0.10)" : baselineReady ? "rgba(14,165,233,0.10)" : "rgba(245,158,11,0.09)", border: "1px solid " + (baselineComplete ? "rgba(16,185,129,0.24)" : baselineReady ? "rgba(14,165,233,0.24)" : "rgba(245,158,11,0.22)"), marginBottom: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: "11px", letterSpacing: "1.4px", color: baselineComplete ? "#86efac" : baselineReady ? "#7dd3fc" : "#fde68a", fontWeight: 1000, textTransform: "uppercase" }}>Financial Engine Gate</div>
+                <div style={{ fontSize: "13px", color: "#fff", fontWeight: 1000, marginTop: "4px" }}>{baselinePhaseLabel}</div>
+              </div>
+              <div style={{ padding: "7px 9px", borderRadius: "999px", background: "rgba(255,255,255,0.07)", color: baselineComplete ? "#86efac" : baselineReady ? "#bae6fd" : "#fde68a", fontSize: "10px", fontWeight: 1000 }}>
+                {baselineComplete ? "READY" : baselineReady ? "BASELINE" : unresolvedCleanupCount + " cleanup"}
+              </div>
+            </div>
+            <div style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.55, marginTop: "8px" }}>{baselineAdvisorText}</div>
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "14px" }}>
             {[
               ["Transaksi", transactions.length],
@@ -4794,13 +4865,17 @@ export default function App() {
             {negativeRealWallets.length > 0 && (
               <div style={{ display: "grid", gap: "7px", marginTop: "10px" }}>
                 {negativeRealWallets.slice(0, 3).map(sd => (
-                  <button key={sd.id} onClick={() => openSumberDanaEditor(sd, { note: "Baseline saldo real setelah audit ledger" })} style={{ width: "100%", textAlign: "left", padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(125,211,252,0.22)", background: "rgba(15,23,42,0.54)", color: "#fff", cursor: "pointer" }}>
+                  <div key={sd.id} style={{ padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(125,211,252,0.22)", background: "rgba(15,23,42,0.54)", color: "#fff" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
                       <span style={{ fontSize: "11px", fontWeight: 900 }}>{sd.icon || "💵"} {sd.name || "Wallet"}</span>
                       <span style={{ fontSize: "11px", fontWeight: 1000, color: "#fca5a5" }}>{formatFull(sd.balance || 0)}</span>
                     </div>
-                    <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "3px" }}>Klik untuk buka Penyesuaian Saldo dengan catatan baseline.</div>
-                  </button>
+                    <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.4 }}>Masukkan saldo real. Quick action Rp0 hanya untuk wallet yang memang sudah kosong.</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px", marginTop: "8px" }}>
+                      <button onClick={() => openSumberDanaEditor(sd, { note: "Baseline saldo real setelah audit ledger" })} style={{ padding: "8px", borderRadius: "10px", border: "1px solid rgba(125,211,252,0.25)", background: "rgba(14,165,233,0.12)", color: "#bae6fd", fontSize: "10px", fontWeight: 1000, cursor: "pointer" }}>Isi Saldo Real</button>
+                      <button onClick={() => createWalletBaselineAdjustment(sd, 0, "Quick baseline Rp0 dari Log Audit Center")} style={{ padding: "8px", borderRadius: "10px", border: "1px solid rgba(16,185,129,0.25)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "10px", fontWeight: 1000, cursor: "pointer" }}>Baseline Rp0</button>
+                    </div>
+                  </div>
                 ))}
               </div>
             )}
@@ -5395,14 +5470,18 @@ export default function App() {
 
           {balance < 0 && (
             <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.22)", color: "#fca5a5", fontSize: "12px", lineHeight: 1.55, marginBottom: "14px", fontWeight: 800 }}>
-              ⚠️ Saldo wallet negatif. Ini bisa terjadi karena biaya pinjaman, koreksi, atau data test. Gunakan Penyesuaian Saldo jika saldo real wallet berbeda.
+              ⚠️ Saldo wallet negatif. Jika Log Audit Center sudah bersih, lakukan baseline saldo real. Baseline membuat ledger koreksi baru, bukan menghapus histori lama.
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginTop: "10px" }}>
+                <button onClick={() => setWalletAdjustForm({ targetBalance: "0", note: "Baseline saldo real setelah audit ledger" })} style={{ padding: "9px", borderRadius: "12px", border: "1px solid rgba(125,211,252,0.24)", background: "rgba(14,165,233,0.12)", color: "#bae6fd", fontSize: "11px", fontWeight: 1000 }}>Isi Target Rp0</button>
+                <button onClick={() => createWalletBaselineAdjustment(sd, 0, "Quick baseline Rp0 dari Wallet Editor")} style={{ padding: "9px", borderRadius: "12px", border: "1px solid rgba(16,185,129,0.24)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "11px", fontWeight: 1000 }}>Baseline Rp0</button>
+              </div>
             </div>
           )}
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.18)", marginBottom: "14px" }}>
             <div style={{ fontSize: "13px", fontWeight: 900, color: "#fff", marginBottom: "6px" }}>🧭 Penyesuaian Saldo</div>
             <div style={{ fontSize: "11px", color: "#94a3b8", lineHeight: 1.5, marginBottom: "10px" }}>
-              Gunakan hanya jika saldo real wallet berbeda dari saldo FinPlan. Sistem akan membuat ledger koreksi, bukan menghapus histori.
+              Gunakan untuk baseline saldo real setelah audit ledger selesai. Sistem akan membuat ledger koreksi/baseline, bukan menghapus histori.
             </div>
             <div style={{ display: "grid", gap: "8px" }}>
               <input value={walletAdjustForm.targetBalance} inputMode="numeric" onChange={(e) => setWalletAdjustForm(prev => ({ ...prev, targetBalance: e.target.value.replace(/[^0-9]/g, "") }))} placeholder="Saldo akhir real, contoh: 1000000" style={inputStyle} />
