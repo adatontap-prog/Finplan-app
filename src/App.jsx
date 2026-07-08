@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14 hotfix 2";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.16";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -690,6 +690,7 @@ export default function App() {
   const [familyPanel, setFamilyPanel] = useState("members");
   const [familyView, setFamilyView] = useState("overview");
   const [showActivityLogModal, setShowActivityLogModal] = useState(false);
+  const [showLogAuditCenter, setShowLogAuditCenter] = useState(false);
 
   // ===== SECURITY STATES =====
   const [securityData, setSecurityData] = useState(null);
@@ -3138,6 +3139,97 @@ export default function App() {
     setTransactionEditStatus("✅ Tanggal transaksi diperbarui.");
   }
 
+  function hasLedgerReversal(ledgerId, reversalTypes = ["investment_orphan_reversal", "investment_delete_reversal", "test_transfer_reversal"]) {
+    if (!ledgerId) return false;
+    return sumberDanaLedger.some(l => reversalTypes.includes(l.refType) && String(l.refId || "") === String(ledgerId));
+  }
+
+  async function reverseWalletLedgerItem(ledger, options = {}) {
+    if (!isOwner) {
+      showAccessNotice("Hanya Owner yang bisa melakukan ledger reconciliation.");
+      return false;
+    }
+    if (!ledger?.id || !ledger.sumberDanaId) return false;
+    if (ledger.reconciled || hasLedgerReversal(ledger.id, options.reversalTypes || undefined)) {
+      window.alert("Ledger ini sudah pernah direkonsiliasi / direverse.");
+      return false;
+    }
+    const originalAmount = Number(ledger.amount || 0);
+    if (!originalAmount) {
+      window.alert("Nominal ledger 0, tidak ada yang perlu direverse.");
+      return false;
+    }
+    const now = new Date().toISOString();
+    const reversalAmount = -originalAmount;
+    const reversalRefType = options.refType || "ledger_reversal";
+    const note = options.note || ("Reverse ledger: " + (ledger.note || ledger.refId || ledger.id));
+    await addDoc(collection(db, "sumberDanaLedger"), {
+      sumberDanaId: ledger.sumberDanaId,
+      amount: reversalAmount,
+      refType: reversalRefType,
+      refId: ledger.id,
+      originalRefType: ledger.refType || "",
+      originalRefId: ledger.refId || "",
+      note,
+      createdAt: now,
+      createdBy: currentUser || "System",
+      reconciliation: true,
+    });
+    await setDoc(doc(db, "sumberDanaLedger", ledger.id), {
+      reconciled: true,
+      reconciledAt: now,
+      reconciledBy: currentUser || "System",
+      reconciliationType: reversalRefType,
+      reversalAmount,
+    }, { merge: true });
+    await addActivityLog(reversalRefType, (currentUser || "Owner") + " reverse ledger " + formatFull(Math.abs(originalAmount)) + " · " + (ledger.note || ledger.refId || ledger.id));
+    return true;
+  }
+
+  async function reverseOrphanInvestmentLedger(ledger) {
+    if (!ledger || ledger.refType !== "investment") return false;
+    const ok = window.confirm("Reverse orphan investment ledger ini? Wallet akan dikoreksi sebesar " + formatFull(Math.abs(Number(ledger.amount || 0))) + ". Aset tidak dibuat ulang.");
+    if (!ok) return false;
+    const done = await reverseWalletLedgerItem(ledger, {
+      refType: "investment_orphan_reversal",
+      reversalTypes: ["investment_orphan_reversal", "investment_delete_reversal"],
+      note: "Reverse orphan investment ledger: " + (ledger.note || ledger.refId || ledger.id),
+    });
+    if (done) window.alert("✅ Orphan investment ledger sudah direverse. Cek ulang Wallet Balance Audit.");
+    return done;
+  }
+
+  async function reverseTestAllowanceTransfer(refId) {
+    if (!isOwner) {
+      showAccessNotice("Hanya Owner yang bisa membersihkan data test.");
+      return false;
+    }
+    const pair = sumberDanaLedger.filter(l =>
+      String(l.refId || "") === String(refId || "") &&
+      ["allowance_transfer_in", "allowance_transfer_out"].includes(l.refType) &&
+      String(l.note || "").toLowerCase().includes("test") &&
+      !l.reconciled &&
+      !hasLedgerReversal(l.id, ["test_transfer_reversal"])
+    );
+    if (!pair.length) {
+      window.alert("Tidak ada ledger transfer test aktif untuk direverse.");
+      return false;
+    }
+    const gross = pair.reduce((sum, l) => sum + Math.abs(Number(l.amount || 0)), 0);
+    const ok = window.confirm("Reverse transfer test ini? Semua efek wallet dari transfer test akan dinetralkan. Gross: " + formatFull(gross) + ".");
+    if (!ok) return false;
+    for (const l of pair) {
+      await reverseWalletLedgerItem(l, {
+        refType: "test_transfer_reversal",
+        reversalTypes: ["test_transfer_reversal"],
+        note: "Reverse data test: " + (l.note || l.refId || l.id),
+      });
+    }
+    await addActivityLog("test_allowance_transfer_reversed", (currentUser || "Owner") + " reverse transfer test ref " + refId + ".");
+    window.alert("✅ Transfer test sudah direverse. Cek wallet asal dan wallet penerima.");
+    return true;
+  }
+
   async function deleteInvestment(id) {
     if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin menghapus investasi.");
@@ -3145,7 +3237,30 @@ export default function App() {
     }
     const inv = investments.find(i => i.id === id);
     if (!inv) return false;
-    await addInvestmentLog(id, "investment_deleted", "Aset dipindahkan ke Recycle Bin. Wallet tidak otomatis berubah.");
+    const relatedWalletLedgers = sumberDanaLedger.filter(l =>
+      l.refType === "investment" &&
+      String(l.refId || "") === String(id) &&
+      !l.reconciled &&
+      !hasLedgerReversal(l.id, ["investment_delete_reversal", "investment_orphan_reversal"])
+    );
+    if (relatedWalletLedgers.length > 0 && isOwner) {
+      const totalLedger = relatedWalletLedgers.reduce((sum, l) => sum + Math.abs(Number(l.amount || 0)), 0);
+      const reverseToo = window.confirm(
+        "Aset ini punya ledger pembelian dari wallet sebesar " + formatFull(totalLedger) + ".\n\n" +
+        "OK = Hapus aset + reverse efek wallet.\n" +
+        "Cancel = Hapus aset saja, wallet tidak berubah."
+      );
+      if (reverseToo) {
+        for (const l of relatedWalletLedgers) {
+          await reverseWalletLedgerItem(l, {
+            refType: "investment_delete_reversal",
+            reversalTypes: ["investment_delete_reversal", "investment_orphan_reversal"],
+            note: "Reverse wallet karena aset dihapus: " + (inv.ticker || inv.assetType || inv.id),
+          });
+        }
+      }
+    }
+    await addInvestmentLog(id, "investment_deleted", "Aset dipindahkan ke Recycle Bin. Wallet tidak otomatis berubah kecuali Owner memilih reverse ledger saat hapus.");
     await softDeleteRecord({ type: "investment", collectionName: "investments", id, data: inv, detail: "Hapus investasi ke Recycle Bin" });
     if (selectedInvestment?.id === id) {
       setSelectedInvestment(null);
@@ -3985,6 +4100,7 @@ export default function App() {
   const canViewFinancialSummary = isOwner || hasPermission("financial_summary_view");
   const canViewActivityLog = isOwner || hasPermission("activity_log_view") || hasPermission("activity_log");
   const canViewRecycleBin = isOwner || hasPermission("recycle_bin_view") || hasPermission("recycle_bin");
+  const canViewLogAuditCenter = isOwner;
   const canBackupExport = isOwner || hasPermission("backup_export") || hasPermission("backup");
   const canAccessSelectedWalletUser = (name) => canViewAllWallets || name === currentUser;
 
@@ -4278,6 +4394,7 @@ export default function App() {
 
             <Section title="Sistem & Keamanan Data">
               {canViewActivityLog && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowActivityLogModal(true); }} tone="purple">📝 Activity Log</SettingButton>}
+              {canViewLogAuditCenter && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowLogAuditCenter(true); }} tone="purple">🧭 Log Audit Center · Owner</SettingButton>}
               {(isOwner || canViewRecycleBin) && <SettingButton onClick={() => { setShowSettingsCenter(false); setShowRecycleBin(true); }} tone="amber">♻️ Recycle Bin / Undo Delete</SettingButton>}
               <div style={{ padding: "12px", borderRadius: "14px", background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.16)", color: "#fde68a", fontSize: "12px", lineHeight: 1.5, fontWeight: 800 }}>
                 Data yang dihapus masuk Recycle Bin selama 30 hari. Restore dan hapus permanen dikontrol oleh Owner.
@@ -4290,7 +4407,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.14. Goal Link Audit Queue untuk menemukan transaksi Goal-linked yang perlu dicek Owner tanpa mengubah UI utama.
+            FinPlan v1.1.0 phase 6.7.16. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, dan rekonsiliasi ledger investasi/test.
           </div>
         </div>
       </div>
@@ -4370,6 +4487,228 @@ export default function App() {
       </div>
     );
   };
+
+
+
+  const LogAuditCenterModal = () => {
+    if (!showLogAuditCenter || !canViewLogAuditCenter) return null;
+
+    const txIds = new Set(transactions.map(t => String(t.id)));
+    const walletIds = new Set(sumberDanaList.map(sd => String(sd.id)));
+    const investmentIds = new Set(investments.map(inv => String(inv.id)));
+    const loanIds = new Set(gadaiList.map(g => String(g.id)));
+    const goalIds = new Set(savingsGoals.map(g => String(g.id)));
+    const goalUsageIds = new Set(goalUsageLog.map(g => String(g.id)));
+    const investmentReversalLedgerIds = new Set(sumberDanaLedger
+      .filter(l => ["investment_orphan_reversal", "investment_delete_reversal"].includes(l.refType) && l.refId)
+      .map(l => String(l.refId)));
+    const testReversalLedgerIds = new Set(sumberDanaLedger
+      .filter(l => l.refType === "test_transfer_reversal" && l.refId)
+      .map(l => String(l.refId)));
+
+    const transactionLedgers = sumberDanaLedger.filter(l => l.refType === "transaction");
+    const ledgerByTxId = transactionLedgers.reduce((acc, l) => {
+      const key = String(l.refId || "");
+      if (!key) return acc;
+      acc[key] = acc[key] || [];
+      acc[key].push(l);
+      return acc;
+    }, {});
+
+    const txWithoutLedger = transactions.filter(tx => tx.sumberDanaId && (ledgerByTxId[String(tx.id)] || []).length === 0);
+    const txDuplicateLedger = transactions.filter(tx => (ledgerByTxId[String(tx.id)] || []).length > 1);
+    const orphanTransactionLedger = transactionLedgers.filter(l => l.refId && !txIds.has(String(l.refId)));
+    const ledgerWithoutWallet = sumberDanaLedger.filter(l => l.sumberDanaId && !walletIds.has(String(l.sumberDanaId)));
+
+    const goalLinkedNoUsage = transactions.filter(tx => (tx.goalId || tx.goalLinkedAmount || tx.goalPendingAmount) && (!tx.goalUsageId || !goalUsageIds.has(String(tx.goalUsageId))));
+    const goalUsageOrphanTransaction = goalUsageLog.filter(u => u.sourceTransactionId && !txIds.has(String(u.sourceTransactionId)));
+    const goalUsageGoalMissing = goalUsageLog.filter(u => u.goalId && !goalIds.has(String(u.goalId)));
+
+    const investmentBuyNoLedger = investments.filter(inv => inv.sourceMode === "wallet" && !sumberDanaLedger.some(l => l.refType === "investment" && String(l.refId || "") === String(inv.id)));
+    const investmentLedgerOrphan = sumberDanaLedger.filter(l =>
+      l.refType === "investment" &&
+      l.refId &&
+      !investmentIds.has(String(l.refId)) &&
+      !l.reconciled &&
+      !investmentReversalLedgerIds.has(String(l.id))
+    );
+    const activeTestAllowanceRefs = Object.values(sumberDanaLedger
+      .filter(l =>
+        ["allowance_transfer_in", "allowance_transfer_out"].includes(l.refType) &&
+        String(l.note || "").toLowerCase().includes("test") &&
+        !l.reconciled &&
+        !testReversalLedgerIds.has(String(l.id))
+      )
+      .reduce((acc, l) => {
+        const key = String(l.refId || l.id);
+        acc[key] = acc[key] || { id: key, refId: key, items: [], amount: 0, grossAmount: 0, note: l.note || "", createdAt: l.createdAt || "" };
+        acc[key].items.push(l);
+        acc[key].amount += Number(l.amount || 0);
+        acc[key].grossAmount += Math.abs(Number(l.amount || 0));
+        if (!acc[key].note && l.note) acc[key].note = l.note;
+        return acc;
+      }, {}));
+
+    const loanDisbursementNoLedger = gadaiList.filter(g => g.sumberDanaId && !sumberDanaLedger.some(l => l.refType === "loan_disbursement" && String(l.refId || "") === String(g.id)));
+    const loanLedgerOrphan = sumberDanaLedger.filter(l => ["loan_disbursement", "loan_repayment", "loan_disbursement_cancel"].includes(l.refType) && l.refId && !loanIds.has(String(l.refId)));
+
+    const negativeWallets = sumberDanaList
+      .map(sd => ({ ...sd, balance: calcSumberDanaBalance(sd.id), ledgerCount: sumberDanaLedger.filter(l => String(l.sumberDanaId) === String(sd.id)).length }))
+      .filter(sd => Number(sd.balance || 0) < 0)
+      .sort((a, b) => Number(a.balance || 0) - Number(b.balance || 0));
+
+    const activeRecycle = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= new Date().toISOString());
+    const expiredRecycle = recycleBin.filter(item => item.expiresAt && item.expiresAt < new Date().toISOString());
+
+    const issueGroups = [
+      { title: "Transaksi ↔ Wallet Ledger", icon: "🧾", tone: "red", items: [
+        { label: "Transaksi tanpa ledger wallet", count: txWithoutLedger.length, items: txWithoutLedger, kind: "transaction" },
+        { label: "Transaksi dengan ledger ganda", count: txDuplicateLedger.length, items: txDuplicateLedger, kind: "transaction" },
+        { label: "Ledger transaksi tanpa transaksi aktif", count: orphanTransactionLedger.length, items: orphanTransactionLedger, kind: "ledger" },
+        { label: "Ledger memakai wallet yang tidak ditemukan", count: ledgerWithoutWallet.length, items: ledgerWithoutWallet, kind: "ledger" },
+      ]},
+      { title: "Goal Usage ↔ Transaksi", icon: "🎯", tone: "amber", items: [
+        { label: "Transaksi goal-linked tanpa usage valid", count: goalLinkedNoUsage.length, items: goalLinkedNoUsage, kind: "transaction" },
+        { label: "Goal usage menunjuk transaksi hilang", count: goalUsageOrphanTransaction.length, items: goalUsageOrphanTransaction, kind: "usage" },
+        { label: "Goal usage menunjuk goal hilang", count: goalUsageGoalMissing.length, items: goalUsageGoalMissing, kind: "usage" },
+      ]},
+      { title: "Portfolio ↔ Wallet Ledger", icon: "📈", tone: "purple", items: [
+        { label: "Investasi dari wallet tanpa ledger", count: investmentBuyNoLedger.length, items: investmentBuyNoLedger, kind: "investment" },
+        { label: "Ledger investasi tanpa aset aktif", count: investmentLedgerOrphan.length, items: investmentLedgerOrphan, kind: "ledger" },
+      ]},
+      { title: "Data Test / Cleanup", icon: "🧪", tone: "amber", items: [
+        { label: "Transfer uang saku TEST aktif", count: activeTestAllowanceRefs.length, items: activeTestAllowanceRefs, kind: "test_transfer" },
+      ]},
+      { title: "Pinjaman ↔ Wallet Ledger", icon: "🏦", tone: "blue", items: [
+        { label: "Pencairan pinjaman tanpa ledger", count: loanDisbursementNoLedger.length, items: loanDisbursementNoLedger, kind: "loan" },
+        { label: "Ledger pinjaman tanpa data pinjaman aktif", count: loanLedgerOrphan.length, items: loanLedgerOrphan, kind: "ledger" },
+      ]},
+      { title: "Wallet Balance", icon: "👛", tone: "red", items: [
+        { label: "Wallet saldo negatif", count: negativeWallets.length, items: negativeWallets, kind: "wallet" },
+      ]},
+    ];
+    const totalIssues = issueGroups.reduce((sum, group) => sum + group.items.reduce((s, item) => s + Number(item.count || 0), 0), 0);
+    const auditScore = Math.max(0, Math.min(100, 100 - (totalIssues * 4)));
+    const status = totalIssues === 0 ? "Aman" : totalIssues <= 5 ? "Perlu cek" : "Audit serius";
+    const statusColor = totalIssues === 0 ? "#34d399" : totalIssues <= 5 ? "#fbbf24" : "#f87171";
+
+    const openAuditItem = (item, kind) => {
+      if (!item) return;
+      if (kind === "transaction") { setSelectedTransaction(item); return; }
+      if (kind === "wallet") { setSelectedSD(item); return; }
+      if (kind === "investment") { setSelectedInvestment(item); return; }
+      if ((kind === "ledger" || kind === "test_transfer") && item.sumberDanaId) {
+        const sd = sumberDanaList.find(w => String(w.id) === String(item.sumberDanaId));
+        if (sd) setSelectedSD(sd);
+      }
+    };
+
+    const ItemPreview = ({ row, kind }) => {
+      const title = kind === "transaction"
+        ? (getCategoryInfo(row.category).label + " · " + formatRupiah(row.amount || 0))
+        : kind === "wallet"
+          ? ((row.icon || "👛") + " " + (row.name || row.id) + " · " + formatRupiah(row.balance || 0))
+          : kind === "investment"
+            ? ((row.ticker || row.assetType || "Aset") + " · " + formatRupiah(row.costBasis || row.costBasisIdr || row.buyPrice || 0))
+            : kind === "usage"
+              ? ((row.goalLabel || row.goalId || "Goal Usage") + " · " + formatRupiah(row.amount || 0))
+              : kind === "test_transfer"
+                ? ("Transfer TEST · gross " + formatRupiah(row.grossAmount || 0))
+                : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
+      const sub = kind === "transaction"
+        ? ((row.date || "Tanpa tanggal") + " · " + (row.sumberDanaName || row.sumberDanaId || "Tanpa wallet"))
+        : kind === "wallet"
+          ? ((row.ledgerCount || 0) + " ledger · " + (row.user || "Family"))
+          : kind === "ledger"
+            ? ((row.refType || "ref") + " · " + (row.refId || "tanpa ref") + " · " + (row.note || ""))
+            : kind === "test_transfer"
+              ? ((row.items || []).length + " ledger · net " + formatRupiah(row.amount || 0) + " · " + (row.note || row.refId || ""))
+              : ((row.date || row.createdAt || "") + " · " + (row.note || row.detail || ""));
+      return (
+        <div style={{ padding: "10px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)", marginTop: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflow: "hidden", textOverflow: "ellipsis" }}>{title}</div>
+              <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.4 }}>{sub}</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
+              {["transaction", "wallet", "investment", "ledger"].includes(kind) && <button onClick={() => openAuditItem(row, kind)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Buka</button>}
+              {kind === "ledger" && row.refType === "investment" && !row.reconciled && <button onClick={() => reverseOrphanInvestmentLedger(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(52,211,153,0.35)", background: "rgba(52,211,153,0.12)", color: "#86efac", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse</button>}
+              {kind === "test_transfer" && <button onClick={() => reverseTestAllowanceTransfer(row.refId)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(251,191,36,0.35)", background: "rgba(251,191,36,0.12)", color: "#fde68a", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Test</button>}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <div onClick={() => setShowLogAuditCenter(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.72)", zIndex: 99998, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: "16px", boxSizing: "border-box" }}>
+        <div onClick={(e) => e.stopPropagation()} onTouchStart={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: "430px", maxHeight: "88vh", overflowY: "auto", overflowX: "hidden", background: "linear-gradient(180deg,#181827,#0f1020)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "24px 24px 18px 18px", padding: "20px", boxSizing: "border-box", boxShadow: "0 -20px 70px rgba(0,0,0,0.55)", color: "#e8e8f0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px" }}>
+            <div>
+              <div style={{ fontSize: "12px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Log Audit Center · Owner</div>
+              <div style={{ fontSize: "22px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Audit Semua Log</div>
+              <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>Cek hubungan Transaksi, Wallet Ledger, Goal Usage, Portfolio, Pinjaman, Activity Log, dan Recycle Bin.</div>
+            </div>
+            <button onClick={() => setShowLogAuditCenter(false)} style={{ width: "40px", height: "40px", borderRadius: "14px", border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.07)", color: "#fff", fontSize: "20px", fontWeight: 800, cursor: "pointer", flexShrink: 0 }}>×</button>
+          </div>
+
+          <div style={{ padding: "16px", borderRadius: "18px", background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.26)", marginBottom: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: "11px", color: "#c7d2fe", fontWeight: 900, textTransform: "uppercase", letterSpacing: "1.5px" }}>Audit Score</div>
+                <div style={{ fontSize: "30px", color: "#fff", fontWeight: 1000, marginTop: "4px" }}>{auditScore}/100</div>
+              </div>
+              <div style={{ padding: "10px 12px", borderRadius: "999px", background: "rgba(255,255,255,0.08)", color: statusColor, fontSize: "12px", fontWeight: 1000 }}>{status}</div>
+            </div>
+            <div style={{ fontSize: "11px", color: "#cbd5e1", lineHeight: 1.55, marginTop: "10px" }}>{totalIssues} isu terdeteksi dari log aktif yang sedang terbaca di aplikasi.</div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "14px" }}>
+            {[
+              ["Transaksi", transactions.length],
+              ["Wallet Ledger", sumberDanaLedger.length],
+              ["Goal Usage", goalUsageLog.length],
+              ["Invest Logs", investmentLogs.length],
+              ["Activity Log", activityLog.length + "+"],
+              ["Recycle", activeRecycle.length + " aktif"],
+            ].map(([label, value]) => (
+              <div key={label} style={{ padding: "11px", borderRadius: "14px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 900, textTransform: "uppercase" }}>{label}</div>
+                <div style={{ fontSize: "16px", color: "#fff", fontWeight: 1000, marginTop: "4px" }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
+            Activity Log saat ini dibatasi ke 50 data terbaru di listener. Untuk audit historis penuh nanti perlu pagination/export khusus. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+          </div>
+
+          {issueGroups.map(group => {
+            const groupCount = group.items.reduce((sum, x) => sum + Number(x.count || 0), 0);
+            return (
+              <div key={group.title} style={{ padding: "14px", borderRadius: "18px", background: "rgba(255,255,255,0.035)", border: "1px solid rgba(255,255,255,0.08)", marginBottom: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                  <div style={{ fontSize: "13px", color: "#fff", fontWeight: 1000 }}>{group.icon} {group.title}</div>
+                  <div style={{ fontSize: "11px", color: groupCount ? "#fca5a5" : "#86efac", fontWeight: 1000 }}>{groupCount ? groupCount + " isu" : "Aman"}</div>
+                </div>
+                {group.items.map(section => (
+                  <div key={section.label} style={{ marginTop: "10px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", color: section.count ? "#fca5a5" : "#94a3b8", fontSize: "11px", fontWeight: 900 }}>
+                      <span>{section.label}</span><span>{section.count}</span>
+                    </div>
+                    {section.items.slice(0, 3).map((row, idx) => <ItemPreview key={(row.id || row.refId || idx) + section.label} row={row} kind={section.kind} />)}
+                    {section.count > 3 && <div style={{ fontSize: "10px", color: "#64748b", marginTop: "7px" }}>+{section.count - 3} item lain. Buka module terkait untuk cek lanjutan.</div>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
 
   const AuthScreen = ({ children }) => (
     <div style={{ minHeight: "100dvh", background: "linear-gradient(135deg,#0a0a0f,#12121f,#0a0f1a)", fontFamily: "sans-serif", color: "#e8e8f0", display: "flex", alignItems: "center", justifyContent: "center", padding: "10px", boxSizing: "border-box", overflow: "hidden" }}>
@@ -6090,13 +6429,15 @@ export default function App() {
       <div style={{ maxWidth: "430px", width: "100%", margin: "0 auto", minHeight: "100vh", position: "relative", overflowX: "hidden", boxSizing: "border-box", paddingBottom: showMainNav ? "100px" : "0" }}>
         <SettingsCenterModal />
         <ActivityLogModal />
+        <LogAuditCenterModal />
         {(() => {
-          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showForm || selectedTransaction || selectedCategory || selectedFamilyLogUser || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
+          const hasPopupOpen = showSettingsCenter || showActivityLogModal || showLogAuditCenter || showForm || selectedTransaction || selectedCategory || selectedFamilyLogUser || selectedSD || showSDForm || showWalletTransfer || showSavingsForm || showGoalBuilder || showGoalTemplateManager || showGoalUsage || showAssetConvert || assetToGoalInvestment || showUserSelect;
           const closeCurrentPopup = () => {
             if (selectedTransaction) { setSelectedTransaction(null); return; }
             if (selectedFamilyLogUser) { setSelectedFamilyLogUser(null); return; }
             setShowSettingsCenter(false);
             setShowActivityLogModal(false);
+            setShowLogAuditCenter(false);
             setShowForm(false);
             setSelectedTransaction(null);
             setSelectedCategory(null);
