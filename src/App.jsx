@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.16";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.16 hotfix 1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3139,7 +3139,7 @@ export default function App() {
     setTransactionEditStatus("✅ Tanggal transaksi diperbarui.");
   }
 
-  function hasLedgerReversal(ledgerId, reversalTypes = ["investment_orphan_reversal", "investment_delete_reversal", "test_transfer_reversal"]) {
+  function hasLedgerReversal(ledgerId, reversalTypes = ["investment_orphan_reversal", "investment_delete_reversal", "test_transfer_reversal", "loan_orphan_reversal", "orphan_loan_disbursement_reversal", "test_wallet_adjustment_reversal"]) {
     if (!ledgerId) return false;
     return sumberDanaLedger.some(l => reversalTypes.includes(l.refType) && String(l.refId || "") === String(ledgerId));
   }
@@ -3228,6 +3228,60 @@ export default function App() {
     await addActivityLog("test_allowance_transfer_reversed", (currentUser || "Owner") + " reverse transfer test ref " + refId + ".");
     window.alert("✅ Transfer test sudah direverse. Cek wallet asal dan wallet penerima.");
     return true;
+  }
+
+
+  function isLoanLedgerType(refType) {
+    return ["loan_disbursement", "loan_repayment", "loan_disbursement_cancel", "loan_repayment_cancel", "gadai", "gadai_lunas"].includes(refType);
+  }
+
+  async function reverseOrphanLoanLedger(ledger) {
+    if (!ledger || !isLoanLedgerType(ledger.refType)) return false;
+    const amount = Number(ledger.amount || 0);
+    if (!amount) {
+      window.alert("Nominal ledger pinjaman 0, tidak ada yang perlu direverse.");
+      return false;
+    }
+    const ok = window.confirm(
+      "Reverse orphan loan/gadai ledger ini?\n\n" +
+      "Wallet akan dikoreksi sebesar " + formatFull(Math.abs(amount)) + ".\n" +
+      "Ledger lama tetap disimpan sebagai audit."
+    );
+    if (!ok) return false;
+    const done = await reverseWalletLedgerItem(ledger, {
+      refType: "loan_orphan_reversal",
+      reversalTypes: ["loan_orphan_reversal", "orphan_loan_disbursement_reversal"],
+      note: "Reverse orphan loan/gadai ledger: " + (ledger.note || ledger.refId || ledger.id),
+    });
+    if (done) window.alert("✅ Orphan loan/gadai ledger sudah direverse. Cek ulang Wallet Balance Audit.");
+    return done;
+  }
+
+  async function reverseTestWalletAdjustment(ledger) {
+    if (!ledger || ledger.refType !== "wallet_adjustment") return false;
+    const isTest = String(ledger.note || "").toLowerCase().includes("test");
+    if (!isTest) {
+      window.alert("Ledger ini bukan penyesuaian TEST.");
+      return false;
+    }
+    const amount = Number(ledger.amount || 0);
+    if (!amount) {
+      window.alert("Nominal adjustment 0, tidak ada yang perlu direverse.");
+      return false;
+    }
+    const ok = window.confirm(
+      "Reverse penyesuaian saldo TEST ini?\n\n" +
+      "Wallet akan dikoreksi sebesar " + formatFull(Math.abs(amount)) + ".\n" +
+      "Gunakan hanya jika adjustment ini bukan data real."
+    );
+    if (!ok) return false;
+    const done = await reverseWalletLedgerItem(ledger, {
+      refType: "test_wallet_adjustment_reversal",
+      reversalTypes: ["test_wallet_adjustment_reversal"],
+      note: "Reverse wallet adjustment TEST: " + (ledger.note || ledger.refId || ledger.id),
+    });
+    if (done) window.alert("✅ Penyesuaian saldo TEST sudah direverse. Cek ulang saldo wallet.");
+    return done;
   }
 
   async function deleteInvestment(id) {
@@ -3681,6 +3735,11 @@ export default function App() {
       loan_repayment: "Pembayaran Pinjaman",
       loan_disbursement_cancel: "Batal Pencairan Pinjaman",
       orphan_loan_disbursement_reversal: "Koreksi Pinjaman Lama",
+      loan_orphan_reversal: "Reverse Pinjaman Orphan",
+      test_wallet_adjustment_reversal: "Reverse Adjustment TEST",
+      test_transfer_reversal: "Reverse Transfer TEST",
+      investment_orphan_reversal: "Reverse Investasi Orphan",
+      investment_delete_reversal: "Reverse Delete Investasi",
       wallet_merge_in: "Merge Masuk",
       wallet_merge_out: "Merge Keluar",
       wallet_adjustment: "Penyesuaian Wallet",
@@ -4407,7 +4466,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.16. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, dan rekonsiliasi ledger investasi/test.
+            FinPlan v1.1.0 phase 6.7.16 hotfix 1. Log Audit Center membantu Owner memeriksa lineage transaksi, ledger wallet, goal usage, investasi, pinjaman, activity log, recycle bin, serta rekonsiliasi ledger investasi/test/loan.
           </div>
         </div>
       </div>
@@ -4505,6 +4564,12 @@ export default function App() {
     const testReversalLedgerIds = new Set(sumberDanaLedger
       .filter(l => l.refType === "test_transfer_reversal" && l.refId)
       .map(l => String(l.refId)));
+    const loanReversalLedgerIds = new Set(sumberDanaLedger
+      .filter(l => ["loan_orphan_reversal", "orphan_loan_disbursement_reversal"].includes(l.refType) && l.refId)
+      .map(l => String(l.refId)));
+    const testWalletAdjustmentReversalIds = new Set(sumberDanaLedger
+      .filter(l => l.refType === "test_wallet_adjustment_reversal" && l.refId)
+      .map(l => String(l.refId)));
 
     const transactionLedgers = sumberDanaLedger.filter(l => l.refType === "transaction");
     const ledgerByTxId = transactionLedgers.reduce((acc, l) => {
@@ -4550,7 +4615,19 @@ export default function App() {
       }, {}));
 
     const loanDisbursementNoLedger = gadaiList.filter(g => g.sumberDanaId && !sumberDanaLedger.some(l => l.refType === "loan_disbursement" && String(l.refId || "") === String(g.id)));
-    const loanLedgerOrphan = sumberDanaLedger.filter(l => ["loan_disbursement", "loan_repayment", "loan_disbursement_cancel"].includes(l.refType) && l.refId && !loanIds.has(String(l.refId)));
+    const loanLedgerOrphan = sumberDanaLedger.filter(l =>
+      isLoanLedgerType(l.refType) &&
+      l.refId &&
+      !loanIds.has(String(l.refId)) &&
+      !l.reconciled &&
+      !loanReversalLedgerIds.has(String(l.id))
+    );
+    const activeTestWalletAdjustments = sumberDanaLedger.filter(l =>
+      l.refType === "wallet_adjustment" &&
+      String(l.note || "").toLowerCase().includes("test") &&
+      !l.reconciled &&
+      !testWalletAdjustmentReversalIds.has(String(l.id))
+    );
 
     const negativeWallets = sumberDanaList
       .map(sd => ({ ...sd, balance: calcSumberDanaBalance(sd.id), ledgerCount: sumberDanaLedger.filter(l => String(l.sumberDanaId) === String(sd.id)).length }))
@@ -4578,10 +4655,11 @@ export default function App() {
       ]},
       { title: "Data Test / Cleanup", icon: "🧪", tone: "amber", items: [
         { label: "Transfer uang saku TEST aktif", count: activeTestAllowanceRefs.length, items: activeTestAllowanceRefs, kind: "test_transfer" },
+        { label: "Penyesuaian saldo TEST aktif", count: activeTestWalletAdjustments.length, items: activeTestWalletAdjustments, kind: "test_wallet_adjustment" },
       ]},
       { title: "Pinjaman ↔ Wallet Ledger", icon: "🏦", tone: "blue", items: [
         { label: "Pencairan pinjaman tanpa ledger", count: loanDisbursementNoLedger.length, items: loanDisbursementNoLedger, kind: "loan" },
-        { label: "Ledger pinjaman tanpa data pinjaman aktif", count: loanLedgerOrphan.length, items: loanLedgerOrphan, kind: "ledger" },
+        { label: "Ledger pinjaman/gadai tanpa data aktif", count: loanLedgerOrphan.length, items: loanLedgerOrphan, kind: "loan_ledger" },
       ]},
       { title: "Wallet Balance", icon: "👛", tone: "red", items: [
         { label: "Wallet saldo negatif", count: negativeWallets.length, items: negativeWallets, kind: "wallet" },
@@ -4597,7 +4675,7 @@ export default function App() {
       if (kind === "transaction") { setSelectedTransaction(item); return; }
       if (kind === "wallet") { setSelectedSD(item); return; }
       if (kind === "investment") { setSelectedInvestment(item); return; }
-      if ((kind === "ledger" || kind === "test_transfer") && item.sumberDanaId) {
+      if (["ledger", "loan_ledger", "test_transfer", "test_wallet_adjustment"].includes(kind) && item.sumberDanaId) {
         const sd = sumberDanaList.find(w => String(w.id) === String(item.sumberDanaId));
         if (sd) setSelectedSD(sd);
       }
@@ -4614,7 +4692,9 @@ export default function App() {
               ? ((row.goalLabel || row.goalId || "Goal Usage") + " · " + formatRupiah(row.amount || 0))
               : kind === "test_transfer"
                 ? ("Transfer TEST · gross " + formatRupiah(row.grossAmount || 0))
-                : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
+                : kind === "test_wallet_adjustment"
+                  ? ("Adjustment TEST · " + formatRupiah(row.amount || 0))
+                  : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
       const sub = kind === "transaction"
         ? ((row.date || "Tanpa tanggal") + " · " + (row.sumberDanaName || row.sumberDanaId || "Tanpa wallet"))
         : kind === "wallet"
@@ -4632,8 +4712,10 @@ export default function App() {
               <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.4 }}>{sub}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
-              {["transaction", "wallet", "investment", "ledger"].includes(kind) && <button onClick={() => openAuditItem(row, kind)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Buka</button>}
+              {["transaction", "wallet", "investment", "ledger", "loan_ledger", "test_wallet_adjustment"].includes(kind) && <button onClick={() => openAuditItem(row, kind)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Buka</button>}
               {kind === "ledger" && row.refType === "investment" && !row.reconciled && <button onClick={() => reverseOrphanInvestmentLedger(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(52,211,153,0.35)", background: "rgba(52,211,153,0.12)", color: "#86efac", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse</button>}
+              {kind === "loan_ledger" && !row.reconciled && <button onClick={() => reverseOrphanLoanLedger(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(96,165,250,0.35)", background: "rgba(96,165,250,0.12)", color: "#bfdbfe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Loan</button>}
+              {kind === "test_wallet_adjustment" && !row.reconciled && <button onClick={() => reverseTestWalletAdjustment(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(251,191,36,0.35)", background: "rgba(251,191,36,0.12)", color: "#fde68a", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Adj</button>}
               {kind === "test_transfer" && <button onClick={() => reverseTestAllowanceTransfer(row.refId)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(251,191,36,0.35)", background: "rgba(251,191,36,0.12)", color: "#fde68a", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Test</button>}
             </div>
           </div>
