@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14 hotfix 1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3062,6 +3062,62 @@ export default function App() {
     setTransactionEditStatus("✅ Revisi transaksi tersimpan. Saldo wallet ikut dikoreksi." + goalRevisionMessage);
   }
 
+  async function saveOwnerTransactionDate(tx, nextDate) {
+    if (!tx?.id) return;
+    if (!isOwner) {
+      showAccessNotice("Ubah tanggal transaksi hanya untuk Owner.");
+      return;
+    }
+    const safeDate = nextDate || new Date().toISOString().split("T")[0];
+    const oldDate = tx.date || String(tx.createdAt || "").slice(0, 10) || "Tanpa Tanggal";
+    if (safeDate === oldDate) return;
+
+    const now = new Date().toISOString();
+    setTransactionEditStatus("Menyimpan tanggal transaksi...");
+
+    const updateData = {
+      date: safeDate,
+      updatedAt: now,
+      updatedBy: currentUser || "Owner",
+      ownerDateRevisedAt: now,
+      ownerDateRevisedBy: currentUser || "Owner",
+      ownerDateRevisionReason: "Revisi tanggal transaksi",
+    };
+
+    await setDoc(doc(db, "transactions", tx.id), updateData, { merge: true });
+
+    const relatedLedger = sumberDanaLedger.filter(l => l.refType === "transaction" && l.refId === tx.id);
+    for (const ledgerItem of relatedLedger) {
+      if (ledgerItem?.id) {
+        await setDoc(doc(db, "sumberDanaLedger", ledgerItem.id), {
+          date: safeDate,
+          transactionDate: safeDate,
+          updatedAt: now,
+          updatedBy: currentUser || "Owner",
+          ownerDateRevised: true,
+        }, { merge: true });
+      }
+    }
+
+    if (tx.goalUsageId) {
+      await setDoc(doc(db, "goalUsage", tx.goalUsageId), {
+        date: safeDate,
+        updatedAt: now,
+        updatedBy: currentUser || "Owner",
+        ownerDateSynced: true,
+      }, { merge: true });
+    }
+
+    await addActivityLog(
+      "transaction_date_revised",
+      "Owner revisi tanggal transaksi " + formatRupiah(tx.amount || 0) + " · " + oldDate + " → " + safeDate
+    );
+    syncToSheets("updateTransaction", { id: tx.id, ...updateData, ownerDateQuickEdit: true });
+
+    setSelectedTransaction(prev => prev?.id === tx.id ? { ...prev, ...updateData } : prev);
+    setTransactionEditStatus("✅ Tanggal transaksi diperbarui.");
+  }
+
   async function deleteInvestment(id) {
     if (!canManageInvestments) {
       showAccessNotice("Role " + currentRole + " tidak punya izin menghapus investasi.");
@@ -5726,7 +5782,24 @@ export default function App() {
           <div style={{ marginTop: "18px", display: "grid", gap: "10px" }}>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Kategori</div><div style={{ fontSize: "15px", fontWeight: 800 }}>{cat.icon || "🧾"} {cat.label || "Tanpa Kategori"}</div></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Tanggal</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal"}</div></div>
+              <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+                  <div style={{ fontSize: "11px", color: "#777" }}>Tanggal</div>
+                  {isOwner && <div style={{ fontSize: "9px", color: "#93c5fd", fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.8px" }}>Pilih tanggal</div>}
+                </div>
+                {isOwner ? (
+                  <input
+                    type="date"
+                    value={tx.date || String(tx.createdAt || "").slice(0,10) || new Date().toISOString().split("T")[0]}
+                    onClick={(e) => e.stopPropagation()}
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onChange={(e) => saveOwnerTransactionDate(tx, e.target.value)}
+                    style={{ ...inputStyle, minHeight: "34px", padding: "0", border: "none", background: "transparent", fontSize: "14px", fontWeight: 800, color: "#e8e8f0" }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal"}</div>
+                )}
+              </div>
               <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Untuk / Beneficiary</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.user || tx.userName || "Tanpa User"}</div></div>
             </div>
             <div style={{ padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.06)" }}><div style={{ fontSize: "11px", color: "#777", marginBottom: "4px" }}>Sumber Dana</div><div style={{ fontSize: "14px", fontWeight: 700 }}>{tx.sumberDanaName || editCurrentSource?.name || tx.sumberDanaId || tx.sourceFund || "Tanpa Sumber Dana"}</div></div>
