@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.13";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.14";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -1596,6 +1596,48 @@ export default function App() {
         .slice(0, 5)
     : [];
   const goalLinkReviewTotal = goalLinkReviewCandidates.length;
+  function getGoalLinkAuditForTransaction(tx) {
+    if (!tx) return null;
+    const hasGoalSignal = tx.goalId || tx.goalUsageId || Number(tx.goalPendingAmount || 0) > 0 || Number(tx.goalLinkedAmount || 0) > 0;
+    if (!hasGoalSignal) return null;
+    const goal = tx.goalId ? savingsGoals.find(g => String(g.id) === String(tx.goalId)) : null;
+    const linkedAmount = Number(tx.goalLinkedAmount || 0);
+    const txAmount = Number(tx.amount || 0);
+    const pendingAmount = Number(tx.goalPendingAmount || 0);
+    const issues = [];
+    if (!tx.goalId) issues.push("Goal kosong");
+    if (tx.goalId && !goal) issues.push("Goal tidak ditemukan");
+    if (tx.type !== "expense") issues.push("Bukan expense");
+    if (!tx.goalUsageId) issues.push("Usage log kosong");
+    if (linkedAmount <= 0) issues.push("Linked Rp 0");
+    if (txAmount > 0 && linkedAmount > txAmount) issues.push("Linked > nominal");
+    if (pendingAmount > 0) issues.push("Pending settlement");
+    const severity = pendingAmount > 0 || !goal || !tx.goalId ? "warning" : (issues.length > 0 ? "check" : "synced");
+    return {
+      tx,
+      goal,
+      issues,
+      severity,
+      linkedAmount,
+      pendingAmount,
+      txAmount,
+      goalCash: tx.goalId ? Number(savingsData[tx.goalId] || 0) : 0,
+    };
+  }
+  const goalLinkAuditQueue = earlyIsOwnerForScope
+    ? displayTxns
+        .map(getGoalLinkAuditForTransaction)
+        .filter(item => item && item.issues.length > 0)
+        .sort((a, b) => {
+          const aWeight = a.severity === "warning" ? 2 : 1;
+          const bWeight = b.severity === "warning" ? 2 : 1;
+          return bWeight - aWeight || Number(b.pendingAmount || 0) - Number(a.pendingAmount || 0) || Number(b.txAmount || 0) - Number(a.txAmount || 0);
+        })
+        .slice(0, 5)
+    : [];
+  const goalLinkAuditTotal = goalLinkAuditQueue.length;
+  const goalLinkedVisibleCount = earlyIsOwnerForScope ? displayTxns.filter(tx => tx.goalId || tx.goalUsageId || Number(tx.goalLinkedAmount || 0) > 0).length : 0;
+  const goalLinkedSyncedVisibleCount = Math.max(goalLinkedVisibleCount - goalLinkAuditTotal, 0);
 
   const totalSavingsTarget = savingsGoals.reduce((s, g) => s + Number(g.targetAmount || 0), 0);
   const totalSavingsCurrent = savingsGoals.reduce((s, g) => s + calcGoalValue(g.id), 0);
@@ -4172,7 +4214,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.13. Goal Link Audit Status untuk menjaga sinkronisasi transaksi dan Goal tanpa mengubah UI utama.
+            FinPlan v1.1.0 phase 6.7.14. Goal Link Audit Queue untuk menemukan transaksi Goal-linked yang perlu dicek Owner tanpa mengubah UI utama.
           </div>
         </div>
       </div>
@@ -6461,6 +6503,45 @@ export default function App() {
                           );
                         })}
                       </div>
+                    </div>
+                  )}
+
+                  {isOwner && goalLinkedVisibleCount > 0 && (
+                    <div style={{ marginTop: "10px", padding: "11px", borderRadius: "14px", background: goalLinkAuditTotal > 0 ? "rgba(251,191,36,0.08)" : "rgba(16,185,129,0.08)", border: goalLinkAuditTotal > 0 ? "1px solid rgba(251,191,36,0.18)" : "1px solid rgba(16,185,129,0.16)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", marginBottom: "8px" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: "10px", letterSpacing: "1.8px", color: goalLinkAuditTotal > 0 ? "#fbbf24" : "#86efac", fontWeight: 900, textTransform: "uppercase" }}>Goal Link Audit · Owner</div>
+                          <div style={{ fontSize: "11px", color: goalLinkAuditTotal > 0 ? "#fde68a" : "#bbf7d0", lineHeight: 1.45, marginTop: "3px" }}>{goalLinkAuditTotal > 0 ? "Transaksi Goal-linked yang perlu dicek sebelum laporan/engine dibaca." : "Semua transaksi Goal-linked yang tampil sudah tersinkron."}</div>
+                        </div>
+                        <div style={{ textAlign: "right", flexShrink: 0 }}>
+                          <div style={{ fontSize: "18px", color: goalLinkAuditTotal > 0 ? "#fbbf24" : "#86efac", fontWeight: 900 }}>{goalLinkAuditTotal}</div>
+                          <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 800 }}>{goalLinkedSyncedVisibleCount} aman</div>
+                        </div>
+                      </div>
+                      {goalLinkAuditTotal === 0 ? (
+                        <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.14)", color: "#86efac", fontSize: "11px", fontWeight: 800 }}>Goal-linked transaction aman pada hasil filter ini.</div>
+                      ) : (
+                        <div style={{ display: "grid", gap: "7px" }}>
+                          {goalLinkAuditQueue.map(item => {
+                            const tx = item.tx;
+                            const cat = getCategoryInfo(tx.category, tx);
+                            const txDate = tx.date || String(tx.createdAt || "").slice(0,10) || "Tanpa Tanggal";
+                            const txUser = tx.user || tx.userName || "Tanpa User";
+                            const auditKey = tx.id || `${txDate}-${txUser}-${item.linkedAmount}-${item.pendingAmount}`;
+                            const issueText = item.issues.slice(0, 3).join(" · ");
+                            return (
+                              <button key={auditKey} onClick={() => { setSelectedTransaction(tx); setTransactionEditMode(false); setTransactionGoalLinkForm({ goalId: tx.goalId || "", status: "Audit Goal Link: cek nominal, pending settlement, dan usage log sebelum koreksi." }); }} style={{ width: "100%", display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: "8px", alignItems: "center", padding: "9px 10px", borderRadius: "13px", border: "1px solid rgba(251,191,36,0.16)", background: "rgba(15,23,42,0.42)", cursor: "pointer", textAlign: "left", boxSizing: "border-box" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "12px", color: "#fff", fontWeight: 900, overflowWrap: "anywhere" }}>{cat?.icon || "🎯"} {item.goal?.label || tx.goalLabel || tx.goalId || "Goal"}</div>
+                                  <div style={{ fontSize: "10px", color: "#fcd34d", marginTop: "2px", overflowWrap: "anywhere" }}>{issueText}</div>
+                                  <div style={{ fontSize: "9px", color: "#94a3b8", marginTop: "2px", overflowWrap: "anywhere" }}>{txUser} · {txDate}</div>
+                                </div>
+                                <div style={{ textAlign: "right", flexShrink: 0 }}><div style={{ fontSize: "11px", color: "#fca5a5", fontWeight: 900 }}>-{formatRupiah(tx.amount || 0)}</div><div style={{ fontSize: "9px", color: "#fbbf24", marginTop: "3px" }}>Audit →</div></div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 
