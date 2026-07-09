@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.19";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.0";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -40,6 +40,75 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "loan_repayment", label: "Pembayaran Pinjaman", effect: "wallet_decrease_liability_decrease", netWorth: "neutral_plus_fee" },
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
+
+const FINANCIAL_ENGINE_VERSION = "6.8.0";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Final Cleanup";
+const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
+
+const LEDGER_FINANCIAL_TREATMENT = {
+  transaction: { movementType: "cashflow", cashflowTreatment: "income_expense", netWorthEffect: "transaction_delta" },
+  goal_allocation: { movementType: "goal_allocation", cashflowTreatment: "internal_allocation", netWorthEffect: "neutral" },
+  goal_cash_cancel: { movementType: "goal_allocation_cancel", cashflowTreatment: "internal_allocation_reversal", netWorthEffect: "neutral" },
+  goal_asset_allocation: { movementType: "goal_asset_allocation", cashflowTreatment: "wallet_to_goal_asset", netWorthEffect: "neutral" },
+  goal_asset_purchase: { movementType: "goal_asset_purchase", cashflowTreatment: "wallet_to_goal_asset", netWorthEffect: "neutral" },
+  goal_asset_cancel: { movementType: "goal_asset_cancel", cashflowTreatment: "wallet_to_goal_asset_reversal", netWorthEffect: "neutral" },
+  investment: { movementType: "investment_buy", cashflowTreatment: "wallet_to_asset", netWorthEffect: "neutral" },
+  investment_orphan_reversal: { movementType: "investment_reversal", cashflowTreatment: "wallet_to_asset_reversal", netWorthEffect: "neutral" },
+  investment_delete_reversal: { movementType: "investment_delete_reversal", cashflowTreatment: "wallet_to_asset_reversal", netWorthEffect: "neutral" },
+  loan_disbursement: { movementType: "loan_disbursement", cashflowTreatment: "liability_funding", netWorthEffect: "neutral" },
+  loan_disbursement_cancel: { movementType: "loan_disbursement_cancel", cashflowTreatment: "liability_funding_reversal", netWorthEffect: "neutral" },
+  loan_repayment: { movementType: "loan_repayment", cashflowTreatment: "principal_repayment", netWorthEffect: "neutral_principal_fee_separate" },
+  loan_orphan_reversal: { movementType: "loan_reversal", cashflowTreatment: "liability_funding_reversal", netWorthEffect: "neutral" },
+  orphan_loan_disbursement_reversal: { movementType: "loan_reversal", cashflowTreatment: "liability_funding_reversal", netWorthEffect: "neutral" },
+  allowance_transfer_out: { movementType: "wallet_to_wallet", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  allowance_transfer_in: { movementType: "wallet_to_wallet", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  wallet_transfer_out: { movementType: "wallet_to_wallet", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  wallet_transfer_in: { movementType: "wallet_to_wallet", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  wallet_merge_in: { movementType: "wallet_merge", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  wallet_merge_out: { movementType: "wallet_merge", cashflowTreatment: "internal_transfer", netWorthEffect: "neutral" },
+  wallet_adjustment: { movementType: "wallet_baseline_adjustment", cashflowTreatment: "baseline_adjustment", netWorthEffect: "reconcile" },
+  wallet_baseline_adjustment: { movementType: "wallet_baseline_adjustment", cashflowTreatment: "baseline_adjustment", netWorthEffect: "reconcile" },
+  test_wallet_adjustment_reversal: { movementType: "test_reversal", cashflowTreatment: "test_reversal", netWorthEffect: "neutral" },
+  test_transfer_reversal: { movementType: "test_reversal", cashflowTreatment: "test_reversal", netWorthEffect: "neutral" },
+};
+
+const FINANCIAL_BAD_STATUS = new Set(["archived", "archive", "deleted", "soft_deleted", "cancelled", "canceled", "void", "voided", "dibatalkan", "hapus"]);
+const FINANCIAL_CLOSED_LOAN_STATUS = new Set(["lunas", "paid", "closed", "settled", "selesai", "dibatalkan", "cancelled", "canceled", "archived", "deleted"]);
+
+function asEngineNumber(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeEngineStatus(value, fallback = "active") {
+  return String(value || fallback).trim().toLowerCase();
+}
+
+function isFinancialRecordActive(record) {
+  if (!record) return false;
+  if (record.archivedFromReports || record.isTestData || record.demoData || record.deleted || record.softDeleted) return false;
+  const status = normalizeEngineStatus(record.status || record.lifecycleStatus || record.dataStatus || "active");
+  return !FINANCIAL_BAD_STATUS.has(status);
+}
+
+function isFinancialAssetActive(asset) {
+  if (!isFinancialRecordActive(asset)) return false;
+  const status = normalizeEngineStatus(asset.status || "active");
+  if (["sold", "jual", "liquidated", "moved_to_goal"].includes(status)) return false;
+  return true;
+}
+
+function isActiveFinancialLoan(loan) {
+  if (!loan || loan.archivedFromReports || loan.isTestData || loan.demoData || loan.deleted || loan.softDeleted) return false;
+  const status = normalizeEngineStatus(loan.status || "aktif");
+  if (FINANCIAL_CLOSED_LOAN_STATUS.has(status)) return false;
+  return ["aktif", "active", "open", "berjalan", "running"].includes(status) || asEngineNumber(loan.outstandingPrincipal ?? loan.uangPinjaman ?? 0) > 0;
+}
+
+function getLedgerFinancialTreatment(refType) {
+  return LEDGER_FINANCIAL_TREATMENT[refType] || { movementType: refType || "ledger", cashflowTreatment: "wallet_balance", netWorthEffect: "wallet_delta" };
+}
+
 
 
 function hasValidSession() {
@@ -1338,10 +1407,78 @@ export default function App() {
 
   // Calculate total value of a savings goal (IDR cash + all assets)
   function calcGoalValue(goalId) {
-    const idrCash = savingsData[goalId] || 0;
-    const holdings = (savingsHoldings[goalId] || []);
+    const idrCash = asEngineNumber(savingsData[goalId] || 0);
+    const holdings = (savingsHoldings[goalId] || []).filter(h => isFinancialRecordActive(h));
     const assetValue = holdings.reduce((sum, h) => sum + calcAssetValue(h, marketPrices), 0);
     return idrCash + assetValue;
+  }
+
+  function getGoalFinancialBreakdown(goals = savingsGoals) {
+    let cashTotal = 0;
+    let assetTotal = 0;
+    let duplicateGuardTotal = 0;
+    const countedRows = [];
+    const duplicateGuardRows = [];
+
+    (goals || []).filter(g => isFinancialRecordActive(g)).forEach(goal => {
+      const goalId = goal.id;
+      const cashValue = asEngineNumber(savingsData?.[goalId] || 0);
+      if (cashValue > 0) {
+        cashTotal += cashValue;
+        countedRows.push({ goalId, goalLabel: goal.label || goalId, mode: "cash", value: cashValue, counted: true });
+      }
+
+      const holdings = Array.isArray(savingsHoldings?.[goalId]) ? savingsHoldings[goalId] : [];
+      holdings.filter(h => isFinancialRecordActive(h)).forEach(holding => {
+        const value = asEngineNumber(calcAssetValue(holding, marketPrices));
+        if (value <= 0) return;
+
+        const sourceInvestmentId = holding.sourceInvestmentId ? String(holding.sourceInvestmentId) : "";
+        const sourceInvestment = sourceInvestmentId
+          ? investments.find(inv => String(inv.id) === sourceInvestmentId)
+          : null;
+
+        // Guard 6.8.0:
+        // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
+        // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
+        const sourceStillLooksUnreduced = Boolean(
+          sourceInvestmentId &&
+          sourceInvestment &&
+          isFinancialAssetActive(sourceInvestment) &&
+          !sourceInvestment.movedToGoalAt &&
+          !sourceInvestment.restoredFromGoalAt &&
+          asEngineNumber(sourceInvestment.qty ?? sourceInvestment.amount ?? 0) > 0
+        );
+
+        const row = {
+          goalId,
+          goalLabel: goal.label || goalId,
+          mode: "asset",
+          value,
+          assetType: holding.assetType || "asset",
+          sourceInvestmentId,
+          sourceInvestmentName: holding.sourceInvestmentName || sourceInvestment?.ticker || sourceInvestment?.note || "",
+          counted: !sourceStillLooksUnreduced,
+        };
+
+        if (sourceStillLooksUnreduced) {
+          duplicateGuardTotal += value;
+          duplicateGuardRows.push(row);
+        } else {
+          assetTotal += value;
+          countedRows.push(row);
+        }
+      });
+    });
+
+    return {
+      cashTotal,
+      assetTotal,
+      total: cashTotal + assetTotal,
+      countedRows,
+      duplicateGuardRows,
+      duplicateGuardTotal,
+    };
   }
 
   function getTxnDate(t) {
@@ -1671,29 +1808,56 @@ export default function App() {
     ? negativeWalletBreakdown.length + " wallet minus"
     : "Wallet aman";
   const financialInvestmentTotal = (canViewFinancialSummaryNow && canViewInvestmentsNow) ? invSummary
+    .filter(inv => isFinancialAssetActive(inv))
     .filter(inv => !financialScopeUser || inv.createdBy === financialScopeUser || (!inv.createdBy && financialScopeUser === currentUser))
-    .reduce((sum, inv) => sum + Number(inv.currentValue || 0), 0) : 0;
-  const financialGoalTotal = (canViewFinancialSummaryNow && canViewSensitiveGoalsNow && !financialScopeUser) ? totalSavingsCurrent : 0;
+    .reduce((sum, inv) => sum + asEngineNumber(inv.currentValue || 0), 0) : 0;
+  const financialGoalBreakdown = (canViewFinancialSummaryNow && canViewSensitiveGoalsNow && !financialScopeUser)
+    ? getGoalFinancialBreakdown(savingsGoals)
+    : { cashTotal: 0, assetTotal: 0, total: 0, countedRows: [], duplicateGuardRows: [], duplicateGuardTotal: 0 };
+  const financialGoalTotal = financialGoalBreakdown.total;
   const financialLoanItems = (canViewFinancialSummaryNow && canViewLoansNow) ? gadaiList.filter(g =>
-    g.status === "aktif" &&
+    isActiveFinancialLoan(g) &&
     (!financialScopeUser || g.createdBy === financialScopeUser || (!g.createdBy && financialScopeUser === currentUser))
   ) : [];
-  const financialLoanTotal = financialLoanItems.reduce((sum, g) => sum + Number(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0);
+  const financialLoanTotal = financialLoanItems.reduce((sum, g) => sum + Math.max(asEngineNumber(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0), 0);
   const financialGrossAssets = financialWalletTotal + financialGoalTotal + financialInvestmentTotal;
   const financialNetWorth = financialGrossAssets - financialLoanTotal;
   const financialDebtRatio = financialGrossAssets > 0 ? (financialLoanTotal / financialGrossAssets) * 100 : (financialLoanTotal > 0 ? 100 : 0);
+  const financialNoBaseline = financialWalletBreakdown.length === 0 || (financialGrossAssets === 0 && financialLoanTotal === 0);
+  const financialLiquidityWarning = financialWalletTotal <= 0 && financialGrossAssets > 0;
+  const financialEngineIssues = [
+    ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
+    ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
+    ...(negativeWalletBreakdown.length > 0 ? [negativeWalletBreakdown.length + " wallet minus"] : []),
+    ...(financialDebtRatio >= 65 ? ["Debt Ratio tinggi"] : []),
+    ...(financialLiquidityWarning ? ["Likuiditas wallet rendah"] : []),
+    ...(financialGoalBreakdown.duplicateGuardRows.length > 0 ? [financialGoalBreakdown.duplicateGuardRows.length + " aset Goal ditahan anti double count"] : []),
+    ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
+  ];
   const financialRawScore = 100
-    - (financialDebtRatio * 1.2)
-    - (financialWalletTotal < 0 ? 25 : 0)
-    - (financialNetWorth < 0 ? 25 : 0)
-    - (negativeWalletBreakdown.length > 1 ? 6 : 0);
-  const financialScoreCap = financialNetWorth < 0 ? 49 : (financialWalletTotal < 0 ? 59 : 100);
+    - (financialDebtRatio * 1.15)
+    - (financialWalletTotal < 0 ? 30 : 0)
+    - (financialNetWorth < 0 ? 40 : 0)
+    - (negativeWalletBreakdown.length > 0 ? Math.min(18, negativeWalletBreakdown.length * 6) : 0)
+    - (financialLiquidityWarning ? 12 : 0)
+    - (financialGoalBreakdown.duplicateGuardRows.length > 0 ? Math.min(16, financialGoalBreakdown.duplicateGuardRows.length * 4) : 0)
+    - (financialNoBaseline ? 18 : 0);
+  const financialScoreCap = Math.min(
+    financialNetWorth < 0 ? 39 : 100,
+    financialWalletTotal < 0 ? 49 : 100,
+    negativeWalletBreakdown.length > 0 ? 59 : 100,
+    financialDebtRatio >= 65 ? 69 : 100,
+    financialLiquidityWarning ? 79 : 100,
+    financialGoalBreakdown.duplicateGuardRows.length > 0 ? 74 : 100,
+    financialNoBaseline ? 69 : 100
+  );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
   const financialStatus =
     financialScore >= 80 ? { label: "Sehat", color: "#34d399", bg: "rgba(16,185,129,0.14)" } :
     financialScore >= 60 ? { label: "Aman", color: "#a3e635", bg: "rgba(163,230,53,0.12)" } :
     financialScore >= 40 ? { label: "Waspada", color: "#fbbf24", bg: "rgba(245,158,11,0.13)" } :
     { label: "Bahaya", color: "#f87171", bg: "rgba(239,68,68,0.14)" };
+  const financialEngineGuardLabel = financialEngineIssues.length > 0 ? financialEngineIssues.slice(0, 2).join(" · ") : FINANCIAL_ENGINE_STATUS_OK;
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -3658,7 +3822,11 @@ export default function App() {
       createdAt: now,
       createdBy: currentUser || "Owner",
       baseline: true,
-      baselinePhase: "6.7.18",
+      baselinePhase: FINANCIAL_ENGINE_VERSION,
+      movementType: "wallet_baseline_adjustment",
+      cashflowTreatment: "baseline_adjustment",
+      netWorthEffect: "reconcile",
+      engineVersion: FINANCIAL_ENGINE_VERSION,
       previousBalance: current,
       targetBalance: target,
     });
@@ -3849,8 +4017,17 @@ export default function App() {
 
   async function logLedger(sumberDanaId, amount, note, refType, refId) {
     if (!sumberDanaId) return;
+    const treatment = getLedgerFinancialTreatment(refType);
     await addDoc(collection(db, "sumberDanaLedger"), {
-      sumberDanaId, amount, note: note || "", refType, refId: refId || null,
+      sumberDanaId,
+      amount,
+      note: note || "",
+      refType,
+      refId: refId || null,
+      movementType: treatment.movementType,
+      cashflowTreatment: treatment.cashflowTreatment,
+      netWorthEffect: treatment.netWorthEffect,
+      engineVersion: FINANCIAL_ENGINE_VERSION,
       createdAt: new Date().toISOString(),
     });
   }
@@ -4171,8 +4348,8 @@ export default function App() {
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
     return {
-      phase: "6.7.20",
-      label: "Backup Export Completeness",
+      phase: FINANCIAL_ENGINE_VERSION,
+      label: "Financial Engine Final Cleanup Snapshot",
       includedCount,
       totalCollections: collections.length,
       criticalMissingCount: criticalMissing.length,
@@ -4180,7 +4357,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit sebelum naik ke Financial Engine Cleanup."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.0: Financial Engine Final Cleanup, anti double counting, dan net worth guard."
       ]
     };
   }
@@ -4190,8 +4367,8 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: "FinPlan v1.1.0 phase 6.7.20 backup-complete",
-      backupVersion: "6.7.20",
+      version: APP_VERSION + " financial-engine-final-cleanup",
+      backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
       exportContext: {
@@ -4668,7 +4845,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.20. Backup Export Completeness memastikan backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, dan manifest audit.
+            FinPlan v1.1.0 phase 6.8.0. Financial Engine Final Cleanup aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -4694,7 +4871,6 @@ export default function App() {
       wallet_updated: { label: "Wallet Diubah", icon: "✏️", tone: "purple" },
       wallet_merged: { label: "Wallet Digabung", icon: "🔄", tone: "amber" },
       wallet_deleted: { label: "Wallet Dihapus", icon: "🗑️", tone: "red" },
-      wallet_created: { label: "Wallet Dibuat", icon: "👛", tone: "green" },
       allowance_transfer: { label: "Uang Saku", icon: "💸", tone: "green" },
       wallet_transfer: { label: "Transfer Wallet", icon: "🔁", tone: "purple" },
       wallet_baseline_adjustment: { label: "Baseline Saldo", icon: "🧭", tone: "green" },
@@ -5023,7 +5199,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.7.20 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.0 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -5188,7 +5364,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.7.20. Backup Export Completeness aktif: backup JSON membawa manifest lengkap dan log penting untuk audit.
+                FinPlan v1.1.0 phase 6.8.0. Financial Engine Final Cleanup aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -7146,9 +7322,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.7</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Guard 6.8</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -7185,7 +7361,9 @@ export default function App() {
                     <div style={{ fontSize: "14px", color: financialDebtRatio > 35 ? "#fca5a5" : "#c7d2fe", fontWeight: 900 }}>{financialDebtRatio.toFixed(1)}%</div>
                   </div>
                 </div>
+                <div style={{ marginTop: "9px", fontSize: "11px", color: financialEngineIssues.length > 0 ? "#fde68a" : "#86efac", lineHeight: 1.45 }}>🛡️ {financialEngineGuardLabel}</div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
+                {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
