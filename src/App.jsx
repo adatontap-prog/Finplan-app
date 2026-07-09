@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.7.17";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.7.19";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -3673,6 +3673,83 @@ export default function App() {
     return true;
   }
 
+  async function markLegacyNoWalletTransaction(tx, silent = false) {
+    if (!tx?.id) return false;
+    if (!canViewLogAuditCenter) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin review legacy transaction.");
+      return false;
+    }
+    if (tx.sumberDanaId) {
+      if (!silent) showAccessNotice("Transaksi ini sudah punya wallet/sumber dana.");
+      return false;
+    }
+    if (!silent) {
+      const ok = window.confirm(
+        "Tandai transaksi lama ini sebagai Legacy / No Wallet?\n\n" +
+        (tx.note || getCategoryInfo(tx.category).label || "Transaksi") + " · " + formatFull(tx.amount || 0) + "\n\n" +
+        "Aksi ini tidak membuat ledger baru dan tidak mengubah saldo wallet. Hanya memberi label agar Financial Engine tahu ini data historis sebelum sistem wallet rapi."
+      );
+      if (!ok) return false;
+    }
+    const now = new Date().toISOString();
+    await setDoc(doc(db, "transactions", tx.id), {
+      legacyNoWallet: true,
+      dataLineage: "legacy_no_wallet",
+      excludedFromWalletLedger: true,
+      legacyReviewedAt: now,
+      legacyReviewedBy: currentUser || "Owner",
+      updatedAt: now,
+      updatedBy: currentUser || "Owner",
+    }, { merge: true });
+    if (!silent) {
+      await addActivityLog("legacy_no_wallet_review", (currentUser || "Owner") + " menandai transaksi legacy tanpa wallet: " + (tx.note || tx.category || tx.id) + ".");
+      syncToSheets("legacyNoWalletReview", { transactionId: tx.id, amount: tx.amount || 0, type: tx.type || "", category: tx.category || "", note: tx.note || "", user: currentUser, createdAt: now });
+      window.alert("✅ Transaksi ditandai sebagai Legacy / No Wallet.");
+    }
+    return true;
+  }
+
+  async function markAllLegacyNoWalletTransactions() {
+    if (!canViewLogAuditCenter) {
+      showAccessNotice("Role " + currentRole + " tidak punya izin review legacy transaction.");
+      return false;
+    }
+    const candidates = transactions.filter(tx =>
+      ["income", "expense"].includes(tx.type) &&
+      !tx.sumberDanaId &&
+      !(tx.legacyNoWallet || tx.excludedFromWalletLedger || tx.dataLineage === "legacy_no_wallet")
+    );
+    if (candidates.length === 0) {
+      showAccessNotice("Tidak ada legacy transaction yang perlu ditandai.");
+      return false;
+    }
+    const expenseTotal = candidates.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const incomeTotal = candidates.filter(tx => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const ok = window.confirm(
+      "Tandai " + candidates.length + " transaksi lama tanpa wallet sebagai Legacy / No Wallet?\n\n" +
+      "Expense legacy: " + formatFull(expenseTotal) + "\n" +
+      "Income legacy: " + formatFull(incomeTotal) + "\n\n" +
+      "Ini tidak mengubah saldo wallet dan tidak membuat ledger baru. Hanya mengunci status historis agar Financial Engine tidak menganggapnya data rusak."
+    );
+    if (!ok) return false;
+    const now = new Date().toISOString();
+    for (const tx of candidates) {
+      await setDoc(doc(db, "transactions", tx.id), {
+        legacyNoWallet: true,
+        dataLineage: "legacy_no_wallet",
+        excludedFromWalletLedger: true,
+        legacyReviewedAt: now,
+        legacyReviewedBy: currentUser || "Owner",
+        updatedAt: now,
+        updatedBy: currentUser || "Owner",
+      }, { merge: true });
+    }
+    await addActivityLog("legacy_no_wallet_bulk_review", (currentUser || "Owner") + " menandai " + candidates.length + " transaksi lama tanpa wallet sebagai Legacy / No Wallet.");
+    syncToSheets("legacyNoWalletBulkReview", { count: candidates.length, expenseTotal, incomeTotal, user: currentUser, createdAt: now });
+    window.alert("✅ " + candidates.length + " transaksi legacy sudah ditandai. Financial Engine sekarang punya pemisahan histori yang lebih bersih.");
+    return true;
+  }
+
   function resetWalletTransferForm() {
     setWalletTransferForm({
       sourceWalletId: "",
@@ -4520,7 +4597,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.18. Wallet Baseline Final membantu Owner menutup gap saldo real setelah audit ledger bersih, tanpa menghapus histori lama.
+            FinPlan v1.1.0 phase 6.7.19. Legacy Transaction Cleanup menandai transaksi lama tanpa wallet sebagai histori resmi agar Financial Engine tidak salah membaca data lama.
           </div>
         </div>
       </div>
@@ -4550,6 +4627,8 @@ export default function App() {
       allowance_transfer: { label: "Uang Saku", icon: "💸", tone: "green" },
       wallet_transfer: { label: "Transfer Wallet", icon: "🔁", tone: "purple" },
       wallet_baseline_adjustment: { label: "Baseline Saldo", icon: "🧭", tone: "green" },
+      legacy_no_wallet_review: { label: "Review Legacy", icon: "🏷️", tone: "blue" },
+      legacy_no_wallet_bulk_review: { label: "Bulk Legacy", icon: "🏷️", tone: "blue" },
       transaction_added: { label: "Transaksi Ditambah", icon: "➕", tone: "green" },
       transaction_deleted: { label: "Transaksi Dihapus", icon: "🗑️", tone: "red" },
       transaction_restored: { label: "Transaksi Dipulihkan", icon: "♻️", tone: "green" },
@@ -4689,8 +4768,13 @@ export default function App() {
       .filter(sd => Number(sd.balance || 0) < 0)
       .sort((a, b) => Number(a.balance || 0) - Number(b.balance || 0));
     const legacyNoWalletTransactions = transactions.filter(tx => ["income", "expense"].includes(tx.type) && !tx.sumberDanaId);
+    const reviewedLegacyNoWalletTransactions = legacyNoWalletTransactions.filter(tx => tx.legacyNoWallet || tx.excludedFromWalletLedger || tx.dataLineage === "legacy_no_wallet");
+    const unreviewedLegacyNoWalletTransactions = legacyNoWalletTransactions.filter(tx => !(tx.legacyNoWallet || tx.excludedFromWalletLedger || tx.dataLineage === "legacy_no_wallet"));
     const legacyNoWalletExpenseTotal = legacyNoWalletTransactions.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
     const legacyNoWalletIncomeTotal = legacyNoWalletTransactions.filter(tx => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const unreviewedLegacyExpenseTotal = unreviewedLegacyNoWalletTransactions.filter(tx => tx.type === "expense").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const unreviewedLegacyIncomeTotal = unreviewedLegacyNoWalletTransactions.filter(tx => tx.type === "income").reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+    const legacyReviewComplete = unreviewedLegacyNoWalletTransactions.length === 0;
     const negativeRealWallets = negativeWallets.filter(sd => !String(sd.name || "").toLowerCase().includes("test"));
     const unresolvedCleanupCount = investmentLedgerOrphan.length + activeTestAllowanceRefs.length + loanLedgerOrphan.length + activeTestWalletAdjustments.length + ledgerWithoutWallet.length + orphanTransactionLedger.length + txDuplicateLedger.length + txWithoutLedger.length;
     const baselineReady = unresolvedCleanupCount === 0;
@@ -4700,7 +4784,12 @@ export default function App() {
       ? "Masih ada isu ledger/test/orphan. Selesaikan cleanup sebelum menetapkan baseline saldo real."
       : negativeRealWallets.length > 0
         ? "Ledger test/orphan sudah bersih. Sekarang masukkan saldo real untuk wallet negatif agar engine naik ke mode siap Financial Engine."
-        : "Tidak ada wallet real negatif setelah cleanup. Baseline data siap untuk Financial Engine Cleanup.";
+        : legacyReviewComplete
+          ? "Tidak ada wallet real negatif setelah cleanup. Baseline dan legacy review siap untuk Financial Engine Cleanup."
+          : "Baseline wallet sudah aman. Selesaikan review legacy transaction agar Financial Engine bisa memisahkan data historis dengan data wallet-ledger.";
+    const legacyAdvisorText = legacyReviewComplete
+      ? "Semua transaksi lama tanpa wallet sudah ditandai sebagai Legacy / No Wallet. Data historis tetap ada, tetapi tidak akan dibaca sebagai kerusakan wallet ledger."
+      : "Masih ada transaksi lama tanpa wallet yang belum diberi label resmi. Tandai sebagai Legacy / No Wallet supaya Financial Engine tidak mencoba membuat saldo dari data historis.";
 
     const activeRecycle = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= new Date().toISOString());
     const expiredRecycle = recycleBin.filter(item => item.expiresAt && item.expiresAt < new Date().toISOString());
@@ -4724,6 +4813,9 @@ export default function App() {
       { title: "Data Test / Cleanup", icon: "🧪", tone: "amber", items: [
         { label: "Transfer uang saku TEST aktif", count: activeTestAllowanceRefs.length, items: activeTestAllowanceRefs, kind: "test_transfer" },
         { label: "Penyesuaian saldo TEST aktif", count: activeTestWalletAdjustments.length, items: activeTestWalletAdjustments, kind: "test_wallet_adjustment" },
+      ]},
+      { title: "Legacy Transaction Review", icon: "🏷️", tone: "blue", items: [
+        { label: "Legacy tanpa wallet belum direview", count: unreviewedLegacyNoWalletTransactions.length, items: unreviewedLegacyNoWalletTransactions, kind: "legacy_transaction" },
       ]},
       { title: "Pinjaman ↔ Wallet Ledger", icon: "🏦", tone: "blue", items: [
         { label: "Pencairan pinjaman tanpa ledger", count: loanDisbursementNoLedger.length, items: loanDisbursementNoLedger, kind: "loan" },
@@ -4752,6 +4844,8 @@ export default function App() {
     const ItemPreview = ({ row, kind }) => {
       const title = kind === "transaction"
         ? (getCategoryInfo(row.category).label + " · " + formatRupiah(row.amount || 0))
+        : kind === "legacy_transaction"
+          ? ((row.type === "income" ? "Pemasukan Legacy" : "Pengeluaran Legacy") + " · " + formatRupiah(row.amount || 0))
         : kind === "wallet"
           ? ((row.icon || "👛") + " " + (row.name || row.id) + " · " + formatRupiah(row.balance || 0))
           : kind === "investment"
@@ -4765,6 +4859,8 @@ export default function App() {
                   : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
       const sub = kind === "transaction"
         ? ((row.date || "Tanpa tanggal") + " · " + (row.sumberDanaName || row.sumberDanaId || "Tanpa wallet"))
+        : kind === "legacy_transaction"
+          ? ((row.date || "Tanpa tanggal") + " · " + (row.user || "Family") + " · " + (row.note || "Tanpa catatan"))
         : kind === "wallet"
           ? ((row.ledgerCount || 0) + " ledger · " + (row.user || "Family"))
           : kind === "ledger"
@@ -4780,7 +4876,8 @@ export default function App() {
               <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px", lineHeight: 1.4 }}>{sub}</div>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", flexShrink: 0 }}>
-              {["transaction", "wallet", "investment", "ledger", "loan_ledger", "test_wallet_adjustment"].includes(kind) && <button onClick={() => openAuditItem(row, kind)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Buka</button>}
+              {["transaction", "legacy_transaction", "wallet", "investment", "ledger", "loan_ledger", "test_wallet_adjustment"].includes(kind) && <button onClick={() => openAuditItem(row, kind === "legacy_transaction" ? "transaction" : kind)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(99,102,241,0.28)", background: "rgba(99,102,241,0.14)", color: "#c7d2fe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Buka</button>}
+              {kind === "legacy_transaction" && !(row.legacyNoWallet || row.excludedFromWalletLedger || row.dataLineage === "legacy_no_wallet") && <button onClick={() => markLegacyNoWalletTransaction(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(125,211,252,0.35)", background: "rgba(14,165,233,0.12)", color: "#bae6fd", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Tandai</button>}
               {kind === "ledger" && row.refType === "investment" && !row.reconciled && <button onClick={() => reverseOrphanInvestmentLedger(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(52,211,153,0.35)", background: "rgba(52,211,153,0.12)", color: "#86efac", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse</button>}
               {kind === "loan_ledger" && !row.reconciled && <button onClick={() => reverseOrphanLoanLedger(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(96,165,250,0.35)", background: "rgba(96,165,250,0.12)", color: "#bfdbfe", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Loan</button>}
               {kind === "test_wallet_adjustment" && !row.reconciled && <button onClick={() => reverseTestWalletAdjustment(row)} style={{ padding: "7px 9px", borderRadius: "10px", border: "1px solid rgba(251,191,36,0.35)", background: "rgba(251,191,36,0.12)", color: "#fde68a", fontSize: "10px", fontWeight: 900, flexShrink: 0 }}>Reverse Adj</button>}
@@ -4830,6 +4927,7 @@ export default function App() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "14px" }}>
             {[
               ["Transaksi", transactions.length],
+              ["Legacy Review", reviewedLegacyNoWalletTransactions.length + "/" + legacyNoWalletTransactions.length],
               ["Wallet Ledger", sumberDanaLedger.length],
               ["Goal Usage", goalUsageLog.length],
               ["Invest Logs", investmentLogs.length],
@@ -4859,7 +4957,24 @@ export default function App() {
             </div>
             {legacyNoWalletTransactions.length > 0 && (
               <div style={{ marginTop: "10px", fontSize: "11px", color: "#bae6fd", lineHeight: 1.55 }}>
-                Ada <b>{legacyNoWalletTransactions.length}</b> transaksi lama tanpa wallet. Expense legacy: <b>{formatFull(legacyNoWalletExpenseTotal)}</b>, income legacy: <b>{formatFull(legacyNoWalletIncomeTotal)}</b>. Data ini tetap tercatat sebagai riwayat transaksi, tetapi tidak ikut membentuk saldo wallet ledger.
+                Ada <b>{legacyNoWalletTransactions.length}</b> transaksi lama tanpa wallet. Expense legacy: <b>{formatFull(legacyNoWalletExpenseTotal)}</b>, income legacy: <b>{formatFull(legacyNoWalletIncomeTotal)}</b>. Sudah direview: <b>{reviewedLegacyNoWalletTransactions.length}</b>, belum: <b>{unreviewedLegacyNoWalletTransactions.length}</b>. Data ini tetap tercatat sebagai riwayat transaksi, tetapi tidak ikut membentuk saldo wallet ledger.
+              </div>
+            )}
+            {legacyNoWalletTransactions.length > 0 && (
+              <div style={{ padding: "10px", borderRadius: "14px", background: legacyReviewComplete ? "rgba(16,185,129,0.09)" : "rgba(14,165,233,0.08)", border: "1px solid " + (legacyReviewComplete ? "rgba(16,185,129,0.20)" : "rgba(14,165,233,0.20)"), marginTop: "10px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                  <div>
+                    <div style={{ fontSize: "11px", color: legacyReviewComplete ? "#86efac" : "#7dd3fc", fontWeight: 1000 }}>🏷️ Legacy Transaction Cleanup</div>
+                    <div style={{ fontSize: "10px", color: "#cbd5e1", marginTop: "4px", lineHeight: 1.45 }}>{legacyAdvisorText}</div>
+                  </div>
+                  {!legacyReviewComplete && <button onClick={markAllLegacyNoWalletTransactions} style={{ padding: "8px 9px", borderRadius: "10px", border: "1px solid rgba(125,211,252,0.28)", background: "rgba(14,165,233,0.12)", color: "#bae6fd", fontSize: "10px", fontWeight: 1000, cursor: "pointer", whiteSpace: "nowrap" }}>Tandai Semua</button>}
+                </div>
+                {!legacyReviewComplete && (
+                  <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "8px", lineHeight: 1.45 }}>
+                    Belum direview: {unreviewedLegacyNoWalletTransactions.length} transaksi · Expense {formatFull(unreviewedLegacyExpenseTotal)} · Income {formatFull(unreviewedLegacyIncomeTotal)}.
+                  </div>
+                )}
+                {!legacyReviewComplete && unreviewedLegacyNoWalletTransactions.slice(0, 3).map((row, idx) => <ItemPreview key={(row.id || idx) + "legacy_review"} row={row} kind="legacy_transaction" />)}
               </div>
             )}
             {negativeRealWallets.length > 0 && (
