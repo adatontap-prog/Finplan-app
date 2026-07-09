@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.8.0";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.8.0";
-const FINANCIAL_ENGINE_NAME = "Financial Engine Final Cleanup";
+const FINANCIAL_ENGINE_VERSION = "6.8.1";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Validation Layer";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -107,6 +107,39 @@ function isActiveFinancialLoan(loan) {
 
 function getLedgerFinancialTreatment(refType) {
   return LEDGER_FINANCIAL_TREATMENT[refType] || { movementType: refType || "ledger", cashflowTreatment: "wallet_balance", netWorthEffect: "wallet_delta" };
+}
+
+function shouldCountLedgerInWalletBalance(ledger) {
+  if (!ledger) return false;
+  if (!isFinancialRecordActive(ledger)) return false;
+  if (ledger.excludedFromWalletBalance || ledger.excludeFromWalletBalance || ledger.excludedFromReports) return false;
+  return true;
+}
+
+function buildFinancialLedgerValidation(ledgerRows = [], walletRows = []) {
+  const walletIds = new Set((walletRows || []).filter(w => isFinancialRecordActive(w)).map(w => String(w.id)));
+  const countedLedgerRows = (ledgerRows || []).filter(shouldCountLedgerInWalletBalance);
+  const missingWalletRows = countedLedgerRows.filter(l => !l.sumberDanaId);
+  const orphanWalletRows = countedLedgerRows.filter(l => l.sumberDanaId && !walletIds.has(String(l.sumberDanaId)));
+  const internalTransferRows = countedLedgerRows.filter(l => getLedgerFinancialTreatment(l.refType).cashflowTreatment === "internal_transfer");
+  const internalGroups = internalTransferRows.reduce((map, row) => {
+    const key = String(row.refId || row.transferId || row.batchId || row.id || "unknown");
+    if (!map[key]) map[key] = { key, rows: [], total: 0 };
+    map[key].rows.push(row);
+    map[key].total += asEngineNumber(row.amount);
+    return map;
+  }, {});
+  const unbalancedInternalGroups = Object.values(internalGroups).filter(group => Math.abs(group.total) > 1 || group.rows.length < 2);
+  const issueCount = missingWalletRows.length + orphanWalletRows.length + unbalancedInternalGroups.length;
+  return {
+    countedLedgerCount: countedLedgerRows.length,
+    missingWalletRows,
+    orphanWalletRows,
+    internalTransferRows,
+    unbalancedInternalGroups,
+    issueCount,
+    ok: issueCount === 0,
+  };
 }
 
 
@@ -1438,7 +1471,7 @@ export default function App() {
           ? investments.find(inv => String(inv.id) === sourceInvestmentId)
           : null;
 
-        // Guard 6.8.0:
+        // Guard 6.8.1.0:
         // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
         // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
         const sourceStillLooksUnreduced = Boolean(
@@ -1693,13 +1726,13 @@ export default function App() {
 
   const invTypeLabel = { usd: "\uD83D\uDCB5 USD", lm: "\uD83E\uDD47 LM Antam", jewelry: "\uD83D\uDC8D Perhiasan" };
   const invTypeUnit = { usd: "USD", lm: "gram", jewelry: "gram" };
-  const invSummary = investments.filter(inv => inv.status !== "moved_to_goal" && Number(inv.qty ?? inv.amount ?? 0) > 0).map(inv => {
+  const invSummary = investments.filter(inv => isFinancialAssetActive(inv) && Number(inv.qty ?? inv.amount ?? 0) > 0).map(inv => {
     const currentValue = calcAssetValue(inv, marketPrices);
     const buyValue = Number(inv.costBasis ?? (["idr","obligasi"].includes(inv.assetType) ? (inv.idrValue || 0) : (inv.qty || inv.amount || 0) * (inv.buyPrice || 0)));
     const profitLoss = currentValue - buyValue;
     return { ...inv, currentValue, profitLoss, pct: buyValue > 0 ? ((profitLoss / buyValue) * 100).toFixed(1) : 0 };
   });
-  const totalInvBuy = investments.reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
+  const totalInvBuy = investments.filter(inv => isFinancialAssetActive(inv)).reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
   const selectedInvestmentSummary = selectedInvestment ? (invSummary.find(i => i.id === selectedInvestment.id) || selectedInvestment) : null;
 
@@ -1795,7 +1828,7 @@ export default function App() {
   const financialWalletBreakdown = canViewFinancialSummaryNow ? financialWallets
     .map(sd => {
       const walletBalance = calcSumberDanaBalance(sd.id);
-      const walletLedgerCount = sumberDanaLedger.filter(l => l.sumberDanaId === sd.id).length;
+      const walletLedgerCount = sumberDanaLedger.filter(l => String(l.sumberDanaId || "") === String(sd.id || "") && shouldCountLedgerInWalletBalance(l)).length;
       const walletTransactionCount = transactions.filter(t => t.sumberDanaId === sd.id).length;
       return { ...sd, walletBalance, walletLedgerCount, walletTransactionCount };
     })
@@ -1820,6 +1853,9 @@ export default function App() {
     (!financialScopeUser || g.createdBy === financialScopeUser || (!g.createdBy && financialScopeUser === currentUser))
   ) : [];
   const financialLoanTotal = financialLoanItems.reduce((sum, g) => sum + Math.max(asEngineNumber(g.outstandingPrincipal ?? g.uangPinjaman ?? 0), 0), 0);
+  const financialLedgerValidation = canViewFinancialSummaryNow
+    ? buildFinancialLedgerValidation(sumberDanaLedger, sumberDanaList)
+    : { countedLedgerCount: 0, missingWalletRows: [], orphanWalletRows: [], internalTransferRows: [], unbalancedInternalGroups: [], issueCount: 0, ok: true };
   const financialGrossAssets = financialWalletTotal + financialGoalTotal + financialInvestmentTotal;
   const financialNetWorth = financialGrossAssets - financialLoanTotal;
   const financialDebtRatio = financialGrossAssets > 0 ? (financialLoanTotal / financialGrossAssets) * 100 : (financialLoanTotal > 0 ? 100 : 0);
@@ -1832,6 +1868,9 @@ export default function App() {
     ...(financialDebtRatio >= 65 ? ["Debt Ratio tinggi"] : []),
     ...(financialLiquidityWarning ? ["Likuiditas wallet rendah"] : []),
     ...(financialGoalBreakdown.duplicateGuardRows.length > 0 ? [financialGoalBreakdown.duplicateGuardRows.length + " aset Goal ditahan anti double count"] : []),
+    ...(financialLedgerValidation.missingWalletRows.length > 0 ? [financialLedgerValidation.missingWalletRows.length + " ledger tanpa wallet"] : []),
+    ...(financialLedgerValidation.orphanWalletRows.length > 0 ? [financialLedgerValidation.orphanWalletRows.length + " ledger wallet tidak ditemukan"] : []),
+    ...(financialLedgerValidation.unbalancedInternalGroups.length > 0 ? [financialLedgerValidation.unbalancedInternalGroups.length + " transfer internal tidak balance"] : []),
     ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
   ];
   const financialRawScore = 100
@@ -1841,6 +1880,7 @@ export default function App() {
     - (negativeWalletBreakdown.length > 0 ? Math.min(18, negativeWalletBreakdown.length * 6) : 0)
     - (financialLiquidityWarning ? 12 : 0)
     - (financialGoalBreakdown.duplicateGuardRows.length > 0 ? Math.min(16, financialGoalBreakdown.duplicateGuardRows.length * 4) : 0)
+    - (financialLedgerValidation.issueCount > 0 ? Math.min(22, financialLedgerValidation.issueCount * 4) : 0)
     - (financialNoBaseline ? 18 : 0);
   const financialScoreCap = Math.min(
     financialNetWorth < 0 ? 39 : 100,
@@ -1849,6 +1889,7 @@ export default function App() {
     financialDebtRatio >= 65 ? 69 : 100,
     financialLiquidityWarning ? 79 : 100,
     financialGoalBreakdown.duplicateGuardRows.length > 0 ? 74 : 100,
+    financialLedgerValidation.issueCount > 0 ? 74 : 100,
     financialNoBaseline ? 69 : 100
   );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
@@ -3735,8 +3776,10 @@ export default function App() {
   function calcSumberDanaBalance(sdId) {
     const sd = sumberDanaList.find(s => s.id === sdId);
     if (!sd) return 0;
-    const ledgerSum = sumberDanaLedger.filter(l => l.sumberDanaId === sdId).reduce((s, l) => s + l.amount, 0);
-    return (sd.initialBalance || 0) + ledgerSum;
+    const ledgerSum = sumberDanaLedger
+      .filter(l => String(l.sumberDanaId || "") === String(sdId || "") && shouldCountLedgerInWalletBalance(l))
+      .reduce((s, l) => s + asEngineNumber(l.amount), 0);
+    return asEngineNumber(sd.initialBalance || 0) + ledgerSum;
   }
 
   function calcTotalWalletBalanceForUser(userName, includeArchived = false) {
@@ -4357,7 +4400,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.8.0: Financial Engine Final Cleanup, anti double counting, dan net worth guard."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.1: Financial Engine Validation Layer, anti double counting, dan net worth guard."
       ]
     };
   }
@@ -4845,7 +4888,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.8.0. Financial Engine Final Cleanup aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
+            FinPlan v1.1.0 phase 6.8.1. Financial Engine Validation Layer aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -5199,7 +5242,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.8.0 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.1 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -5364,7 +5407,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.8.0. Financial Engine Final Cleanup aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
+                FinPlan v1.1.0 phase 6.8.1. Financial Engine Validation Layer aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -7322,9 +7365,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.1</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Guard 6.8</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Guard 6.8.1</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -7364,6 +7407,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", fontSize: "11px", color: financialEngineIssues.length > 0 ? "#fde68a" : "#86efac", lineHeight: 1.45 }}>🛡️ {financialEngineGuardLabel}</div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
+                {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
