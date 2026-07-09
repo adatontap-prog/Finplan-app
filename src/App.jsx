@@ -682,6 +682,9 @@ export default function App() {
   const [familyStatus, setFamilyStatus] = useState("");
   const [activityLog, setActivityLog] = useState([]);
   const [investmentLogs, setInvestmentLogs] = useState([]);
+  const [loanPayments, setLoanPayments] = useState([]);
+  const [walletTransfers, setWalletTransfers] = useState([]);
+  const [backupExportStatus, setBackupExportStatus] = useState("");
   const [recycleBin, setRecycleBin] = useState([]);
   const [showRecycleBin, setShowRecycleBin] = useState(false);
   const [recycleStatus, setRecycleStatus] = useState("");
@@ -746,8 +749,10 @@ export default function App() {
     const unsub9 = onSnapshot(collection(db, "customGoals"), snap => { setCustomGoals(sortTxns(mapDocs(snap))); }, err => console.error("customGoals listener error:", err));
     const unsub10 = onSnapshot(doc(db, "savings", "goalOverrides"), snap => { setGoalOverrides(snap.exists() ? (snap.data()?.items || {}) : {}); }, err => console.error("goalOverrides listener error:", err));
     const unsub11 = onSnapshot(collection(db, "investmentLogs"), snap => { setInvestmentLogs(sortTxns(mapDocs(snap))); }, err => console.error("investmentLogs listener error:", err));
+    const unsub12 = onSnapshot(collection(db, "loanPayments"), snap => { setLoanPayments(sortTxns(mapDocs(snap))); }, err => console.error("loanPayments listener error:", err));
+    const unsub13 = onSnapshot(collection(db, "walletTransfers"), snap => { setWalletTransfers(sortTxns(mapDocs(snap))); }, err => console.error("walletTransfers listener error:", err));
 
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); unsub10(); unsub11(); };
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); unsub6(); unsub7(); unsub8(); unsub9(); unsub10(); unsub11(); unsub12(); unsub13(); };
   }, [currentUser]);
 
   useEffect(() => { if (activeTab === "invest" && !marketPrices) loadPrices(); }, [activeTab]);
@@ -804,7 +809,7 @@ export default function App() {
       collection(db, "activityLog"),
       snap => {
         const items = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setActivityLog(items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))).slice(0, 50));
+        setActivityLog(items.sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || ""))));
       },
       err => console.error("activityLog listener error:", err)
     );
@@ -4143,29 +4148,95 @@ export default function App() {
     setTimeout(() => setEmailStatus(""), 4000);
   }
 
+  function getBackupManifest() {
+    const collections = [
+      { key: "transactions", label: "Transactions", count: transactions.length, critical: true },
+      { key: "sumberDanaList", label: "Wallet / Sumber Dana", count: sumberDanaList.length, critical: true },
+      { key: "sumberDanaLedger", label: "Wallet Ledger", count: sumberDanaLedger.length, critical: true },
+      { key: "savingsData", label: "Savings / Goal Balance", count: Object.keys(savingsData || {}).length, critical: true },
+      { key: "savingsHoldings", label: "Goal Holdings", count: Object.values(savingsHoldings || {}).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0), critical: true },
+      { key: "customGoals", label: "Custom Goals", count: customGoals.length, critical: true },
+      { key: "goalOverrides", label: "Goal Overrides", count: Object.keys(goalOverrides || {}).length, critical: true },
+      { key: "goalUsageLog", label: "Goal Usage Log", count: goalUsageLog.length, critical: true },
+      { key: "investments", label: "Investments", count: investments.length, critical: true },
+      { key: "investmentLogs", label: "Investment Logs", count: investmentLogs.length, critical: true },
+      { key: "gadaiList", label: "Loan / Gadai", count: gadaiList.length, critical: true },
+      { key: "loanPayments", label: "Loan Payments", count: loanPayments.length, critical: true },
+      { key: "walletTransfers", label: "Wallet Transfers", count: walletTransfers.length, critical: true },
+      { key: "familyMembers", label: "Family Members", count: familyMembers.length, critical: true },
+      { key: "rolePermissions", label: "Role Permissions", count: Object.keys(rolePermissions || {}).length, critical: true },
+      { key: "activityLog", label: "Activity Log", count: activityLog.length, critical: true },
+      { key: "recycleBin", label: "Recycle Bin", count: recycleBin.length, critical: true },
+    ];
+    const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
+    const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
+    return {
+      phase: "6.7.20",
+      label: "Backup Export Completeness",
+      includedCount,
+      totalCollections: collections.length,
+      criticalMissingCount: criticalMissing.length,
+      collections,
+      notes: [
+        "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
+        "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
+        "Gunakan export ini sebagai snapshot audit sebelum naik ke Financial Engine Cleanup."
+      ]
+    };
+  }
+
   function exportBackupJSON() {
+    const manifest = getBackupManifest();
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: "Kai-dev v1.4 backup-ready",
+      version: "FinPlan v1.1.0 phase 6.7.20 backup-complete",
+      backupVersion: "6.7.20",
+      backupType: "complete-finplan-snapshot",
+      backupManifest: manifest,
+      exportContext: {
+        exportedBy: currentUser || "Unknown",
+        currentRole,
+        generatedFrom: "FinPlan Settings → Backup / Export",
+        dataMode: "family_live_or_current_session",
+      },
       transactions,
       investments,
+      investmentLogs,
       savingsData,
       savingsHoldings,
+      customGoals,
+      goalOverrides,
+      goalUsageLog,
       gadaiList,
+      loanPayments,
       sumberDanaList,
       sumberDanaLedger,
+      walletTransfers,
+      familyMembers,
+      rolePermissions,
+      activityLog,
+      recycleBin,
+      securityStatus: {
+        hasSecurityData: !!securityData,
+        hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
+        userPinCount: securityData && securityData.userPins ? Object.keys(securityData.userPins).length : 0,
+        exportedSensitiveCredentials: false,
+        note: "PIN/password/hash tidak diekspor penuh untuk menjaga keamanan keluarga.",
+      },
     };
     const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     const date = new Date().toISOString().split("T")[0];
     a.href = url;
-    a.download = "finplan-backup-" + date + ".json";
+    a.download = "finplan-backup-complete-" + date + ".json";
     document.body.appendChild(a);
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    setBackupExportStatus("Backup lengkap berhasil dibuat · " + manifest.includedCount + "/" + manifest.totalCollections + " grup data ikut export.");
+    setTimeout(() => setBackupExportStatus(""), 5000);
   }
 
   const EXPENSE_CATS = CATEGORIES.filter(c => c.type === "expense");
@@ -4597,7 +4668,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.7.19. Legacy Transaction Cleanup menandai transaksi lama tanpa wallet sebagai histori resmi agar Financial Engine tidak salah membaca data lama.
+            FinPlan v1.1.0 phase 6.7.20. Backup Export Completeness memastikan backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, dan manifest audit.
           </div>
         </div>
       </div>
@@ -4793,6 +4864,9 @@ export default function App() {
 
     const activeRecycle = recycleBin.filter(item => !item.expiresAt || item.expiresAt >= new Date().toISOString());
     const expiredRecycle = recycleBin.filter(item => item.expiresAt && item.expiresAt < new Date().toISOString());
+    const backupManifest = getBackupManifest();
+    const backupCriticalMissing = (backupManifest.collections || []).filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
+    const backupCompletenessScore = Math.round((backupManifest.includedCount / Math.max(1, backupManifest.totalCollections)) * 100);
 
     const issueGroups = [
       { title: "Transaksi ↔ Wallet Ledger", icon: "🧾", tone: "red", items: [
@@ -4820,6 +4894,9 @@ export default function App() {
       { title: "Pinjaman ↔ Wallet Ledger", icon: "🏦", tone: "blue", items: [
         { label: "Pencairan pinjaman tanpa ledger", count: loanDisbursementNoLedger.length, items: loanDisbursementNoLedger, kind: "loan" },
         { label: "Ledger pinjaman/gadai tanpa data aktif", count: loanLedgerOrphan.length, items: loanLedgerOrphan, kind: "loan_ledger" },
+      ]},
+      { title: "Backup Export Completeness", icon: "💾", tone: "green", items: [
+        { label: "Grup data kritikal belum terbaca", count: backupCriticalMissing.length, items: backupCriticalMissing, kind: "backup_manifest" },
       ]},
       { title: "Wallet Balance", icon: "👛", tone: "red", items: [
         { label: "Wallet saldo negatif", count: negativeWallets.length, items: negativeWallets, kind: "wallet" },
@@ -4856,7 +4933,9 @@ export default function App() {
                 ? ("Transfer TEST · gross " + formatRupiah(row.grossAmount || 0))
                 : kind === "test_wallet_adjustment"
                   ? ("Adjustment TEST · " + formatRupiah(row.amount || 0))
-                  : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
+                  : kind === "backup_manifest"
+            ? ((row.label || row.key || "Backup item") + " · " + (row.count || 0))
+            : ((getLedgerTypeLabel(row.refType) || "Ledger") + " · " + formatRupiah(row.amount || 0));
       const sub = kind === "transaction"
         ? ((row.date || "Tanpa tanggal") + " · " + (row.sumberDanaName || row.sumberDanaId || "Tanpa wallet"))
         : kind === "legacy_transaction"
@@ -4931,7 +5010,9 @@ export default function App() {
               ["Wallet Ledger", sumberDanaLedger.length],
               ["Goal Usage", goalUsageLog.length],
               ["Invest Logs", investmentLogs.length],
-              ["Activity Log", activityLog.length + "+"],
+              ["Loan Pay", loanPayments.length],
+              ["Transfers", walletTransfers.length],
+              ["Activity Log", activityLog.length],
               ["Recycle", activeRecycle.length + " aktif"],
             ].map(([label, value]) => (
               <div key={label} style={{ padding: "11px", borderRadius: "14px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
@@ -4942,7 +5023,29 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Activity Log saat ini dibatasi ke 50 data terbaru di listener. Untuk audit historis penuh nanti perlu pagination/export khusus. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.7.20 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+          </div>
+
+          <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontSize: "11px", letterSpacing: "1.4px", color: "#86efac", fontWeight: 1000, textTransform: "uppercase" }}>Backup Export Completeness</div>
+                <div style={{ fontSize: "12px", color: "#cbd5e1", lineHeight: 1.5, marginTop: "6px" }}>Backup JSON sekarang menyertakan transaksi, wallet, ledger, goal usage, custom goals, portfolio, investment log, loan payment, wallet transfer, family, permission, activity log, recycle bin, dan manifest audit.</div>
+              </div>
+              <div style={{ padding: "7px 9px", borderRadius: "999px", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "10px", fontWeight: 1000, whiteSpace: "nowrap" }}>
+                {backupCompletenessScore}%
+              </div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px", marginTop: "10px" }}>
+              {(backupManifest.collections || []).slice(0, 8).map(c => (
+                <div key={c.key} style={{ padding: "8px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 900, textTransform: "uppercase", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.label}</div>
+                  <div style={{ fontSize: "13px", color: "#fff", fontWeight: 1000, marginTop: "3px" }}>{c.count}</div>
+                </div>
+              ))}
+            </div>
+            {backupExportStatus && <div style={{ marginTop: "9px", color: "#86efac", fontSize: "11px", fontWeight: 900 }}>{backupExportStatus}</div>}
+            <button onClick={exportBackupJSON} style={{ marginTop: "10px", width: "100%", padding: "11px", borderRadius: "13px", border: "1px solid rgba(16,185,129,0.28)", background: "rgba(16,185,129,0.12)", color: "#86efac", fontSize: "11px", fontWeight: 1000, cursor: "pointer" }}>💾 Export Backup Lengkap</button>
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(14,165,233,0.08)", border: "1px solid rgba(14,165,233,0.20)", marginBottom: "14px" }}>
@@ -5085,7 +5188,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 Family Edition Phase 4. Wallet v2 mendukung rename, aktif/nonaktif, archive, merge, dan activity log.
+                FinPlan v1.1.0 phase 6.7.20. Backup Export Completeness aktif: backup JSON membawa manifest lengkap dan log penting untuk audit.
               </div>
             </div>
           </div>
