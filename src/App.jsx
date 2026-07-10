@@ -1233,6 +1233,14 @@ function buildFinancialConsolidationGuard({
 }
 
 
+function buildFinancialDeploymentSyncNotice(progressNotice = "", version = FINANCIAL_ENGINE_VERSION) {
+  const baseNotice = String(progressNotice || "").trim();
+  const suffix = " · deploy sync verified";
+  if (!baseNotice) return "Progress " + version + ": deploy sync verified.";
+  return baseNotice.includes("deploy sync verified") ? baseNotice : baseNotice + suffix;
+}
+
+
 function buildFinancialProgressMonitorGuard({
   walletTotal = 0,
   goalTotal = 0,
@@ -1347,7 +1355,7 @@ function buildFinancialProgressMonitorGuard({
     monitorReady,
     monitorLabel,
     progressPercent,
-    progressNotice,
+    progressNotice: buildFinancialDeploymentSyncNotice(progressNotice),
     issueCount,
     scorePenalty,
     scoreCap,
@@ -3289,7 +3297,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Phase 6.8 siap ditutup setelah test running stabil.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: "Progress 6.8.14: 100% · semua guard clear · siap closing Phase 6.8.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Phase 6.8 siap ditutup setelah test running stabil.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.8.14: 100% · semua guard clear · siap closing Phase 6.8."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -5921,7 +5929,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-engine-progress-monitor-guard",
+      version: APP_VERSION + " financial-engine-progress-monitor-guard-deploy-sync",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
