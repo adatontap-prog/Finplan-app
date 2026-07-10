@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.8.6";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.7";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.8.6";
-const FINANCIAL_ENGINE_NAME = "Financial Engine Resilience Guard";
+const FINANCIAL_ENGINE_VERSION = "6.8.7";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Final Safety Guard";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -375,6 +375,126 @@ function buildFinancialResilienceGuard({ walletTotal = 0, goalTotal = 0, investm
   };
 }
 
+
+
+
+function buildFinancialFinalSafetyGuard({
+  walletTotal = 0,
+  netWorth = 0,
+  debtRatio = 0,
+  loanTotal = 0,
+  grossAssets = 0,
+  negativeWalletBreakdown = [],
+  goalDuplicateRows = [],
+  ledgerValidation = {},
+  auditTrailGuard = {},
+  stressGuard = {},
+  recoveryGuard = {},
+  resilienceGuard = {},
+  noBaseline = false,
+} = {}) {
+  const issues = [];
+  const safetyActions = [];
+  const dataIssueCount = asEngineNumber(ledgerValidation.issueCount) + asEngineNumber(auditTrailGuard.issueCount);
+  const structuralIssueCount = asEngineNumber(stressGuard.issueCount) + asEngineNumber(recoveryGuard.issueCount) + asEngineNumber(resilienceGuard.issueCount);
+  const duplicateGuardCount = (goalDuplicateRows || []).length;
+  const negativeWalletCount = (negativeWalletBreakdown || []).length;
+  const hardStopNetWorth = asEngineNumber(netWorth) < 0;
+  const hardStopWallet = asEngineNumber(walletTotal) < 0 || negativeWalletCount > 0;
+  const hardStopData = dataIssueCount > 0;
+  const hardStopBaseline = !!noBaseline;
+  const hardStopDebt = asEngineNumber(loanTotal) > 0 && (asEngineNumber(debtRatio) >= 80 || !!stressGuard.debtPressure || !!resilienceGuard.debtShockRisk);
+  const hardStopRecovery = !!recoveryGuard.critical || !!resilienceGuard.critical;
+  const softStopLiquidity = !!stressGuard.liquidityStress || !!resilienceGuard.weakCashBuffer || !!resilienceGuard.assetHeavyLiquidityRisk;
+  const softStopDoubleCount = duplicateGuardCount > 0;
+  const softStopFragility = !!stressGuard.netWorthFragile || !!recoveryGuard.hasFragilityIssue || !!resilienceGuard.singleWalletDependency;
+  const hasGrossAssetMismatch = asEngineNumber(grossAssets) < 0 && asEngineNumber(loanTotal) <= 0;
+
+  if (hardStopData) {
+    issues.push("Final safety: data belum aman");
+    safetyActions.push("Beresi ledger validation dan audit trail sebelum score dianggap final.");
+  }
+  if (hardStopNetWorth) {
+    issues.push("Final safety: Net Worth negatif");
+    safetyActions.push("Score dikunci rendah sampai Net Worth kembali positif.");
+  }
+  if (hardStopWallet) {
+    issues.push("Final safety: wallet bermasalah");
+    safetyActions.push("Pulihkan wallet minus/total wallet negatif sebelum status Sehat boleh muncul.");
+  }
+  if (hardStopDebt) {
+    issues.push("Final safety: tekanan pinjaman tinggi");
+    safetyActions.push("Turunkan debt pressure atau tambah buffer kas sebelum menaikkan score.");
+  }
+  if (hardStopRecovery) {
+    issues.push("Final safety: recovery/resilience belum clear");
+    safetyActions.push("Tutup rekomendasi Recovery dan Resilience Guard terlebih dahulu.");
+  }
+  if (hardStopBaseline) {
+    issues.push("Final safety: baseline belum lengkap");
+    safetyActions.push("Lengkapi baseline wallet, asset, goal, dan loan agar engine final valid.");
+  }
+  if (softStopLiquidity) {
+    issues.push("Final safety: likuiditas belum kuat");
+    safetyActions.push("Bangun cash buffer sebelum membaca status sebagai aman penuh.");
+  }
+  if (softStopDoubleCount) {
+    issues.push("Final safety: anti double count aktif");
+    safetyActions.push("Validasi asset yang dipindah ke Goal agar tidak terhitung dua kali.");
+  }
+  if (softStopFragility) {
+    issues.push("Final safety: struktur masih fragile");
+    safetyActions.push("Kurangi ketergantungan satu wallet dan perkuat cadangan kas.");
+  }
+  if (hasGrossAssetMismatch) {
+    issues.push("Final safety: gross asset mismatch");
+    safetyActions.push("Cek komponen Wallet + Goal + Investasi karena total aset tidak boleh negatif tanpa pinjaman.");
+  }
+
+  const hardStop = hardStopData || hardStopNetWorth || hardStopWallet || hardStopDebt || hardStopRecovery || hardStopBaseline || hasGrossAssetMismatch;
+  const warning = !hardStop && issues.length > 0;
+  const issueCount = issues.length;
+  const scorePenalty = issueCount > 0 ? Math.min(26, issueCount * 3 + (hardStop ? 8 : 0)) : 0;
+  const scoreCap = Math.min(
+    hardStopNetWorth ? 37 : 100,
+    hardStopWallet ? 47 : 100,
+    hardStopData ? 68 : 100,
+    hardStopDebt ? 66 : 100,
+    hardStopRecovery ? 67 : 100,
+    hardStopBaseline ? 69 : 100,
+    softStopLiquidity ? 76 : 100,
+    softStopDoubleCount ? 74 : 100,
+    softStopFragility ? 79 : 100,
+    issueCount > 0 ? 79 : 100
+  );
+  const primaryAction = safetyActions[0] || "Final Safety Guard clear. Score boleh dibaca sebagai status final engine.";
+
+  return {
+    issues,
+    safetyActions,
+    primaryAction,
+    dataIssueCount,
+    structuralIssueCount,
+    duplicateGuardCount,
+    negativeWalletCount,
+    hardStop,
+    warning,
+    hardStopData,
+    hardStopNetWorth,
+    hardStopWallet,
+    hardStopDebt,
+    hardStopRecovery,
+    hardStopBaseline,
+    softStopLiquidity,
+    softStopDoubleCount,
+    softStopFragility,
+    hasGrossAssetMismatch,
+    issueCount,
+    scorePenalty,
+    scoreCap,
+    ok: issueCount === 0,
+  };
+}
 
 
 function hasValidSession() {
@@ -1704,7 +1824,7 @@ export default function App() {
           ? investments.find(inv => String(inv.id) === sourceInvestmentId)
           : null;
 
-        // Resilience Guard 6.8.6.0:
+        // Final Safety Guard 6.8.7.0:
         // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
         // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
         const sourceStillLooksUnreduced = Boolean(
@@ -2141,6 +2261,23 @@ export default function App() {
         noBaseline: financialNoBaseline,
       })
     : { issues: [], resilienceActions: [], primaryAction: "Engine resilient. Struktur wallet, asset, goal, dan loan siap dimonitor rutin.", cashBufferRatio: 100, debtCoverageRatio: 100, equityBufferRatio: 100, singleWalletDependency: false, weakCashBuffer: false, debtShockRisk: false, assetHeavyLiquidityRisk: false, dataResilienceRisk: false, openRecoveryRisk: false, baselineRisk: false, negativeWalletCount: 0, critical: false, warning: false, issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+  const financialFinalSafetyGuard = canViewFinancialSummaryNow
+    ? buildFinancialFinalSafetyGuard({
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        debtRatio: financialDebtRatio,
+        loanTotal: financialLoanTotal,
+        grossAssets: financialGrossAssets,
+        negativeWalletBreakdown,
+        goalDuplicateRows: financialGoalBreakdown.duplicateGuardRows,
+        ledgerValidation: financialLedgerValidation,
+        auditTrailGuard: financialAuditTrailGuard,
+        stressGuard: financialStressGuard,
+        recoveryGuard: financialRecoveryGuard,
+        resilienceGuard: financialResilienceGuard,
+        noBaseline: financialNoBaseline,
+      })
+    : { issues: [], safetyActions: [], primaryAction: "Final Safety Guard clear. Score boleh dibaca sebagai status final engine.", dataIssueCount: 0, structuralIssueCount: 0, duplicateGuardCount: 0, negativeWalletCount: 0, hardStop: false, warning: false, hardStopData: false, hardStopNetWorth: false, hardStopWallet: false, hardStopDebt: false, hardStopRecovery: false, hardStopBaseline: false, softStopLiquidity: false, softStopDoubleCount: false, softStopFragility: false, hasGrossAssetMismatch: false, issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -2168,6 +2305,8 @@ export default function App() {
     ...(financialResilienceGuard.debtShockRisk ? ["Debt shock risk"] : []),
     ...(financialResilienceGuard.assetHeavyLiquidityRisk ? ["Asset-heavy liquidity risk"] : []),
     ...(financialResilienceGuard.dataResilienceRisk ? ["Data resilience lemah"] : []),
+    ...(financialFinalSafetyGuard.hardStop ? ["Final Safety hard stop"] : []),
+    ...(financialFinalSafetyGuard.warning ? ["Final Safety warning"] : []),
     ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
   ];
   const financialRawScore = 100
@@ -2182,6 +2321,7 @@ export default function App() {
     - (financialStressGuard.issueCount > 0 ? Math.min(20, financialStressGuard.issueCount * 4) : 0)
     - asEngineNumber(financialRecoveryGuard.scorePenalty)
     - asEngineNumber(financialResilienceGuard.scorePenalty)
+    - asEngineNumber(financialFinalSafetyGuard.scorePenalty)
     - (financialNoBaseline ? 18 : 0);
   const financialScoreCap = Math.min(
     financialNetWorth < 0 ? 39 : 100,
@@ -2198,6 +2338,7 @@ export default function App() {
     financialStressGuard.netWorthFragile ? 79 : 100,
     financialRecoveryGuard.scoreCap,
     financialResilienceGuard.scoreCap,
+    financialFinalSafetyGuard.scoreCap,
     financialNoBaseline ? 69 : 100
   );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
@@ -4708,7 +4849,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.8.6: Financial Engine Resilience Guard, anti double counting, dan net worth guard."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.7: Financial Engine Final Safety Guard, anti double counting, dan net worth guard."
       ]
     };
   }
@@ -4718,7 +4859,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-engine-resilience-guard",
+      version: APP_VERSION + " financial-engine-final-safety-guard",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -5196,7 +5337,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.8.6. Financial Engine Resilience Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
+            FinPlan v1.1.0 phase 6.8.7. Financial Engine Final Safety Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -5550,7 +5691,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.8.6 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.7 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -5715,7 +5856,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.8.6. Financial Engine Resilience Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
+                FinPlan v1.1.0 phase 6.8.7. Financial Engine Final Safety Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -7673,9 +7814,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.6</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.7</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Resilience Guard 6.8.6</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Final Safety Guard 6.8.7</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -7720,6 +7861,7 @@ export default function App() {
                 {financialStressGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: "#fbbf24", lineHeight: 1.45 }}>Stress Guard aktif: {financialStressGuard.issueCount} tekanan finansial terdeteksi. Cek wallet kritis, debt pressure, liquidity stress, konsentrasi wallet, atau goal funding pressure.</div>}
                 {financialRecoveryGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialRecoveryGuard.critical ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Recovery Guard aktif: {financialRecoveryGuard.issueCount} area pemulihan. Prioritas: {financialRecoveryGuard.primaryAction}</div>}
                 {financialResilienceGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialResilienceGuard.critical ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Resilience Guard aktif: {financialResilienceGuard.issueCount} area ketahanan. Prioritas: {financialResilienceGuard.primaryAction}</div>}
+                {financialFinalSafetyGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialFinalSafetyGuard.hardStop ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Final Safety Guard aktif: {financialFinalSafetyGuard.issueCount} safety lock. Prioritas: {financialFinalSafetyGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
