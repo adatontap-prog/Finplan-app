@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.8.4";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.5";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.8.4";
-const FINANCIAL_ENGINE_NAME = "Financial Engine Stress Guard";
+const FINANCIAL_ENGINE_VERSION = "6.8.5";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Recovery Guard";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -231,6 +231,67 @@ function buildFinancialStressGuard({ walletTotal = 0, goalTotal = 0, investmentT
     goalFundingPressure,
     netWorthFragile,
     issueCount,
+    ok: issueCount === 0,
+  };
+}
+
+function buildFinancialRecoveryGuard({ walletTotal = 0, netWorth = 0, debtRatio = 0, loanTotal = 0, financialEngineIssues = [], ledgerValidation = {}, auditTrailGuard = {}, stressGuard = {}, negativeWalletBreakdown = [], goalFundingRatio = 100 } = {}) {
+  const issues = [];
+  const recoverySteps = [];
+  const hasDataIntegrityIssue = asEngineNumber(ledgerValidation.issueCount) > 0 || asEngineNumber(auditTrailGuard.issueCount) > 0;
+  const hasCriticalCashIssue = asEngineNumber(walletTotal) < 0 || (negativeWalletBreakdown || []).length > 0 || (stressGuard.criticalNegativeWalletRows || []).length > 0;
+  const hasCriticalNetWorthIssue = asEngineNumber(netWorth) < 0;
+  const hasDebtRecoveryIssue = asEngineNumber(loanTotal) > 0 && (asEngineNumber(debtRatio) >= 65 || !!stressGuard.debtPressure || !!stressGuard.liquidityStress);
+  const hasGoalRecoveryIssue = !!stressGuard.goalFundingPressure || (asEngineNumber(goalFundingRatio) < 20 && hasCriticalCashIssue);
+  const hasFragilityIssue = !!stressGuard.netWorthFragile || (asEngineNumber(netWorth) > 0 && asEngineNumber(walletTotal) <= 0);
+
+  if (hasDataIntegrityIssue) {
+    issues.push("Data integrity recovery");
+    recoverySteps.push("Pulihkan ledger/ref data sebelum membaca score final.");
+  }
+  if (hasCriticalCashIssue) {
+    issues.push("Cash recovery");
+    recoverySteps.push("Prioritaskan saldo wallet positif dan hentikan alokasi non-wajib sementara.");
+  }
+  if (hasCriticalNetWorthIssue) {
+    issues.push("Net worth recovery");
+    recoverySteps.push("Fokus turunkan liability atau tambah aset/cash sampai Net Worth kembali positif.");
+  }
+  if (hasDebtRecoveryIssue) {
+    issues.push("Debt recovery");
+    recoverySteps.push("Cek pinjaman aktif, bunga/fee, dan jadwal pembayaran pokok.");
+  }
+  if (hasGoalRecoveryIssue) {
+    issues.push("Goal recovery");
+    recoverySteps.push("Pause goal fleksibel sampai wallet dan kewajiban utama aman.");
+  }
+  if (hasFragilityIssue) {
+    issues.push("Fragility recovery");
+    recoverySteps.push("Bangun buffer kas sebelum menaikkan investasi atau target baru.");
+  }
+
+  const critical = hasCriticalNetWorthIssue || (hasCriticalCashIssue && hasDebtRecoveryIssue) || hasDataIntegrityIssue;
+  const warning = !critical && (hasCriticalCashIssue || hasDebtRecoveryIssue || hasGoalRecoveryIssue || hasFragilityIssue || (financialEngineIssues || []).length > 0);
+  const issueCount = issues.length;
+  const scorePenalty = issueCount > 0 ? Math.min(22, issueCount * 4 + (critical ? 6 : 0)) : 0;
+  const scoreCap = critical ? 58 : (warning ? 76 : 100);
+  const primaryAction = recoverySteps[0] || "Engine stabil. Lanjut monitoring rutin.";
+
+  return {
+    issues,
+    recoverySteps,
+    primaryAction,
+    hasDataIntegrityIssue,
+    hasCriticalCashIssue,
+    hasCriticalNetWorthIssue,
+    hasDebtRecoveryIssue,
+    hasGoalRecoveryIssue,
+    hasFragilityIssue,
+    critical,
+    warning,
+    issueCount,
+    scorePenalty,
+    scoreCap,
     ok: issueCount === 0,
   };
 }
@@ -1564,7 +1625,7 @@ export default function App() {
           ? investments.find(inv => String(inv.id) === sourceInvestmentId)
           : null;
 
-        // Stress Guard 6.8.4.0:
+        // Recovery Guard 6.8.5.0:
         // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
         // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
         const sourceStillLooksUnreduced = Boolean(
@@ -1971,6 +2032,20 @@ export default function App() {
         totalGoalCurrent: totalSavingsCurrent,
       })
     : { criticalNegativeWalletRows: [], zeroOrNearZeroWalletRows: [], largestWallet: null, walletConcentrationRatio: 0, walletConcentrationRisk: false, liquidityToDebtRatio: 100, liquidityStress: false, debtPressure: false, goalFundingRatio: 100, goalFundingPressure: false, netWorthFragile: false, issueCount: 0, ok: true };
+  const financialRecoveryGuard = canViewFinancialSummaryNow
+    ? buildFinancialRecoveryGuard({
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        debtRatio: financialDebtRatio,
+        loanTotal: financialLoanTotal,
+        financialEngineIssues: [],
+        ledgerValidation: financialLedgerValidation,
+        auditTrailGuard: financialAuditTrailGuard,
+        stressGuard: financialStressGuard,
+        negativeWalletBreakdown,
+        goalFundingRatio: financialStressGuard.goalFundingRatio,
+      })
+    : { issues: [], recoverySteps: [], primaryAction: "Engine stabil. Lanjut monitoring rutin.", hasDataIntegrityIssue: false, hasCriticalCashIssue: false, hasCriticalNetWorthIssue: false, hasDebtRecoveryIssue: false, hasGoalRecoveryIssue: false, hasFragilityIssue: false, critical: false, warning: false, issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -1992,6 +2067,7 @@ export default function App() {
     ...(financialStressGuard.walletConcentrationRisk ? ["Wallet concentration risk"] : []),
     ...(financialStressGuard.goalFundingPressure ? ["Goal funding pressure"] : []),
     ...(financialStressGuard.netWorthFragile ? ["Net Worth fragile"] : []),
+    ...(financialRecoveryGuard.issueCount > 0 ? [financialRecoveryGuard.issueCount + " recovery action aktif"] : []),
     ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
   ];
   const financialRawScore = 100
@@ -2004,6 +2080,7 @@ export default function App() {
     - (financialLedgerValidation.issueCount > 0 ? Math.min(22, financialLedgerValidation.issueCount * 4) : 0)
     - (financialAuditTrailGuard.issueCount > 0 ? Math.min(24, financialAuditTrailGuard.issueCount * 3) : 0)
     - (financialStressGuard.issueCount > 0 ? Math.min(20, financialStressGuard.issueCount * 4) : 0)
+    - asEngineNumber(financialRecoveryGuard.scorePenalty)
     - (financialNoBaseline ? 18 : 0);
   const financialScoreCap = Math.min(
     financialNetWorth < 0 ? 39 : 100,
@@ -2018,6 +2095,7 @@ export default function App() {
     financialStressGuard.debtPressure ? 69 : 100,
     financialStressGuard.liquidityStress ? 74 : 100,
     financialStressGuard.netWorthFragile ? 79 : 100,
+    financialRecoveryGuard.scoreCap,
     financialNoBaseline ? 69 : 100
   );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
@@ -4528,7 +4606,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.8.4: Financial Engine Stress Guard, anti double counting, dan net worth guard."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.5: Financial Engine Recovery Guard, anti double counting, dan net worth guard."
       ]
     };
   }
@@ -4538,7 +4616,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-engine-stress-guard",
+      version: APP_VERSION + " financial-engine-recovery-guard",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -5016,7 +5094,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.8.4. Financial Engine Stress Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
+            FinPlan v1.1.0 phase 6.8.5. Financial Engine Recovery Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -5370,7 +5448,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.8.4 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.5 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -5535,7 +5613,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.8.4. Financial Engine Stress Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
+                FinPlan v1.1.0 phase 6.8.5. Financial Engine Recovery Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -7493,9 +7571,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.4</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.5</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Stress Guard 6.8.4</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Recovery Guard 6.8.5</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -7538,6 +7616,7 @@ export default function App() {
                 {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
                 {financialAuditTrailGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: "#fcd34d", lineHeight: 1.45 }}>Audit Trail Guard aktif: {financialAuditTrailGuard.issueCount} isu trace engine. Cek metadata ledger, internal cashflow leak, wallet nonaktif, atau ref dangling.</div>}
                 {financialStressGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: "#fbbf24", lineHeight: 1.45 }}>Stress Guard aktif: {financialStressGuard.issueCount} tekanan finansial terdeteksi. Cek wallet kritis, debt pressure, liquidity stress, konsentrasi wallet, atau goal funding pressure.</div>}
+                {financialRecoveryGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialRecoveryGuard.critical ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Recovery Guard aktif: {financialRecoveryGuard.issueCount} area pemulihan. Prioritas: {financialRecoveryGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
