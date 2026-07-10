@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.8.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.8.5";
-const FINANCIAL_ENGINE_NAME = "Financial Engine Recovery Guard";
+const FINANCIAL_ENGINE_VERSION = "6.8.6";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Resilience Guard";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -287,6 +287,85 @@ function buildFinancialRecoveryGuard({ walletTotal = 0, netWorth = 0, debtRatio 
     hasDebtRecoveryIssue,
     hasGoalRecoveryIssue,
     hasFragilityIssue,
+    critical,
+    warning,
+    issueCount,
+    scorePenalty,
+    scoreCap,
+    ok: issueCount === 0,
+  };
+}
+
+function buildFinancialResilienceGuard({ walletTotal = 0, goalTotal = 0, investmentTotal = 0, loanTotal = 0, netWorth = 0, debtRatio = 0, walletBreakdown = [], ledgerValidation = {}, auditTrailGuard = {}, stressGuard = {}, recoveryGuard = {}, noBaseline = false } = {}) {
+  const issues = [];
+  const resilienceActions = [];
+  const activeWallets = (walletBreakdown || []).filter(isFinancialRecordActive);
+  const positiveWallets = activeWallets.filter(row => asEngineNumber(row.walletBalance) > 0);
+  const negativeWallets = activeWallets.filter(row => asEngineNumber(row.walletBalance) < 0);
+  const grossAssets = asEngineNumber(walletTotal) + asEngineNumber(goalTotal) + asEngineNumber(investmentTotal);
+  const assetReserveTotal = asEngineNumber(goalTotal) + asEngineNumber(investmentTotal);
+  const cashBufferRatio = grossAssets > 0 ? (asEngineNumber(walletTotal) / grossAssets) * 100 : (asEngineNumber(walletTotal) > 0 ? 100 : 0);
+  const debtCoverageRatio = asEngineNumber(loanTotal) > 0 ? (Math.max(asEngineNumber(walletTotal), 0) / asEngineNumber(loanTotal)) * 100 : 100;
+  const equityBufferRatio = asEngineNumber(loanTotal) > 0 ? (asEngineNumber(netWorth) / asEngineNumber(loanTotal)) * 100 : 100;
+  const singleWalletDependency = activeWallets.length >= 2 && positiveWallets.length <= 1 && asEngineNumber(walletTotal) > 0;
+  const weakCashBuffer = grossAssets > 0 && cashBufferRatio < 8 && assetReserveTotal > 0;
+  const debtShockRisk = asEngineNumber(loanTotal) > 0 && (debtCoverageRatio < 15 || equityBufferRatio < 35 || asEngineNumber(debtRatio) >= 75);
+  const assetHeavyLiquidityRisk = assetReserveTotal > 0 && asEngineNumber(walletTotal) <= 0;
+  const dataResilienceRisk = asEngineNumber(ledgerValidation.issueCount) > 0 || asEngineNumber(auditTrailGuard.issueCount) > 0;
+  const openRecoveryRisk = asEngineNumber(recoveryGuard.issueCount) > 0;
+  const baselineRisk = !!noBaseline;
+
+  if (baselineRisk) {
+    issues.push("Baseline resilience belum lengkap");
+    resilienceActions.push("Lengkapi wallet/asset/loan baseline sebelum score dipakai sebagai keputusan final.");
+  }
+  if (dataResilienceRisk) {
+    issues.push("Data resilience lemah");
+    resilienceActions.push("Selesaikan isu ledger/ref agar engine tahan backup, restore, dan audit ulang.");
+  }
+  if (singleWalletDependency) {
+    issues.push("Single wallet dependency");
+    resilienceActions.push("Sebar buffer ke lebih dari satu wallet aktif agar tidak bergantung pada satu kantong.");
+  }
+  if (weakCashBuffer) {
+    issues.push("Cash buffer tipis");
+    resilienceActions.push("Tambah buffer wallet sebelum menambah goal/investment baru.");
+  }
+  if (debtShockRisk) {
+    issues.push("Debt shock risk");
+    resilienceActions.push("Simulasikan pembayaran pinjaman dan siapkan buffer minimum untuk tekanan utang.");
+  }
+  if (assetHeavyLiquidityRisk) {
+    issues.push("Asset-heavy liquidity risk");
+    resilienceActions.push("Jangan hitung asset non-cash sebagai likuiditas harian; pulihkan wallet dulu.");
+  }
+  if (openRecoveryRisk) {
+    issues.push("Recovery belum selesai");
+    resilienceActions.push("Tutup action Recovery Guard sebelum menaikkan status engine.");
+  }
+
+  const critical = baselineRisk || dataResilienceRisk || asEngineNumber(netWorth) < 0 || asEngineNumber(walletTotal) < 0 || (debtShockRisk && asEngineNumber(debtRatio) >= 75);
+  const warning = !critical && issues.length > 0;
+  const issueCount = issues.length;
+  const scorePenalty = issueCount > 0 ? Math.min(18, issueCount * 3 + (critical ? 4 : 0)) : 0;
+  const scoreCap = critical ? 61 : (warning ? 78 : 100);
+  const primaryAction = resilienceActions[0] || "Engine resilient. Struktur wallet, asset, goal, dan loan siap dimonitor rutin.";
+
+  return {
+    issues,
+    resilienceActions,
+    primaryAction,
+    cashBufferRatio,
+    debtCoverageRatio,
+    equityBufferRatio,
+    singleWalletDependency,
+    weakCashBuffer,
+    debtShockRisk,
+    assetHeavyLiquidityRisk,
+    dataResilienceRisk,
+    openRecoveryRisk,
+    baselineRisk,
+    negativeWalletCount: negativeWallets.length,
     critical,
     warning,
     issueCount,
@@ -1625,7 +1704,7 @@ export default function App() {
           ? investments.find(inv => String(inv.id) === sourceInvestmentId)
           : null;
 
-        // Recovery Guard 6.8.5.0:
+        // Resilience Guard 6.8.6.0:
         // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
         // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
         const sourceStillLooksUnreduced = Boolean(
@@ -2046,6 +2125,22 @@ export default function App() {
         goalFundingRatio: financialStressGuard.goalFundingRatio,
       })
     : { issues: [], recoverySteps: [], primaryAction: "Engine stabil. Lanjut monitoring rutin.", hasDataIntegrityIssue: false, hasCriticalCashIssue: false, hasCriticalNetWorthIssue: false, hasDebtRecoveryIssue: false, hasGoalRecoveryIssue: false, hasFragilityIssue: false, critical: false, warning: false, issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+  const financialResilienceGuard = canViewFinancialSummaryNow
+    ? buildFinancialResilienceGuard({
+        walletTotal: financialWalletTotal,
+        goalTotal: financialGoalTotal,
+        investmentTotal: financialInvestmentTotal,
+        loanTotal: financialLoanTotal,
+        netWorth: financialNetWorth,
+        debtRatio: financialDebtRatio,
+        walletBreakdown: financialWalletBreakdown,
+        ledgerValidation: financialLedgerValidation,
+        auditTrailGuard: financialAuditTrailGuard,
+        stressGuard: financialStressGuard,
+        recoveryGuard: financialRecoveryGuard,
+        noBaseline: financialNoBaseline,
+      })
+    : { issues: [], resilienceActions: [], primaryAction: "Engine resilient. Struktur wallet, asset, goal, dan loan siap dimonitor rutin.", cashBufferRatio: 100, debtCoverageRatio: 100, equityBufferRatio: 100, singleWalletDependency: false, weakCashBuffer: false, debtShockRisk: false, assetHeavyLiquidityRisk: false, dataResilienceRisk: false, openRecoveryRisk: false, baselineRisk: false, negativeWalletCount: 0, critical: false, warning: false, issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -2068,6 +2163,11 @@ export default function App() {
     ...(financialStressGuard.goalFundingPressure ? ["Goal funding pressure"] : []),
     ...(financialStressGuard.netWorthFragile ? ["Net Worth fragile"] : []),
     ...(financialRecoveryGuard.issueCount > 0 ? [financialRecoveryGuard.issueCount + " recovery action aktif"] : []),
+    ...(financialResilienceGuard.singleWalletDependency ? ["Single wallet dependency"] : []),
+    ...(financialResilienceGuard.weakCashBuffer ? ["Cash buffer tipis"] : []),
+    ...(financialResilienceGuard.debtShockRisk ? ["Debt shock risk"] : []),
+    ...(financialResilienceGuard.assetHeavyLiquidityRisk ? ["Asset-heavy liquidity risk"] : []),
+    ...(financialResilienceGuard.dataResilienceRisk ? ["Data resilience lemah"] : []),
     ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
   ];
   const financialRawScore = 100
@@ -2081,6 +2181,7 @@ export default function App() {
     - (financialAuditTrailGuard.issueCount > 0 ? Math.min(24, financialAuditTrailGuard.issueCount * 3) : 0)
     - (financialStressGuard.issueCount > 0 ? Math.min(20, financialStressGuard.issueCount * 4) : 0)
     - asEngineNumber(financialRecoveryGuard.scorePenalty)
+    - asEngineNumber(financialResilienceGuard.scorePenalty)
     - (financialNoBaseline ? 18 : 0);
   const financialScoreCap = Math.min(
     financialNetWorth < 0 ? 39 : 100,
@@ -2096,6 +2197,7 @@ export default function App() {
     financialStressGuard.liquidityStress ? 74 : 100,
     financialStressGuard.netWorthFragile ? 79 : 100,
     financialRecoveryGuard.scoreCap,
+    financialResilienceGuard.scoreCap,
     financialNoBaseline ? 69 : 100
   );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
@@ -4606,7 +4708,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.8.5: Financial Engine Recovery Guard, anti double counting, dan net worth guard."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.6: Financial Engine Resilience Guard, anti double counting, dan net worth guard."
       ]
     };
   }
@@ -4616,7 +4718,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-engine-recovery-guard",
+      version: APP_VERSION + " financial-engine-resilience-guard",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -5094,7 +5196,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.8.5. Financial Engine Recovery Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
+            FinPlan v1.1.0 phase 6.8.6. Financial Engine Resilience Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -5448,7 +5550,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.8.5 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.6 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -5613,7 +5715,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.8.5. Financial Engine Recovery Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
+                FinPlan v1.1.0 phase 6.8.6. Financial Engine Resilience Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -7571,9 +7673,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.5</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.6</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Recovery Guard 6.8.5</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Resilience Guard 6.8.6</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -7617,6 +7719,7 @@ export default function App() {
                 {financialAuditTrailGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: "#fcd34d", lineHeight: 1.45 }}>Audit Trail Guard aktif: {financialAuditTrailGuard.issueCount} isu trace engine. Cek metadata ledger, internal cashflow leak, wallet nonaktif, atau ref dangling.</div>}
                 {financialStressGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: "#fbbf24", lineHeight: 1.45 }}>Stress Guard aktif: {financialStressGuard.issueCount} tekanan finansial terdeteksi. Cek wallet kritis, debt pressure, liquidity stress, konsentrasi wallet, atau goal funding pressure.</div>}
                 {financialRecoveryGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialRecoveryGuard.critical ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Recovery Guard aktif: {financialRecoveryGuard.issueCount} area pemulihan. Prioritas: {financialRecoveryGuard.primaryAction}</div>}
+                {financialResilienceGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialResilienceGuard.critical ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Resilience Guard aktif: {financialResilienceGuard.issueCount} area ketahanan. Prioritas: {financialResilienceGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
