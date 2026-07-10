@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.8.12";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.8.13";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.8.12";
-const FINANCIAL_ENGINE_NAME = "Financial Engine Release Readiness Guard";
+const FINANCIAL_ENGINE_VERSION = "6.8.13";
+const FINANCIAL_ENGINE_NAME = "Financial Engine Consolidation Guard";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1088,6 +1088,147 @@ function buildFinancialReleaseReadinessGuard({
     scorePenalty,
     scoreCap,
     ok: releaseReady,
+  };
+}
+
+
+function buildFinancialConsolidationGuard({
+  walletTotal = 0,
+  goalTotal = 0,
+  investmentTotal = 0,
+  loanTotal = 0,
+  grossAssets = 0,
+  netWorth = 0,
+  debtRatio = 0,
+  financialLiquidityWarning = false,
+  goalDuplicateRows = [],
+  ledgerValidation = {},
+  auditTrailGuard = {},
+  stressGuard = {},
+  recoveryGuard = {},
+  resilienceGuard = {},
+  finalSafetyGuard = {},
+  finalIntegrityGuard = {},
+  finalLockGuard = {},
+  closureGuard = {},
+  sealGuard = {},
+  releaseReadinessGuard = {},
+  noBaseline = false,
+} = {}) {
+  const issues = [];
+  const consolidationActions = [];
+  const upstreamIssueCount =
+    asEngineNumber(ledgerValidation.issueCount) +
+    asEngineNumber(auditTrailGuard.issueCount) +
+    asEngineNumber(stressGuard.issueCount) +
+    asEngineNumber(recoveryGuard.issueCount) +
+    asEngineNumber(resilienceGuard.issueCount) +
+    asEngineNumber(finalSafetyGuard.issueCount) +
+    asEngineNumber(finalIntegrityGuard.issueCount) +
+    asEngineNumber(finalLockGuard.issueCount) +
+    asEngineNumber(closureGuard.issueCount) +
+    asEngineNumber(sealGuard.issueCount) +
+    asEngineNumber(releaseReadinessGuard.issueCount);
+
+  const recomputedNetWorth = asEngineNumber(walletTotal) + asEngineNumber(goalTotal) + asEngineNumber(investmentTotal) - asEngineNumber(loanTotal);
+  const recomputedGrossAssets = asEngineNumber(walletTotal) + asEngineNumber(goalTotal) + asEngineNumber(investmentTotal);
+  const consolidationFormulaDelta = Math.abs(recomputedNetWorth - asEngineNumber(netWorth));
+  const consolidationGrossDelta = Math.abs(recomputedGrossAssets - asEngineNumber(grossAssets));
+
+  const consolidationDataOpen = asEngineNumber(ledgerValidation.issueCount) > 0 || asEngineNumber(auditTrailGuard.issueCount) > 0;
+  const consolidationFormulaOpen = consolidationFormulaDelta > 1 || consolidationGrossDelta > 1 || !!finalIntegrityGuard.netWorthMismatch || !!finalIntegrityGuard.grossAssetMismatch || !!releaseReadinessGuard.releaseFormulaBlocked || !!releaseReadinessGuard.releaseCompositionBlocked;
+  const consolidationSafetyOpen = !!finalSafetyGuard.hardStop || !!finalLockGuard.hardLock || !!closureGuard.hardClosure || !!sealGuard.hardSeal || !!releaseReadinessGuard.releaseBlocked;
+  const consolidationHealthOpen = asEngineNumber(walletTotal) < 0 || asEngineNumber(netWorth) < 0 || asEngineNumber(debtRatio) >= 65 || !!finalLockGuard.healthLock || !!releaseReadinessGuard.releaseHealthBlocked;
+  const consolidationLiquidityReview = !!financialLiquidityWarning || !!stressGuard.liquidityStress || !!stressGuard.debtPressure || !!resilienceGuard.weakCashBuffer || !!releaseReadinessGuard.releaseLiquidityBlocked;
+  const consolidationDoubleCountOpen = (goalDuplicateRows || []).length > 0 || !!closureGuard.closureDoubleCountOpen || !!sealGuard.sealDoubleCountUnclear || !!releaseReadinessGuard.releaseDoubleCountBlocked;
+  const consolidationBaselineOpen = !!noBaseline || !!releaseReadinessGuard.releaseBaselineBlocked || !!sealGuard.sealBaselineUnready || !!closureGuard.closureBaselineOpen;
+  const consolidationCascadeOpen = upstreamIssueCount > 0 || releaseReadinessGuard.releaseReady === false || sealGuard.sealReady === false || closureGuard.closureReady === false;
+  const progressPercent = Math.max(0, Math.min(100, Math.round(100 - Math.min(100, upstreamIssueCount * 6 + (consolidationFormulaOpen ? 18 : 0) + (consolidationSafetyOpen ? 16 : 0) + (consolidationBaselineOpen ? 10 : 0)))));
+
+  if (consolidationDataOpen) {
+    issues.push("Consolidation: data trace masih terbuka");
+    consolidationActions.push("Selesaikan isu ledger, wallet, dan audit trail sebelum engine dikunci sebagai final.");
+  }
+  if (consolidationFormulaOpen) {
+    issues.push("Consolidation: formula belum konsisten");
+    consolidationActions.push("Pastikan Wallet + Goal + Investasi - Pinjaman sama dengan Net Worth final.");
+  }
+  if (consolidationSafetyOpen) {
+    issues.push("Consolidation: safety/release lock masih aktif");
+    consolidationActions.push("Tutup Safety, Lock, Closure, Seal, dan Release Guard yang masih blocking.");
+  }
+  if (consolidationHealthOpen) {
+    issues.push("Consolidation: healthy status belum boleh terbuka");
+    consolidationActions.push("Jangan tampilkan kondisi sehat selama wallet, net worth, atau debt ratio bermasalah.");
+  }
+  if (consolidationLiquidityReview) {
+    issues.push("Consolidation: likuiditas/debt masih perlu review");
+    consolidationActions.push("Review buffer wallet, debt pressure, dan resilience cash sebelum closing Phase 6.8.");
+  }
+  if (consolidationDoubleCountOpen) {
+    issues.push("Consolidation: anti double count masih aktif");
+    consolidationActions.push("Pastikan aset Goal dan Investasi tidak overlap di Net Worth.");
+  }
+  if (consolidationBaselineOpen) {
+    issues.push("Consolidation: baseline real belum lengkap");
+    consolidationActions.push("Lengkapi baseline real agar data kosong tidak dibaca sehat.");
+  }
+  if (consolidationCascadeOpen) {
+    issues.push("Consolidation: guard cascade belum clear");
+    consolidationActions.push("Baca ringkasan guard paling atas dulu, lalu tuntaskan guard prioritas satu per satu.");
+  }
+
+  const consolidationBlocked = consolidationDataOpen || consolidationFormulaOpen || consolidationSafetyOpen || consolidationHealthOpen || consolidationBaselineOpen || consolidationCascadeOpen;
+  const consolidationReview = !consolidationBlocked && issues.length > 0;
+  const issueCount = issues.length;
+  const scorePenalty = issueCount > 0 ? Math.min(46, issueCount * 3 + (consolidationBlocked ? 15 : 0)) : 0;
+  const scoreCap = Math.min(
+    consolidationFormulaOpen ? 52 : 100,
+    consolidationDataOpen ? 65 : 100,
+    asEngineNumber(netWorth) < 0 ? 34 : 100,
+    asEngineNumber(walletTotal) < 0 ? 44 : 100,
+    asEngineNumber(debtRatio) >= 65 ? 66 : 100,
+    consolidationSafetyOpen ? 69 : 100,
+    consolidationLiquidityReview ? 73 : 100,
+    consolidationDoubleCountOpen ? 71 : 100,
+    consolidationBaselineOpen ? 66 : 100,
+    consolidationCascadeOpen ? 79 : 100,
+    issueCount > 0 ? 81 : 100
+  );
+  const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
+  const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
+  const progressNotice = consolidationReady
+    ? "Progress 6.8.13: Consolidation Guard clear · engine siap closing Phase 6.8."
+    : "Progress 6.8.13: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebelum Phase 6.9.";
+
+  return {
+    issues,
+    consolidationActions,
+    primaryAction,
+    upstreamIssueCount,
+    recomputedNetWorth,
+    recomputedGrossAssets,
+    consolidationFormulaDelta,
+    consolidationGrossDelta,
+    consolidationDataOpen,
+    consolidationFormulaOpen,
+    consolidationSafetyOpen,
+    consolidationHealthOpen,
+    consolidationLiquidityReview,
+    consolidationDoubleCountOpen,
+    consolidationBaselineOpen,
+    consolidationCascadeOpen,
+    consolidationBlocked,
+    consolidationReview,
+    consolidationReady,
+    consolidationLabel,
+    progressPercent,
+    progressNotice,
+    issueCount,
+    scorePenalty,
+    scoreCap,
+    ok: consolidationReady,
   };
 }
 
@@ -2419,7 +2560,7 @@ export default function App() {
           ? investments.find(inv => String(inv.id) === sourceInvestmentId)
           : null;
 
-        // Release Readiness Guard 6.8.12.0:
+        // Release Readiness Guard 6.8.13.0:
         // If a Goal holding points to an investment but the investment has not been marked/reduced by the move flow,
         // count the investment side and exclude the Goal copy from Net Worth to avoid double counting the same asset.
         const sourceStillLooksUnreduced = Boolean(
@@ -2976,6 +3117,31 @@ export default function App() {
         noBaseline: financialNoBaseline,
       })
     : { issues: [], releaseActions: [], primaryAction: "Release Readiness Guard clear. Financial Engine siap dipakai sebagai baseline final Phase 6.8.", upstreamIssueCount: 0, releaseCompositionDelta: 0, releaseDataBlocked: false, releaseFormulaBlocked: false, releaseCompositionBlocked: false, releaseSafetyBlocked: false, releaseHealthBlocked: false, releaseLiquidityBlocked: false, releaseDoubleCountBlocked: false, releaseBaselineBlocked: false, releaseCascadeBlocked: false, releaseEmptyButHealthyRisk: false, releaseBlocked: false, releaseReview: false, releaseReady: true, readinessLabel: "Release Ready", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+  const financialConsolidationGuard = canViewFinancialSummaryNow
+    ? buildFinancialConsolidationGuard({
+        walletTotal: financialWalletTotal,
+        goalTotal: financialGoalTotal,
+        investmentTotal: financialInvestmentTotal,
+        loanTotal: financialLoanTotal,
+        grossAssets: financialGrossAssets,
+        netWorth: financialNetWorth,
+        debtRatio: financialDebtRatio,
+        financialLiquidityWarning,
+        goalDuplicateRows: financialGoalBreakdown.duplicateGuardRows,
+        ledgerValidation: financialLedgerValidation,
+        auditTrailGuard: financialAuditTrailGuard,
+        stressGuard: financialStressGuard,
+        recoveryGuard: financialRecoveryGuard,
+        resilienceGuard: financialResilienceGuard,
+        finalSafetyGuard: financialFinalSafetyGuard,
+        finalIntegrityGuard: financialFinalIntegrityGuard,
+        finalLockGuard: financialFinalLockGuard,
+        closureGuard: financialClosureGuard,
+        sealGuard: financialSealGuard,
+        releaseReadinessGuard: financialReleaseReadinessGuard,
+        noBaseline: financialNoBaseline,
+      })
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebelum Phase 6.9.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.8.13: Consolidation Guard clear · engine siap closing Phase 6.8.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -3032,6 +3198,11 @@ export default function App() {
     ...(financialReleaseReadinessGuard.releaseSafetyBlocked ? ["Release safety/seal blocking"] : []),
     ...(financialReleaseReadinessGuard.releaseHealthBlocked ? ["Release healthy status terkunci"] : []),
     ...(financialReleaseReadinessGuard.releaseCascadeBlocked ? ["Release guard cascade belum clear"] : []),
+    ...(financialConsolidationGuard.consolidationDataOpen ? ["Consolidation data trace belum clear"] : []),
+    ...(financialConsolidationGuard.consolidationFormulaOpen ? ["Consolidation formula belum clear"] : []),
+    ...(financialConsolidationGuard.consolidationSafetyOpen ? ["Consolidation safety/release lock aktif"] : []),
+    ...(financialConsolidationGuard.consolidationHealthOpen ? ["Consolidation healthy status terkunci"] : []),
+    ...(financialConsolidationGuard.consolidationCascadeOpen ? ["Consolidation guard cascade belum clear"] : []),
     ...(financialNoBaseline ? ["Baseline data belum lengkap"] : []),
   ];
   const financialRawScore = 100
@@ -3052,6 +3223,7 @@ export default function App() {
     - asEngineNumber(financialClosureGuard.scorePenalty)
     - asEngineNumber(financialSealGuard.scorePenalty)
     - asEngineNumber(financialReleaseReadinessGuard.scorePenalty)
+    - asEngineNumber(financialConsolidationGuard.scorePenalty)
     - (financialNoBaseline ? 18 : 0);
   const financialScoreCap = Math.min(
     financialNetWorth < 0 ? 39 : 100,
@@ -3074,6 +3246,7 @@ export default function App() {
     financialClosureGuard.scoreCap,
     financialSealGuard.scoreCap,
     financialReleaseReadinessGuard.scoreCap,
+    financialConsolidationGuard.scoreCap,
     financialNoBaseline ? 69 : 100
   );
   const financialScore = Math.max(0, Math.min(financialScoreCap, Math.round(financialRawScore)));
@@ -5584,7 +5757,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.8.12: Financial Engine Release Readiness Guard, anti double counting, dan net worth integrity guard."
+        "Gunakan export ini sebagai snapshot audit Phase 6.8.13: Financial Engine Consolidation Guard, anti double counting, dan net worth integrity guard."
       ]
     };
   }
@@ -5594,7 +5767,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-engine-release-readiness-guard",
+      version: APP_VERSION + " financial-engine-consolidation-guard",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -6072,7 +6245,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.8.12. Financial Engine Release Readiness Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
+            FinPlan v1.1.0 phase 6.8.13. Financial Engine Consolidation Guard aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, dan metadata guard engine.
           </div>
         </div>
       </div>
@@ -6426,7 +6599,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.8.12 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.8.13 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -6591,7 +6764,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.8.12. Financial Engine Release Readiness Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
+                FinPlan v1.1.0 phase 6.8.13. Financial Engine Consolidation Guard aktif: backup JSON membawa manifest lengkap, log penting, dan metadata guard anti double count.
               </div>
             </div>
           </div>
@@ -8549,9 +8722,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.12</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.8.13</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Release Readiness Guard 6.8.12</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Consolidation Guard 6.8.13</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialStatus.bg, color: financialStatus.color, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialScore}/100 · {financialStatus.label}
@@ -8589,6 +8762,7 @@ export default function App() {
                   </div>
                 </div>
                 <div style={{ marginTop: "9px", fontSize: "11px", color: financialEngineIssues.length > 0 ? "#fde68a" : "#86efac", lineHeight: 1.45 }}>🛡️ {financialEngineGuardLabel}</div>
+                <div style={{ marginTop: "7px", padding: "8px 10px", borderRadius: "12px", background: financialConsolidationGuard.consolidationReady ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.10)", border: financialConsolidationGuard.consolidationReady ? "1px solid rgba(16,185,129,0.18)" : "1px solid rgba(245,158,11,0.18)", fontSize: "11px", color: financialConsolidationGuard.consolidationReady ? "#86efac" : "#fde68a", lineHeight: 1.45 }}>📌 {financialConsolidationGuard.progressNotice}</div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
                 {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
@@ -8601,7 +8775,8 @@ export default function App() {
                 {financialFinalLockGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialFinalLockGuard.hardLock ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Final Lock Guard aktif: {financialFinalLockGuard.issueCount} final lock. Prioritas: {financialFinalLockGuard.primaryAction}</div>}
                 {financialClosureGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialClosureGuard.hardClosure ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Closure Guard aktif: {financialClosureGuard.issueCount} closure lock. Prioritas: {financialClosureGuard.primaryAction}</div>}
                 {financialSealGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialSealGuard.hardSeal ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Seal Guard aktif: {financialSealGuard.issueCount} seal lock. Prioritas: {financialSealGuard.primaryAction}</div>}
-                {financialReleaseReadinessGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialReleaseReadinessGuard.releaseBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Release Readiness Guard 6.8.12 aktif: {financialReleaseReadinessGuard.issueCount} readiness lock. Status: {financialReleaseReadinessGuard.readinessLabel}. Prioritas: {financialReleaseReadinessGuard.primaryAction}</div>}
+                {financialReleaseReadinessGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialReleaseReadinessGuard.releaseBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Release Readiness Guard 6.8.13 aktif: {financialReleaseReadinessGuard.issueCount} readiness lock. Status: {financialReleaseReadinessGuard.readinessLabel}. Prioritas: {financialReleaseReadinessGuard.primaryAction}</div>}
+                {financialConsolidationGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialConsolidationGuard.consolidationBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Consolidation Guard 6.8.13 aktif: {financialConsolidationGuard.issueCount} consolidation lock. Status: {financialConsolidationGuard.consolidationLabel}. Prioritas: {financialConsolidationGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
