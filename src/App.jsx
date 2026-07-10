@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.0";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.0";
-const FINANCIAL_ENGINE_NAME = "Financial Health Engine";
+const FINANCIAL_ENGINE_VERSION = "6.9.1";
+const FINANCIAL_ENGINE_NAME = "Financial Health Decision Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1198,9 +1198,9 @@ function buildFinancialConsolidationGuard({
   const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
-    ? "Progress 6.9.0: Consolidation Guard clear · engine siap baseline Phase 6.9."
-    : "Progress 6.9.0: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
-  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.";
+    ? "Progress 6.9.1: Consolidation Guard clear · engine siap baseline Phase 6.9.1."
+    : "Progress 6.9.1: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.";
 
   return {
     issues,
@@ -1367,7 +1367,7 @@ function buildFinancialHealthEngine({
   const primaryAction = actionCandidates[0] || "Financial Health Engine clear: lanjutkan monitoring rutin dan mulai baca rekomendasi goal/income.";
 
   const progressPercent = Math.max(0, Math.min(100, Math.round((healthScore * 0.75) + (dataQualityScore * 0.15) + (safeEngineScore * 0.10))));
-  const healthNotice = `Progress 6.9.0: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
+  const healthNotice = `Progress 6.9.1: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
   const issueCount = actionCandidates.length;
   return {
     healthScore,
@@ -1394,6 +1394,131 @@ function buildFinancialHealthEngine({
     blockingLocks,
     issueCount,
     ok: issueCount === 0 && healthScore >= 80,
+  };
+}
+
+
+function buildFinancialHealthDecisionEngine({
+  healthEngine = {},
+  periodIncome = 0,
+  periodExpense = 0,
+  periodNetFlow = 0,
+  walletTotal = 0,
+  loanTotal = 0,
+  goals = [],
+  now = new Date(),
+} = {}) {
+  const safeIncome = Math.max(0, asEngineNumber(periodIncome));
+  const safeExpense = Math.max(0, asEngineNumber(periodExpense));
+  const safeNetFlow = asEngineNumber(periodNetFlow);
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeLoan = Math.max(0, asEngineNumber(loanTotal));
+  const date = now instanceof Date && !Number.isNaN(now.getTime()) ? now : new Date();
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const day = date.getDate();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const remainingDays = Math.max(1, daysInMonth - day + 1);
+
+  const goalRows = (Array.isArray(goals) ? goals : []).filter(goal => String(goal?.status || "active").toLowerCase() === "active").map(goal => {
+    const target = Math.max(0, asEngineNumber(goal?.targetAmount));
+    const current = Math.max(0, asEngineNumber(goal?.currentAmount));
+    const remaining = Math.max(0, target - current);
+    const yearsLeft = Math.max(1 / 12, asEngineNumber(goal?.yearsLeft || 1));
+    const monthsLeft = Math.max(1, Math.ceil(yearsLeft * 12));
+    const monthlyRequired = remaining / monthsLeft;
+    const dailyRequired = monthlyRequired * 12 / 365;
+    const priority = getGoalPriorityLabel(goal);
+    return { ...goal, target, current, remaining, monthsLeft, monthlyRequired, dailyRequired, priority };
+  });
+
+  const mandatoryRows = goalRows.filter(row => row.priority === "Wajib");
+  const importantRows = goalRows.filter(row => row.priority === "Penting");
+  const optionalRows = goalRows.filter(row => row.priority === "Opsional");
+  const mandatoryMonthly = mandatoryRows.reduce((sum, row) => sum + row.monthlyRequired, 0);
+  const importantMonthly = importantRows.reduce((sum, row) => sum + row.monthlyRequired, 0);
+  const optionalMonthly = optionalRows.reduce((sum, row) => sum + row.monthlyRequired, 0);
+  const debtReserveMonthly = safeLoan > 0 ? Math.min(safeLoan / 24, Math.max(safeExpense * 0.20, safeLoan * 0.02)) : 0;
+  const liquidityReserveMonthly = safeWallet < safeExpense ? Math.max(0, (safeExpense - Math.max(0, safeWallet)) / 6) : 0;
+  const coreIncomeTarget = safeExpense + mandatoryMonthly + debtReserveMonthly + liquidityReserveMonthly;
+  const growthIncomeTarget = coreIncomeTarget + importantMonthly;
+  const incomeShortfall = Math.max(0, coreIncomeTarget - safeIncome);
+  const incomeSurplus = Math.max(0, safeIncome - coreIncomeTarget);
+  const incomeTargetRemaining = Math.max(0, coreIncomeTarget - safeIncome);
+  const dailyIncomeTarget = incomeTargetRemaining / remainingDays;
+
+  const protectedCommitments = mandatoryMonthly + debtReserveMonthly + liquidityReserveMonthly;
+  const safeSpendingMonthly = Math.max(0, safeIncome - protectedCommitments);
+  const alreadySpent = safeExpense;
+  const safeSpendingRemaining = Math.max(0, safeSpendingMonthly - alreadySpent);
+  const safeSpendingDaily = safeSpendingRemaining / remainingDays;
+  const spendingPressure = safeSpendingMonthly > 0 ? alreadySpent / safeSpendingMonthly : (alreadySpent > 0 ? 2 : 0);
+
+  const goalCapacity = Math.max(0, safeIncome - safeExpense - debtReserveMonthly - liquidityReserveMonthly);
+  const mandatoryGap = Math.max(0, mandatoryMonthly - goalCapacity);
+  const lifestyleCapacity = Math.max(0, goalCapacity - mandatoryMonthly - importantMonthly);
+  const mandatoryCoverage = mandatoryMonthly > 0 ? Math.min(150, goalCapacity / mandatoryMonthly * 100) : 100;
+
+  const feasibilityRows = goalRows.map(row => {
+    const capacityAfterMandatory = Math.max(0, goalCapacity - mandatoryMonthly);
+    const isMandatory = row.priority === "Wajib";
+    const affordable = isMandatory ? mandatoryCoverage >= 100 : row.monthlyRequired <= capacityAfterMandatory;
+    const pressureRatio = goalCapacity > 0 ? row.monthlyRequired / goalCapacity : (row.monthlyRequired > 0 ? 9 : 0);
+    const recommendation = affordable
+      ? (isMandatory ? "Aktifkan dan lindungi alokasinya." : "Layak, selama goal wajib tetap aman.")
+      : (isMandatory ? "Perpanjang deadline atau naikkan income." : "Tunda, kurangi target, atau perpanjang deadline.");
+    return { ...row, affordable, pressureRatio, recommendation };
+  }).sort((a, b) => {
+    const rank = { Wajib: 0, Penting: 1, Opsional: 2 };
+    return (rank[a.priority] - rank[b.priority]) || (b.monthlyRequired - a.monthlyRequired);
+  });
+
+  const recommendations = [];
+  if ((healthEngine?.healthScore || 0) < 45) recommendations.push("Masuk mode pemulihan: hentikan ekspansi goal opsional dan pulihkan cashflow.");
+  if (incomeShortfall > 0) recommendations.push(`Tutup kekurangan income ${formatRupiah(incomeShortfall)} bulan ini.`);
+  if (mandatoryGap > 0) recommendations.push(`Goal wajib kekurangan kapasitas ${formatRupiah(mandatoryGap)} per bulan.`);
+  if (safeSpendingDaily <= 0 && alreadySpent > 0) recommendations.push("Batas belanja aman periode ini telah habis; tahan pengeluaran non-wajib.");
+  if (spendingPressure >= 0.85 && safeSpendingDaily > 0) recommendations.push("Pengeluaran mendekati batas aman; gunakan limit harian yang tersisa.");
+  if (safeLoan > 0 && debtReserveMonthly > 0) recommendations.push(`Lindungi cadangan cicilan/utang sekitar ${formatRupiah(debtReserveMonthly)} per bulan.`);
+  if (!recommendations.length) recommendations.push("Kondisi inti aman: pertahankan cashflow dan arahkan surplus ke goal prioritas.");
+
+  const decisionStatus = incomeShortfall > 0 || mandatoryGap > 0 || safeSpendingDaily <= 0
+    ? "Action Required"
+    : lifestyleCapacity > 0 && (healthEngine?.healthScore || 0) >= 65
+      ? "Growth Capacity"
+      : "Stable Control";
+  const decisionColor = decisionStatus === "Action Required" ? "#fde68a" : decisionStatus === "Growth Capacity" ? "#86efac" : "#c7d2fe";
+  const decisionBg = decisionStatus === "Action Required" ? "rgba(245,158,11,0.11)" : decisionStatus === "Growth Capacity" ? "rgba(16,185,129,0.10)" : "rgba(99,102,241,0.10)";
+
+  return {
+    coreIncomeTarget,
+    growthIncomeTarget,
+    incomeShortfall,
+    incomeSurplus,
+    dailyIncomeTarget,
+    remainingDays,
+    safeSpendingMonthly,
+    safeSpendingRemaining,
+    safeSpendingDaily,
+    spendingPressure,
+    mandatoryMonthly,
+    importantMonthly,
+    optionalMonthly,
+    mandatoryCoverage,
+    mandatoryGap,
+    lifestyleCapacity,
+    debtReserveMonthly,
+    liquidityReserveMonthly,
+    goalCapacity,
+    feasibilityRows,
+    topGoalRisks: feasibilityRows.filter(row => !row.affordable).slice(0, 3),
+    recommendations,
+    primaryRecommendation: recommendations[0],
+    decisionStatus,
+    decisionColor,
+    decisionBg,
+    periodNetFlow: safeNetFlow,
+    ok: incomeShortfall <= 0 && mandatoryGap <= 0 && safeSpendingDaily > 0,
   };
 }
 
@@ -1484,10 +1609,10 @@ function buildFinancialProgressMonitorGuard({
   const monitorLabel = monitorReady ? "Ready" : monitorBlocked ? "Blocked" : "Review";
   const activeLockCount = activeGuardRows.length;
   const blockingLockCount = blockingGuardRows.length;
-  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Health Engine 6.9 aktif setelah Phase 6.8 freeze.";
+  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Health Decision Engine 6.9.1 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
-    ? "Progress 6.9.0: 100% · semua guard clear · siap baseline Phase 6.9."
-    : "Progress 6.9.0: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
+    ? "Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."
+    : "Progress 6.9.1: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
 
   return {
     issues,
@@ -3428,7 +3553,7 @@ export default function App() {
         releaseReadinessGuard: financialReleaseReadinessGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.0: Consolidation Guard clear · engine siap baseline Phase 6.9.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.1: Consolidation Guard clear · engine siap baseline Phase 6.9.1.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialProgressMonitorGuard = canViewFinancialSummaryNow
     ? buildFinancialProgressMonitorGuard({
         walletTotal: financialWalletTotal,
@@ -3453,7 +3578,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Engine 6.9 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.0: 100% · semua guard clear · siap baseline Phase 6.9."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Decision Engine 6.9.1 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -3595,7 +3720,19 @@ export default function App() {
         transactionQualityScore,
         noBaseline: financialNoBaseline,
       })
-    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 6.9.0: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
+    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 6.9.1: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
+
+  const financialHealthDecisionEngine = canViewFinancialSummaryNow
+    ? buildFinancialHealthDecisionEngine({
+        healthEngine: financialHealthEngine,
+        periodIncome: visibleIncome,
+        periodExpense: visibleExpense,
+        periodNetFlow: visibleNetFlow,
+        walletTotal: financialWalletTotal,
+        loanTotal: financialLoanTotal,
+        goals: savingsGoals.map(goal => ({ ...goal, currentAmount: calcGoalValue(goal.id) })),
+      })
+    : { coreIncomeTarget: 0, growthIncomeTarget: 0, incomeShortfall: 0, incomeSurplus: 0, dailyIncomeTarget: 0, remainingDays: 0, safeSpendingMonthly: 0, safeSpendingRemaining: 0, safeSpendingDaily: 0, mandatoryMonthly: 0, mandatoryCoverage: 0, mandatoryGap: 0, lifestyleCapacity: 0, feasibilityRows: [], topGoalRisks: [], recommendations: ["Role tidak memiliki akses Financial Summary."], primaryRecommendation: "Role tidak memiliki akses Financial Summary.", decisionStatus: "Locked", decisionColor: "#94a3b8", decisionBg: "rgba(148,163,184,0.10)", ok: false };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -6097,7 +6234,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 6.9.0: Financial Health Engine, score health, component health, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 6.9.1: Financial Health Decision Engine, score health, component health, dan net worth baseline."
       ]
     };
   }
@@ -6107,7 +6244,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " financial-health-engine-6-9-0",
+      version: APP_VERSION + " financial-health-decision-engine-6-9-1",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -6585,7 +6722,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 6.9.0. Financial Health Engine 6.9.0 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan health engine 6.9.0.
+            FinPlan v1.1.0 phase 6.9.1. Financial Health Decision Engine 6.9.1 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan health decision engine 6.9.1.
           </div>
         </div>
       </div>
@@ -6939,7 +7076,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 6.9.0 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase 6.9.1 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -7104,7 +7241,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 6.9.0. Financial Health Engine 6.9.0 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan health engine.
+                FinPlan v1.1.0 phase 6.9.1. Financial Health Decision Engine 6.9.1 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan health decision engine 6.9.1.
               </div>
             </div>
           </div>
@@ -9062,9 +9199,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.9.0</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 6.9.1</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Financial Health Engine 6.9.0</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Financial Health Decision Engine 6.9.1</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialHealthEngine.healthBg, color: financialHealthEngine.healthColor, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialHealthEngine.healthScore}/100 · {financialHealthEngine.healthLabel}
@@ -9103,7 +9240,25 @@ export default function App() {
                 </div>
                 <div style={{ marginTop: "9px", fontSize: "11px", color: financialEngineIssues.length > 0 ? "#fde68a" : "#86efac", lineHeight: 1.45 }}>🛡️ {financialEngineGuardLabel}</div>
                 <div style={{ marginTop: "7px", padding: "8px 10px", borderRadius: "12px", background: financialHealthEngine.ok ? "rgba(16,185,129,0.10)" : "rgba(99,102,241,0.10)", border: financialHealthEngine.ok ? "1px solid rgba(16,185,129,0.18)" : "1px solid rgba(99,102,241,0.20)", fontSize: "11px", color: financialHealthEngine.healthColor, lineHeight: 1.45 }}>📌 {financialHealthEngine.healthNotice}</div>
-                <div style={{ marginTop: "7px", fontSize: "10px", color: "#94a3b8", lineHeight: 1.45 }}>Health Engine 6.9.0: {financialHealthEngine.componentRows.slice(0, 4).map(row => `${row.label} ${row.score}`).join(" · ")} · Prioritas: {financialHealthEngine.primaryAction}</div>
+                <div style={{ marginTop: "7px", fontSize: "10px", color: "#94a3b8", lineHeight: 1.45 }}>Health Engine 6.9.1: {financialHealthEngine.componentRows.slice(0, 4).map(row => `${row.label} ${row.score}`).join(" · ")} · Prioritas: {financialHealthEngine.primaryAction}</div>
+                <div style={{ marginTop: "9px", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "7px" }}>
+                  <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 800 }}>Target Income Inti</div>
+                    <div style={{ marginTop: "3px", fontSize: "12px", color: financialHealthDecisionEngine.incomeShortfall > 0 ? "#fde68a" : "#86efac", fontWeight: 900 }}>{formatRupiah(financialHealthDecisionEngine.coreIncomeTarget)}</div>
+                    <div style={{ marginTop: "2px", fontSize: "9px", color: "#64748b" }}>{financialHealthDecisionEngine.incomeShortfall > 0 ? `Kurang ${formatRupiah(financialHealthDecisionEngine.incomeShortfall)}` : `Surplus ${formatRupiah(financialHealthDecisionEngine.incomeSurplus)}`}</div>
+                  </div>
+                  <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 800 }}>Income / Hari</div>
+                    <div style={{ marginTop: "3px", fontSize: "12px", color: "#c7d2fe", fontWeight: 900 }}>{formatRupiah(financialHealthDecisionEngine.dailyIncomeTarget)}</div>
+                    <div style={{ marginTop: "2px", fontSize: "9px", color: "#64748b" }}>{financialHealthDecisionEngine.remainingDays} hari tersisa</div>
+                  </div>
+                  <div style={{ padding: "9px", borderRadius: "12px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", fontWeight: 800 }}>Belanja Aman / Hari</div>
+                    <div style={{ marginTop: "3px", fontSize: "12px", color: financialHealthDecisionEngine.safeSpendingDaily > 0 ? "#86efac" : "#fca5a5", fontWeight: 900 }}>{formatRupiah(financialHealthDecisionEngine.safeSpendingDaily)}</div>
+                    <div style={{ marginTop: "2px", fontSize: "9px", color: "#64748b" }}>Goal wajib {financialHealthDecisionEngine.mandatoryCoverage.toFixed(0)}%</div>
+                  </div>
+                </div>
+                <div style={{ marginTop: "7px", padding: "8px 10px", borderRadius: "12px", background: financialHealthDecisionEngine.decisionBg, border: "1px solid rgba(255,255,255,0.07)", color: financialHealthDecisionEngine.decisionColor, fontSize: "10px", lineHeight: 1.45 }}><b>{financialHealthDecisionEngine.decisionStatus}</b> · {financialHealthDecisionEngine.primaryRecommendation}</div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
                 {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
@@ -9118,7 +9273,7 @@ export default function App() {
                 {financialSealGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialSealGuard.hardSeal ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Seal Guard aktif: {financialSealGuard.issueCount} seal lock. Prioritas: {financialSealGuard.primaryAction}</div>}
                 {financialReleaseReadinessGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialReleaseReadinessGuard.releaseBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Release Readiness baseline aktif: {financialReleaseReadinessGuard.issueCount} readiness lock. Status: {financialReleaseReadinessGuard.readinessLabel}. Prioritas: {financialReleaseReadinessGuard.primaryAction}</div>}
                 {financialConsolidationGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialConsolidationGuard.consolidationBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Consolidation baseline aktif: {financialConsolidationGuard.issueCount} consolidation lock. Status: {financialConsolidationGuard.consolidationLabel}. Prioritas: {financialConsolidationGuard.primaryAction}</div>}
-                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 6.9.0 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
+                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 6.9.1 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
