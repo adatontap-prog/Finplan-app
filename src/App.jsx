@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.5";
-const FINANCIAL_ENGINE_NAME = "Financial Planning & Forecast Engine";
+const FINANCIAL_ENGINE_VERSION = "6.9.6";
+const FINANCIAL_ENGINE_NAME = "Financial Health Completion Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1198,7 +1198,7 @@ function buildFinancialConsolidationGuard({
   const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
-    ? "Progress 6.9.1: Consolidation Guard clear · engine siap baseline Phase 6.9.1."
+    ? "Progress 6.9.6: Health intelligence stack clear · engine siap completion checkpoint."
     : "Progress 6.9.1: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
   const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.";
 
@@ -1717,7 +1717,43 @@ function buildFinancialProgressMonitorGuard({
   releaseReadinessGuard = {},
   consolidationGuard = {},
   noBaseline = false,
+}
+
+function buildFinancialHealthCompletionEngine({
+  healthEngine = {},
+  decisionEngine = {},
+  executiveSummary = {},
+  planningForecast = {},
+  progressMonitor = {},
 } = {}) {
+  const blockers = [
+    ...(Array.isArray(healthEngine.issues) ? healthEngine.issues : []),
+    ...(progressMonitor.monitorBlocked ? [progressMonitor.primaryAction || "Progress monitor belum clear"] : []),
+    ...(planningForecast.forecastStatus === "Recovery Required" ? [planningForecast.primaryPlan?.title || "Forecast membutuhkan recovery plan"] : []),
+  ].filter(Boolean);
+  const readinessScore = Math.max(0, Math.min(100, Math.round(
+    (Number(healthEngine.score || 0) * 0.4)
+    + (Number(decisionEngine.decisionScore || decisionEngine.score || 0) * 0.25)
+    + (Number(planningForecast.confidenceScore || 0) * 0.2)
+    + (progressMonitor.ok ? 15 : 0)
+  )));
+  const completionStatus = blockers.length > 0
+    ? "Action Required"
+    : readinessScore >= 80
+      ? "Health Intelligence Ready"
+      : readinessScore >= 60
+        ? "Controlled Build"
+        : "Needs Baseline";
+  return {
+    readinessScore,
+    completionStatus,
+    blockers,
+    blockerCount: blockers.length,
+    primaryAction: blockers[0] || executiveSummary.primaryAction || planningForecast.primaryPlan?.title || "Pertahankan ritme keuangan dan review forecast berkala.",
+    ok: blockers.length === 0 && readinessScore >= 60,
+  };
+}
+ = {}) {
   const issues = [];
   const progressActions = [];
   const guardStack = [
@@ -1782,7 +1818,7 @@ function buildFinancialProgressMonitorGuard({
   const monitorLabel = monitorReady ? "Ready" : monitorBlocked ? "Blocked" : "Review";
   const activeLockCount = activeGuardRows.length;
   const blockingLockCount = blockingGuardRows.length;
-  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Planning & Forecast Engine 6.9.5 aktif setelah Phase 6.8 freeze.";
+  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
     ? "Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."
     : "Progress 6.9.1: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
@@ -3841,7 +3877,7 @@ export default function App() {
         releaseReadinessGuard: financialReleaseReadinessGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.1: Consolidation Guard clear · engine siap baseline Phase 6.9.1.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.6: Health intelligence stack clear · engine siap completion checkpoint.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialProgressMonitorGuard = canViewFinancialSummaryNow
     ? buildFinancialProgressMonitorGuard({
         walletTotal: financialWalletTotal,
@@ -3866,7 +3902,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Planning & Forecast Engine 6.9.5 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
