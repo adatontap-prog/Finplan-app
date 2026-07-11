@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.2";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.3";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.2";
-const FINANCIAL_ENGINE_NAME = "Financial Health Decision Engine + Market Reliability";
+const FINANCIAL_ENGINE_VERSION = "6.9.3";
+const FINANCIAL_ENGINE_NAME = "Portfolio Valuation Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -2108,6 +2108,43 @@ async function fetchMarketPrices() {
   return result;
 }
 
+const MARKET_HISTORY_KEY = "finplan_market_history_v1";
+
+function readMarketHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(MARKET_HISTORY_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.filter(item => item && item.timestamp) : [];
+  } catch (error) {
+    console.warn("Market history read failed:", error);
+    return [];
+  }
+}
+
+function appendMarketHistory(prices) {
+  if (!prices || !Number(prices.usdIdr) || !Number(prices.goldPerGram)) return readMarketHistory();
+  const current = readMarketHistory();
+  const timestamp = new Date().toISOString();
+  const dayKey = timestamp.slice(0, 10);
+  const snapshot = { timestamp, dayKey, usdIdr: Number(prices.usdIdr), goldPerGram: Number(prices.goldPerGram), jewelryPerGram: Number(prices.jewelryPerGram || 0), status: prices.status || "unknown", source: prices.source || "" };
+  const next = [...current.filter(item => item.dayKey !== dayKey), snapshot]
+    .sort((a, b) => String(a.timestamp).localeCompare(String(b.timestamp)))
+    .slice(-120);
+  try { localStorage.setItem(MARKET_HISTORY_KEY, JSON.stringify(next)); }
+  catch (error) { console.warn("Market history write failed:", error); }
+  return next;
+}
+
+function findHistoricalMarketSnapshot(history, daysAgo) {
+  if (!Array.isArray(history) || history.length === 0) return null;
+  const target = Date.now() - (daysAgo * 86400000);
+  return history.reduce((best, item) => {
+    const time = new Date(item.timestamp).getTime();
+    if (!Number.isFinite(time) || time > target) return best;
+    if (!best) return item;
+    return time > new Date(best.timestamp).getTime() ? item : best;
+  }, null);
+}
+
 // ===== GOOGLE SHEETS SYNC =====
 async function syncToSheets(action, payload) {
   try {
@@ -2199,6 +2236,7 @@ export default function App() {
   const [goalOverrides, setGoalOverrides] = useState({});
   const [goalUsageLog, setGoalUsageLog] = useState([]);
   const [marketPrices, setMarketPrices] = useState(null);
+  const [marketHistory, setMarketHistory] = useState(() => readMarketHistory());
   const [loadingPrices, setLoadingPrices] = useState(false);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [savingsTab, setSavingsTab] = useState("education");
@@ -2597,7 +2635,9 @@ export default function App() {
   async function loadPrices() {
     setLoadingPrices(true);
     try {
-      setMarketPrices(await fetchMarketPrices());
+      const nextPrices = await fetchMarketPrices();
+      setMarketPrices(nextPrices);
+      setMarketHistory(appendMarketHistory(nextPrices));
     } catch (error) {
       console.error("Market price load failed:", error);
       setMarketPrices(prev => prev || { status: "error", warnings: [error?.message || "Harga pasar gagal dimuat"], lastUpdated: new Date().toLocaleString("id-ID") });
@@ -3295,6 +3335,21 @@ export default function App() {
   });
   const totalInvBuy = investments.filter(inv => isFinancialAssetActive(inv)).reduce((s, i) => s + Number(i.costBasis ?? (["idr","obligasi"].includes(i.assetType) ? (i.idrValue || 0) : (i.qty || i.amount || 0) * (i.buyPrice || 0))), 0);
   const totalInvNow = invSummary.reduce((s, i) => s + i.currentValue, 0);
+  const previousMarketSnapshot = findHistoricalMarketSnapshot(marketHistory, 1);
+  const weekMarketSnapshot = findHistoricalMarketSnapshot(marketHistory, 7);
+  const monthMarketSnapshot = findHistoricalMarketSnapshot(marketHistory, 30);
+  const portfolioValueAtSnapshot = snapshot => snapshot
+    ? investments.filter(inv => isFinancialAssetActive(inv) && Number(inv.qty ?? inv.amount ?? 0) > 0).reduce((sum, inv) => sum + calcAssetValue(inv, snapshot), 0)
+    : null;
+  const previousPortfolioValue = portfolioValueAtSnapshot(previousMarketSnapshot);
+  const portfolioDailyChange = previousPortfolioValue == null ? null : totalInvNow - previousPortfolioValue;
+  const marketDiagnostic = {
+    reference: marketPrices?.status === "reference" ? 2 : marketPrices?.status === "partial" ? 1 : 0,
+    cache: marketPrices?.status === "cache" ? 2 : 0,
+    fallback: ["fallback", "error"].includes(marketPrices?.status) ? 2 : 0,
+    manualAssets: invSummary.filter(inv => Number(inv.manualPrice || 0) > 0).length,
+    historyCount: marketHistory.length,
+  };
   const selectedInvestmentSummary = selectedInvestment ? (invSummary.find(i => i.id === selectedInvestment.id) || selectedInvestment) : null;
 
   const allSavingsGoals = [
@@ -9079,6 +9134,28 @@ export default function App() {
 
                 {!investmentEditMode ? (
                   <>
+                    {(() => {
+                      const dayValue = previousMarketSnapshot ? calcAssetValue(inv, previousMarketSnapshot) : null;
+                      const weekValue = weekMarketSnapshot ? calcAssetValue(inv, weekMarketSnapshot) : null;
+                      const monthValue = monthMarketSnapshot ? calcAssetValue(inv, monthMarketSnapshot) : null;
+                      const performanceItem = (label, base) => {
+                        const change = base == null ? null : currentValue - base;
+                        const pct = base > 0 ? (change / base) * 100 : null;
+                        return <div style={{ padding: "9px", borderRadius: "11px", background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.14)" }}>
+                          <div style={{ color: "#94a3b8", fontSize: "9px", marginBottom: "3px" }}>{label}</div>
+                          <div style={{ fontWeight: 900, color: change == null ? "#94a3b8" : change >= 0 ? "#86efac" : "#fca5a5", fontSize: "11px" }}>{change == null ? "Belum ada data" : `${change >= 0 ? "+" : ""}${formatFull(change)}${pct == null ? "" : ` (${pct.toFixed(1)}%)`}`}</div>
+                        </div>;
+                      };
+                      return <div style={{ marginBottom: "12px" }}>
+                        <div style={{ fontSize: "10px", color: "#a5b4fc", fontWeight: 900, letterSpacing: "1px", textTransform: "uppercase", marginBottom: "7px" }}>Asset Performance</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "7px" }}>
+                          {performanceItem("1 Hari", dayValue)}
+                          {performanceItem("7 Hari", weekValue)}
+                          {performanceItem("30 Hari", monthValue)}
+                          {performanceItem("All Time", costBasis)}
+                        </div>
+                      </div>;
+                    })()}
                     <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", marginBottom: "12px", display: "grid", gap: "7px", fontSize: "12px", color: "#cbd5e1" }}>
                       <div><b>Jumlah:</b> {inv.qty ?? inv.amount} {at.unit}</div>
                       <div><b>Modal/Nilai perolehan:</b> {formatFull(costBasis)}</div>
@@ -10181,11 +10258,25 @@ export default function App() {
             {/* Total Portofolio */}
             <div style={{ padding: "16px", marginBottom: "16px", borderRadius: "16px", background: "linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,78,59,0.2))", border: "1px solid rgba(16,185,129,0.2)" }}>
               <div style={{ fontSize: "11px", color: "#34d399", textTransform: "uppercase", letterSpacing: "1px", marginBottom: "4px" }}>Total Portofolio {marketPrices ? "(nilai pasar)" : ""}</div>
-              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginBottom: "8px" }}>{formatRupiah(totalInvNow)}</div>
+              <div style={{ fontSize: "24px", fontWeight: 900, color: "#fff", marginBottom: "5px" }}>{formatRupiah(totalInvNow)}</div>
+              <div style={{ fontSize: "11px", marginBottom: "9px", color: portfolioDailyChange == null ? "#94a3b8" : portfolioDailyChange >= 0 ? "#86efac" : "#fca5a5", fontWeight: 800 }}>
+                {portfolioDailyChange == null ? "Perubahan harian tersedia setelah minimal 2 snapshot hari berbeda" : `${portfolioDailyChange >= 0 ? "▲" : "▼"} Hari ini ${portfolioDailyChange >= 0 ? "+" : ""}${formatFull(portfolioDailyChange)}`}
+              </div>
               <div style={{ display: "flex", gap: "20px" }}>
                 <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Modal</div><div style={{ fontSize: "13px", fontWeight: 700 }}>{formatRupiah(totalInvBuy)}</div></div>
                 <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Untung/Rugi</div><div style={{ fontSize: "13px", fontWeight: 700, color: totalInvNow - totalInvBuy >= 0 ? "#34d399" : "#f87171" }}>{totalInvNow - totalInvBuy >= 0 ? "+" : ""}{formatRupiah(totalInvNow - totalInvBuy)}</div></div>
                 <div><div style={{ fontSize: "10px", color: "#555", marginBottom: "2px" }}>Return</div><div style={{ fontSize: "13px", fontWeight: 700, color: totalInvNow - totalInvBuy >= 0 ? "#34d399" : "#f87171" }}>{totalInvBuy > 0 ? (((totalInvNow - totalInvBuy) / totalInvBuy) * 100).toFixed(1) : 0}%</div></div>
+              </div>
+            </div>
+
+            <div style={{ padding: "12px 14px", marginBottom: "14px", borderRadius: "14px", background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.18)" }}>
+              <div style={{ fontSize: "10px", letterSpacing: "1px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase", marginBottom: "7px" }}>Portfolio Diagnostic</div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "5px 12px", fontSize: "10px", color: "#cbd5e1", lineHeight: 1.45 }}>
+                <div>✓ Harga referensi: <b>{marketDiagnostic.reference}</b></div>
+                <div>✎ Aset manual: <b>{marketDiagnostic.manualAssets}</b></div>
+                <div style={{ color: marketDiagnostic.cache ? "#fbbf24" : "#cbd5e1" }}>⚠ Harga cache: <b>{marketDiagnostic.cache}</b></div>
+                <div style={{ color: marketDiagnostic.fallback ? "#fca5a5" : "#cbd5e1" }}>⚠ Harga fallback: <b>{marketDiagnostic.fallback}</b></div>
+                <div style={{ gridColumn: "1 / -1", color: "#94a3b8" }}>Riwayat valuasi tersimpan: {marketDiagnostic.historyCount} snapshot harian.</div>
               </div>
             </div>
 
