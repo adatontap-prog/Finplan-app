@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.1";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.2";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.1";
-const FINANCIAL_ENGINE_NAME = "Financial Health Decision Engine";
+const FINANCIAL_ENGINE_VERSION = "6.9.2";
+const FINANCIAL_ENGINE_NAME = "Financial Health Decision Engine + Market Reliability";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -2028,34 +2028,84 @@ function calcAssetValue(holding, prices) {
 }
 
 async function fetchMarketPrices() {
-  const FALLBACK = { usdIdr: 17810, goldPerGram: 2711000, jewelryPerGram: 1627000, goldSpot: 2557000, lastUpdated: "fallback Juni 2026 \u2014 tekan Refresh" };
+  const CACHE_KEY = "finplan_market_prices_v2";
+  const FALLBACK = {
+    usdIdr: 17810,
+    goldPerGram: 2711000,
+    jewelryPerGram: 1627000,
+    goldSpot: 2557000,
+    lastUpdated: "Nilai fallback bawaan",
+    dataDate: null,
+    source: "Fallback lokal",
+    status: "fallback",
+    warnings: ["Harga pasar terbaru belum tersedia. Jangan gunakan nilai ini sebagai harga aktual."],
+  };
+
+  let cached = null;
   try {
-    let usdIdr = 17810;
-    try {
-      const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR");
-      const fxData = await fxRes.json();
-      if (fxData.rates?.IDR > 10000) usdIdr = fxData.rates.IDR;
-    } catch(e) {}
-
-    let antamPerGram = 2711000;
-    let goldSpot = 2557000;
-    let jewelryPerGram = 1627000;
-    try {
-      const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD");
-      const goldData = await goldRes.json();
-      const goldUsdPerOz = goldData?.items?.[0]?.xauPrice;
-      if (goldUsdPerOz && goldUsdPerOz > 1000) {
-        const goldUsdPerGram = goldUsdPerOz / 31.1035;
-        goldSpot = Math.round(goldUsdPerGram * usdIdr);
-        antamPerGram = Math.round(goldSpot * 1.06);
-        jewelryPerGram = Math.round(goldSpot * 0.75 * 0.80);
-      }
-    } catch(e) {}
-
-    return { usdIdr: Math.round(usdIdr), goldPerGram: antamPerGram, jewelryPerGram, goldSpot, lastUpdated: new Date().toLocaleString("id-ID"), source: "Frankfurter FX + GoldPrice estimate", status: "refreshed" };
-  } catch {
-    return FALLBACK;
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) cached = JSON.parse(raw);
+  } catch (error) {
+    console.warn("Market cache read failed:", error);
   }
+
+  let usdIdr = Number(cached?.usdIdr) || FALLBACK.usdIdr;
+  let antamPerGram = Number(cached?.goldPerGram) || FALLBACK.goldPerGram;
+  let goldSpot = Number(cached?.goldSpot) || FALLBACK.goldSpot;
+  let jewelryPerGram = Number(cached?.jewelryPerGram) || FALLBACK.jewelryPerGram;
+  let fxOk = false;
+  let goldOk = false;
+  let fxDate = null;
+  const warnings = [];
+
+  try {
+    const fxRes = await fetch("https://api.frankfurter.app/latest?from=USD&to=IDR", { cache: "no-store" });
+    if (!fxRes.ok) throw new Error("HTTP " + fxRes.status);
+    const fxData = await fxRes.json();
+    const candidate = Number(fxData?.rates?.IDR);
+    if (!Number.isFinite(candidate) || candidate <= 10000) throw new Error("Nilai USD/IDR tidak valid");
+    usdIdr = candidate;
+    fxDate = fxData?.date || null;
+    fxOk = true;
+  } catch (error) {
+    warnings.push("Kurs USD gagal diperbarui: " + (error?.message || "provider tidak tersedia"));
+    console.warn("USD/IDR refresh failed:", error);
+  }
+
+  try {
+    const goldRes = await fetch("https://data-asg.goldprice.org/dbXRates/USD", { cache: "no-store" });
+    if (!goldRes.ok) throw new Error("HTTP " + goldRes.status);
+    const goldData = await goldRes.json();
+    const goldUsdPerOz = Number(goldData?.items?.[0]?.xauPrice);
+    if (!Number.isFinite(goldUsdPerOz) || goldUsdPerOz <= 1000) throw new Error("Harga emas tidak valid");
+    const goldUsdPerGram = goldUsdPerOz / 31.1035;
+    goldSpot = Math.round(goldUsdPerGram * usdIdr);
+    antamPerGram = Math.round(goldSpot * 1.06);
+    jewelryPerGram = Math.round(goldSpot * 0.75 * 0.80);
+    goldOk = true;
+  } catch (error) {
+    warnings.push("Harga emas gagal diperbarui: " + (error?.message || "provider tidak tersedia"));
+    console.warn("Gold refresh failed:", error);
+  }
+
+  const status = fxOk && goldOk ? "reference" : (fxOk || goldOk ? "partial" : (cached ? "cache" : "fallback"));
+  const result = {
+    usdIdr: Math.round(usdIdr),
+    goldPerGram: Math.round(antamPerGram),
+    jewelryPerGram: Math.round(jewelryPerGram),
+    goldSpot: Math.round(goldSpot),
+    lastUpdated: new Date().toLocaleString("id-ID"),
+    dataDate: fxDate,
+    source: fxOk && goldOk ? "Frankfurter FX + GoldPrice reference estimate" : (cached ? "Cache terakhir + provider parsial" : "Fallback lokal"),
+    status,
+    warnings,
+  };
+
+  if (fxOk || goldOk) {
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(result)); }
+    catch (error) { console.warn("Market cache write failed:", error); }
+  }
+  return result;
 }
 
 // ===== GOOGLE SHEETS SYNC =====
@@ -2544,7 +2594,17 @@ export default function App() {
     return () => clearInterval(interval);
   }, [transactions]);
 
-  async function loadPrices() { setLoadingPrices(true); setMarketPrices(await fetchMarketPrices()); setLoadingPrices(false); }
+  async function loadPrices() {
+    setLoadingPrices(true);
+    try {
+      setMarketPrices(await fetchMarketPrices());
+    } catch (error) {
+      console.error("Market price load failed:", error);
+      setMarketPrices(prev => prev || { status: "error", warnings: [error?.message || "Harga pasar gagal dimuat"], lastUpdated: new Date().toLocaleString("id-ID") });
+    } finally {
+      setLoadingPrices(false);
+    }
+  }
 
   // ===== SECURITY FUNCTIONS =====
   function handlePinPress(digit) {
@@ -7880,7 +7940,7 @@ export default function App() {
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(99,102,241,0.10)", border: "1px solid rgba(99,102,241,0.20)", marginBottom: "14px" }}>
             <div style={{ fontSize: "15px", fontWeight: 900, color: "#fff" }}>{at.icon} {inv.ticker || at.label}</div>
-            <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>Tersedia {qtyAvailable} {at.unit} · Modal {formatRupiah(costBasis)} · Nilai pasar {formatRupiah(currentValue)}</div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>Tersedia {qtyAvailable} {at.unit} · Modal {formatRupiah(costBasis)} · Nilai pasar {formatFull(currentValue)}</div>
           </div>
 
           <div style={{ display: "grid", gap: "12px" }}>
@@ -9013,7 +9073,7 @@ export default function App() {
                   </div>
                   <div style={{ padding: "11px", borderRadius: "15px", background: "rgba(255,255,255,0.045)", border: "1px solid rgba(255,255,255,0.06)" }}>
                     <div style={{ fontSize: "10px", color: "#94a3b8", marginBottom: "4px" }}>Untung/Rugi</div>
-                    <div style={{ fontSize: "16px", fontWeight: 900, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{profitLoss >= 0 ? "+" : ""}{formatRupiah(profitLoss)}</div>
+                    <div style={{ fontSize: "16px", fontWeight: 900, color: profitLoss >= 0 ? "#34d399" : "#f87171" }}>{profitLoss >= 0 ? "+" : ""}{formatFull(profitLoss)}</div>
                   </div>
                 </div>
 
@@ -9021,9 +9081,10 @@ export default function App() {
                   <>
                     <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)", marginBottom: "12px", display: "grid", gap: "7px", fontSize: "12px", color: "#cbd5e1" }}>
                       <div><b>Jumlah:</b> {inv.qty ?? inv.amount} {at.unit}</div>
-                      <div><b>Modal/Nilai perolehan:</b> {formatRupiah(costBasis)}</div>
+                      <div><b>Modal/Nilai perolehan:</b> {formatFull(costBasis)}</div>
                       <div><b>Tanggal:</b> {inv.buyDate || String(inv.createdAt || "").slice(0, 10) || "-"}</div>
                       <div><b>Harga manual/unit:</b> {inv.manualPrice ? formatRupiah(inv.manualPrice) : "Tidak ada"}</div>
+                      {inv.assetType === "usd" && <div><b>Kurs valuasi:</b> {marketPrices?.usdIdr ? formatFull(marketPrices.usdIdr) + "/USD" : "Belum tersedia"} · <b>Status:</b> {marketPrices?.status || "belum dimuat"}</div>}
                       {inv.note && <div><b>Catatan:</b> {inv.note}</div>}
                     </div>
 
@@ -10104,9 +10165,13 @@ export default function App() {
                     {marketPrices ? "USD/IDR " + formatFull(marketPrices.usdIdr) + " · Emas " + formatRupiah(marketPrices.goldPerGram) + "/gr" : "Harga belum dimuat"}
                   </div>
                   <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "5px", lineHeight: 1.45 }}>
-                    Status: <b style={{ color: marketPrices?.status === "estimate" ? "#fbbf24" : "#86efac" }}>{marketPrices?.status === "estimate" ? "Estimasi/manual" : marketPrices ? "Ter-refresh" : "Belum dimuat"}</b>
-                    {marketPrices?.lastUpdated ? " · Update: " + marketPrices.lastUpdated : ""}
+                    Status: <b style={{ color: ["reference"].includes(marketPrices?.status) ? "#86efac" : ["partial","cache"].includes(marketPrices?.status) ? "#fbbf24" : "#f87171" }}>
+                      {marketPrices?.status === "reference" ? "Referensi terbaru" : marketPrices?.status === "partial" ? "Sebagian terbaru" : marketPrices?.status === "cache" ? "Cache terakhir" : marketPrices?.status === "fallback" ? "Fallback — bukan harga terbaru" : marketPrices?.status === "error" ? "Gagal dimuat" : "Belum dimuat"}
+                    </b>
+                    {marketPrices?.dataDate ? " · Data: " + marketPrices.dataDate : ""}
+                    {marketPrices?.lastUpdated ? " · Cek: " + marketPrices.lastUpdated : ""}
                     {marketPrices?.source ? " · Source: " + marketPrices.source : ""}
+                    {marketPrices?.warnings?.length ? <div style={{ color: "#fca5a5", marginTop: "4px" }}>{marketPrices.warnings.join(" · ")}</div> : null}
                   </div>
                 </div>
                 <button onClick={loadPrices} disabled={loadingPrices} style={{ background: "rgba(99,102,241,0.2)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: "10px", padding: "8px 10px", fontSize: "11px", cursor: "pointer", fontWeight: 900 }}>{loadingPrices ? "⏳" : "🔄"}</button>
