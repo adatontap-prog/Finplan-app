@@ -1199,7 +1199,7 @@ function buildFinancialConsolidationGuard({
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
     ? "Progress 6.9.6: Health intelligence stack clear · engine siap completion checkpoint."
-    : "Progress 6.9.1: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+    : "Progress 6.9.6: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
   const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.";
 
   return {
@@ -1717,43 +1717,8 @@ function buildFinancialProgressMonitorGuard({
   releaseReadinessGuard = {},
   consolidationGuard = {},
   noBaseline = false,
-}
-
-function buildFinancialHealthCompletionEngine({
-  healthEngine = {},
-  decisionEngine = {},
-  executiveSummary = {},
-  planningForecast = {},
-  progressMonitor = {},
 } = {}) {
-  const blockers = [
-    ...(Array.isArray(healthEngine.issues) ? healthEngine.issues : []),
-    ...(progressMonitor.monitorBlocked ? [progressMonitor.primaryAction || "Progress monitor belum clear"] : []),
-    ...(planningForecast.forecastStatus === "Recovery Required" ? [planningForecast.primaryPlan?.title || "Forecast membutuhkan recovery plan"] : []),
-  ].filter(Boolean);
-  const readinessScore = Math.max(0, Math.min(100, Math.round(
-    (Number(healthEngine.score || 0) * 0.4)
-    + (Number(decisionEngine.decisionScore || decisionEngine.score || 0) * 0.25)
-    + (Number(planningForecast.confidenceScore || 0) * 0.2)
-    + (progressMonitor.ok ? 15 : 0)
-  )));
-  const completionStatus = blockers.length > 0
-    ? "Action Required"
-    : readinessScore >= 80
-      ? "Health Intelligence Ready"
-      : readinessScore >= 60
-        ? "Controlled Build"
-        : "Needs Baseline";
-  return {
-    readinessScore,
-    completionStatus,
-    blockers,
-    blockerCount: blockers.length,
-    primaryAction: blockers[0] || executiveSummary.primaryAction || planningForecast.primaryPlan?.title || "Pertahankan ritme keuangan dan review forecast berkala.",
-    ok: blockers.length === 0 && readinessScore >= 60,
-  };
-}
- = {}) {
+
   const issues = [];
   const progressActions = [];
   const guardStack = [
@@ -1820,8 +1785,8 @@ function buildFinancialHealthCompletionEngine({
   const blockingLockCount = blockingGuardRows.length;
   const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
-    ? "Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."
-    : "Progress 6.9.1: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
+    ? "Progress 6.9.6: 100% · semua guard clear · siap baseline Phase 6.9.6."
+    : "Progress 6.9.6: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
 
   return {
     issues,
@@ -1853,6 +1818,41 @@ function buildFinancialHealthCompletionEngine({
   };
 }
 
+
+function buildFinancialHealthCompletionEngine({
+  healthEngine = {},
+  decisionEngine = {},
+  executiveSummary = {},
+  planningForecast = {},
+  progressMonitor = {},
+} = {}) {
+  const blockers = [
+    ...(Array.isArray(healthEngine.issues) ? healthEngine.issues : []),
+    ...(progressMonitor.monitorBlocked ? [progressMonitor.primaryAction || "Progress monitor belum clear"] : []),
+    ...(planningForecast.forecastStatus === "Recovery Required" ? [planningForecast.primaryPlan?.title || "Forecast membutuhkan recovery plan"] : []),
+  ].filter(Boolean);
+  const readinessScore = Math.max(0, Math.min(100, Math.round(
+    (Number(healthEngine.score || 0) * 0.4)
+    + (Number(decisionEngine.decisionScore || decisionEngine.score || 0) * 0.25)
+    + (Number(planningForecast.confidenceScore || 0) * 0.2)
+    + (progressMonitor.ok ? 15 : 0)
+  )));
+  const completionStatus = blockers.length > 0
+    ? "Action Required"
+    : readinessScore >= 80
+      ? "Health Intelligence Ready"
+      : readinessScore >= 60
+        ? "Controlled Build"
+        : "Needs Baseline";
+  return {
+    readinessScore,
+    completionStatus,
+    blockers,
+    blockerCount: blockers.length,
+    primaryAction: blockers[0] || executiveSummary.primaryAction || planningForecast.primaryPlan?.title || "Pertahankan ritme keuangan dan review forecast berkala.",
+    ok: blockers.length === 0 && readinessScore >= 60,
+  };
+}
 
 function hasValidSession() {
   if (typeof localStorage === "undefined") return false;
@@ -3902,7 +3902,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.1: 100% · semua guard clear · siap baseline Phase 6.9.1."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.6: 100% · semua guard clear · siap baseline Phase 6.9.6."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
