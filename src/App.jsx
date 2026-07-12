@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.6";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.7";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.6";
-const FINANCIAL_ENGINE_NAME = "Financial Health Completion Engine";
+const FINANCIAL_ENGINE_VERSION = "6.9.7";
+const FINANCIAL_ENGINE_NAME = "Financial Recommendation Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1198,8 +1198,8 @@ function buildFinancialConsolidationGuard({
   const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
-    ? "Progress 6.9.6: Health intelligence stack clear · engine siap completion checkpoint."
-    : "Progress 6.9.6: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+    ? "Progress 6.9.7: Health intelligence stack clear · engine siap completion checkpoint."
+    : "Progress 6.9.7: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
   const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.";
 
   return {
@@ -1783,10 +1783,10 @@ function buildFinancialProgressMonitorGuard({
   const monitorLabel = monitorReady ? "Ready" : monitorBlocked ? "Blocked" : "Review";
   const activeLockCount = activeGuardRows.length;
   const blockingLockCount = blockingGuardRows.length;
-  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.";
+  const primaryAction = progressActions[0] || "Progress Monitor clear. Financial Recommendation Engine 6.9.7 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
-    ? "Progress 6.9.6: 100% · semua guard clear · siap baseline Phase 6.9.6."
-    : "Progress 6.9.6: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
+    ? "Progress 6.9.7: 100% · semua guard clear · siap baseline Phase 6.9.7."
+    : "Progress 6.9.7: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
 
   return {
     issues,
@@ -1851,6 +1851,180 @@ function buildFinancialHealthCompletionEngine({
     blockerCount: blockers.length,
     primaryAction: blockers[0] || executiveSummary.primaryAction || planningForecast.primaryPlan?.title || "Pertahankan ritme keuangan dan review forecast berkala.",
     ok: blockers.length === 0 && readinessScore >= 60,
+  };
+}
+
+
+function buildFinancialRecommendationEngine({
+  healthEngine = {},
+  decisionEngine = {},
+  executiveSummary = {},
+  planningForecast = {},
+  completionEngine = {},
+  progressMonitor = {},
+  portfolioDiagnostic = {},
+} = {}) {
+  const rows = [];
+  const add = ({ id, priority = 3, category = "Control", title, detail, action, amount = 0, severity = "info" }) => {
+    if (!title || rows.some(row => row.id === id)) return;
+    rows.push({ id, priority, category, title, detail: detail || "", action: action || title, amount: Math.max(0, asEngineNumber(amount)), severity });
+  };
+
+  const healthScore = Math.max(0, Math.min(100, asEngineNumber(healthEngine.healthScore ?? healthEngine.score)));
+  const incomeShortfall = Math.max(0, asEngineNumber(decisionEngine.incomeShortfall));
+  const mandatoryGap = Math.max(0, asEngineNumber(decisionEngine.mandatoryGap));
+  const safeSpendingDaily = Math.max(0, asEngineNumber(decisionEngine.safeSpendingDaily));
+  const debtReserveMonthly = Math.max(0, asEngineNumber(decisionEngine.debtReserveMonthly));
+  const incomeSurplus = Math.max(0, asEngineNumber(decisionEngine.incomeSurplus));
+  const forecastStatus = String(planningForecast.forecastStatus || "");
+  const portfolioFallback = Math.max(0, asEngineNumber(portfolioDiagnostic.fallbackCount));
+  const portfolioError = Math.max(0, asEngineNumber(portfolioDiagnostic.errorCount));
+
+  if (progressMonitor.monitorBlocked || completionEngine.blockerCount > 0) {
+    add({
+      id: "restore-engine-integrity",
+      priority: 0,
+      category: "Integrity",
+      title: "Pulihkan integritas engine sebelum ekspansi",
+      detail: progressMonitor.primaryAction || completionEngine.primaryAction || "Selesaikan blocker Financial Engine.",
+      action: "Buka audit engine dan selesaikan blocker paling kritis.",
+      severity: "critical",
+    });
+  }
+  if (healthScore > 0 && healthScore < 45) {
+    add({
+      id: "financial-recovery-mode",
+      priority: 0,
+      category: "Recovery",
+      title: "Aktifkan mode pemulihan keuangan",
+      detail: `Health score ${Math.round(healthScore)}/100. Hentikan ekspansi goal opsional dan lindungi kebutuhan inti.`,
+      action: "Bekukan pengeluaran non-wajib sampai cashflow dan wallet kembali stabil.",
+      severity: "critical",
+    });
+  }
+  if (incomeShortfall > 0) {
+    add({
+      id: "close-income-shortfall",
+      priority: 1,
+      category: "Income",
+      title: `Tutup kekurangan income ${formatRupiah(incomeShortfall)}`,
+      detail: `Target minimum tersisa sekitar ${formatRupiah(decisionEngine.dailyIncomeTarget || 0)} per hari selama ${decisionEngine.remainingDays || 0} hari.`,
+      action: "Pilih satu sumber pendapatan aktif dan ukur hasilnya setiap hari.",
+      amount: incomeShortfall,
+      severity: "warning",
+    });
+  }
+  if (mandatoryGap > 0) {
+    add({
+      id: "protect-mandatory-goals",
+      priority: 1,
+      category: "Goals",
+      title: `Lindungi goal wajib yang kekurangan ${formatRupiah(mandatoryGap)}/bulan`,
+      detail: `Coverage goal wajib ${Math.round(asEngineNumber(decisionEngine.mandatoryCoverage))}%.`,
+      action: "Naikkan income, turunkan target, atau perpanjang deadline goal wajib.",
+      amount: mandatoryGap,
+      severity: "warning",
+    });
+  }
+  if (safeSpendingDaily <= 0 && asEngineNumber(decisionEngine.safeSpendingMonthly) > 0) {
+    add({
+      id: "stop-optional-spending",
+      priority: 1,
+      category: "Spending",
+      title: "Hentikan belanja non-wajib periode ini",
+      detail: "Batas belanja aman telah habis setelah komitmen inti dilindungi.",
+      action: "Gunakan hanya wallet kebutuhan wajib sampai periode berikutnya.",
+      severity: "warning",
+    });
+  } else if (safeSpendingDaily > 0) {
+    add({
+      id: "daily-safe-spending",
+      priority: 4,
+      category: "Spending",
+      title: `Jaga batas belanja sekitar ${formatRupiah(safeSpendingDaily)}/hari`,
+      detail: "Batas ini berasal dari income setelah komitmen inti dan goal wajib.",
+      action: "Gunakan angka ini sebagai kontrol harian, bukan target untuk dihabiskan.",
+      severity: "info",
+    });
+  }
+  if (debtReserveMonthly > 0) {
+    add({
+      id: "protect-debt-reserve",
+      priority: 2,
+      category: "Debt",
+      title: `Amankan cadangan utang ${formatRupiah(debtReserveMonthly)}/bulan`,
+      detail: "Cadangan pembayaran harus dipisahkan sebelum ekspansi investasi atau lifestyle.",
+      action: "Pisahkan dana cicilan ke wallet khusus atau tandai sebagai dana terlindungi.",
+      amount: debtReserveMonthly,
+      severity: "warning",
+    });
+  }
+  if (forecastStatus === "Recovery Required") {
+    add({
+      id: "forecast-recovery-plan",
+      priority: 1,
+      category: "Forecast",
+      title: "Jalankan recovery plan forecast 90 hari",
+      detail: typeof planningForecast.primaryPlan === "string" ? planningForecast.primaryPlan : planningForecast.primaryPlan?.title,
+      action: "Review proyeksi wallet, net worth, dan goal sebelum mengambil komitmen baru.",
+      severity: "warning",
+    });
+  }
+  if (portfolioFallback + portfolioError > 0) {
+    add({
+      id: "refresh-market-data",
+      priority: 2,
+      category: "Portfolio",
+      title: "Perbarui sumber harga portofolio",
+      detail: `${portfolioFallback} harga fallback dan ${portfolioError} harga error masih memengaruhi valuasi.`,
+      action: "Refresh harga pasar atau masukkan override manual yang tervalidasi.",
+      severity: "warning",
+    });
+  }
+  if (incomeSurplus > 0 && healthScore >= 65 && mandatoryGap <= 0) {
+    add({
+      id: "allocate-surplus",
+      priority: 5,
+      category: "Growth",
+      title: `Alokasikan surplus ${formatRupiah(incomeSurplus)} secara disiplin`,
+      detail: "Kondisi inti cukup terkendali dan goal wajib tidak kekurangan kapasitas.",
+      action: "Prioritaskan dana darurat, goal penting, lalu investasi sesuai profil risiko.",
+      amount: incomeSurplus,
+      severity: "positive",
+    });
+  }
+
+  if (!rows.length) {
+    add({
+      id: "maintain-control",
+      priority: 5,
+      category: "Control",
+      title: "Pertahankan ritme keuangan saat ini",
+      detail: executiveSummary.headline || "Tidak ada tindakan kritis yang terdeteksi.",
+      action: "Review cashflow, goal, dan portfolio setiap minggu.",
+      severity: "positive",
+    });
+  }
+
+  const severityRank = { critical: 0, warning: 1, info: 2, positive: 3 };
+  const recommendations = rows.sort((a, b) => (a.priority - b.priority) || ((severityRank[a.severity] ?? 9) - (severityRank[b.severity] ?? 9))).map((row, index) => ({ ...row, rank: index + 1 }));
+  const criticalCount = recommendations.filter(row => row.severity === "critical").length;
+  const warningCount = recommendations.filter(row => row.severity === "warning").length;
+  const recommendationStatus = criticalCount > 0 ? "Critical Action" : warningCount > 0 ? "Priority Action" : "Controlled";
+  const statusColor = criticalCount > 0 ? "#fecaca" : warningCount > 0 ? "#fde68a" : "#86efac";
+  const statusBg = criticalCount > 0 ? "rgba(239,68,68,0.10)" : warningCount > 0 ? "rgba(245,158,11,0.10)" : "rgba(16,185,129,0.10)";
+
+  return {
+    recommendations,
+    topRecommendations: recommendations.slice(0, 5),
+    primaryRecommendation: recommendations[0],
+    recommendationStatus,
+    statusColor,
+    statusBg,
+    criticalCount,
+    warningCount,
+    actionCount: recommendations.length,
+    ok: criticalCount === 0 && warningCount === 0,
   };
 }
 
@@ -3877,7 +4051,7 @@ export default function App() {
         releaseReadinessGuard: financialReleaseReadinessGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.6: Health intelligence stack clear · engine siap completion checkpoint.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 6.9.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 6.9.7: Health intelligence stack clear · engine siap completion checkpoint.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialProgressMonitorGuard = canViewFinancialSummaryNow
     ? buildFinancialProgressMonitorGuard({
         walletTotal: financialWalletTotal,
@@ -3902,7 +4076,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Health Completion Engine 6.9.6 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.6: 100% · semua guard clear · siap baseline Phase 6.9.6."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Financial Recommendation Engine 6.9.7 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 6.9.7: 100% · semua guard clear · siap baseline Phase 6.9.7."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -4090,6 +4264,20 @@ export default function App() {
         horizonMonths: 3,
       })
     : { horizonMonths: 3, projectedNetWorth: 0, projectedWallet: 0, projectedGoal: 0, projectedAssets: 0, runwayMonths: 0, projectedRunwayMonths: 0, coreIncomeTarget: 0, safeSpendingMonthly: 0, incomeShortfall: 0, mandatoryMonthly: 0, monthlyRows: [], confidenceScore: 0, confidenceLabel: "Locked", forecastStatus: "Locked", statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", planActions: [], primaryPlan: "Role tidak memiliki akses Financial Summary.", ok: false };
+
+
+
+  const financialRecommendationEngine = canViewFinancialSummaryNow
+    ? buildFinancialRecommendationEngine({
+        healthEngine: financialHealthEngine,
+        decisionEngine: financialHealthDecisionEngine,
+        executiveSummary: executiveFinancialSummary,
+        planningForecast: financialPlanningForecast,
+        completionEngine: typeof financialHealthCompletionEngine !== "undefined" ? financialHealthCompletionEngine : {},
+        progressMonitor: financialProgressMonitorGuard,
+        portfolioDiagnostic: typeof portfolioDiagnostic !== "undefined" ? portfolioDiagnostic : {},
+      })
+    : { recommendations: [], topRecommendations: [], primaryRecommendation: { title: "Role tidak memiliki akses Financial Summary.", action: "" }, recommendationStatus: "Locked", statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", criticalCount: 0, warningCount: 0, actionCount: 0, ok: false };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -9674,6 +9862,25 @@ export default function App() {
                   </div>
                   <div style={{ marginTop: "7px", fontSize: "9px", color: financialPlanningForecast.statusColor, lineHeight: 1.45 }}><b>Plan:</b> {financialPlanningForecast.primaryPlan}</div>
                   <div style={{ marginTop: "3px", fontSize: "8px", color: "#64748b", lineHeight: 1.4 }}>Proyeksi konservatif berdasarkan arus kas periode aktif; bukan jaminan hasil aktual.</div>
+                </div>
+                <div style={{ marginTop: "9px", padding: "11px", borderRadius: "14px", background: financialRecommendationEngine.statusBg, border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", letterSpacing: "1.2px", fontWeight: 900, textTransform: "uppercase" }}>Financial Recommendation Engine</div>
+                    <div style={{ fontSize: "9px", color: financialRecommendationEngine.statusColor, fontWeight: 900 }}>{financialRecommendationEngine.recommendationStatus} · {financialRecommendationEngine.actionCount} action</div>
+                  </div>
+                  <div style={{ marginTop: "7px", display: "grid", gap: "6px" }}>
+                    {financialRecommendationEngine.topRecommendations.slice(0, 3).map(item => (
+                      <div key={item.id} style={{ padding: "8px 9px", borderRadius: "11px", background: "rgba(2,6,23,0.24)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: item.severity === "critical" ? "#fecaca" : item.severity === "warning" ? "#fde68a" : item.severity === "positive" ? "#86efac" : "#c7d2fe", fontWeight: 900 }}>{item.rank}. {item.title}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.4 }}>{item.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, padding: "3px 6px", borderRadius: "999px", background: "rgba(255,255,255,0.06)", color: "#cbd5e1", fontSize: "8px", fontWeight: 800 }}>{item.category}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
