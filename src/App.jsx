@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.10";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.0.0";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.10";
-const FINANCIAL_ENGINE_NAME = "Financial Intelligence Phase Closing Engine";
+const FINANCIAL_ENGINE_VERSION = "7.0.0";
+const FINANCIAL_ENGINE_NAME = "Predictive Financial Health Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1938,6 +1938,101 @@ function buildFinancialIntelligencePhaseClosingEngine({
   };
 }
 
+
+
+function buildPredictiveFinancialHealthEngine({
+  healthEngine = {},
+  decisionEngine = {},
+  planningForecast = {},
+  scenarioEngine = {},
+  recommendationEngine = {},
+  phaseClosingEngine = {},
+  portfolioDailyChange = null,
+  portfolioDiagnostic = {},
+  walletTotal = 0,
+  netWorth = 0,
+  periodIncome = 0,
+  periodExpense = 0,
+  periodNetFlow = 0,
+} = {}) {
+  const healthScore = Math.max(0, Math.min(100, asEngineNumber(healthEngine.healthScore ?? healthEngine.score)));
+  const wallet = asEngineNumber(walletTotal);
+  const nw = asEngineNumber(netWorth);
+  const income = Math.max(0, asEngineNumber(periodIncome));
+  const expense = Math.max(0, asEngineNumber(periodExpense));
+  const netFlow = asEngineNumber(periodNetFlow);
+  const projectedNetWorth = asEngineNumber(planningForecast.projectedNetWorth);
+  const projectedWallet = asEngineNumber(planningForecast.projectedWallet);
+  const downsideGap = Math.max(0, asEngineNumber(scenarioEngine.downsideGap));
+  const incomeShortfall = Math.max(0, asEngineNumber(decisionEngine.incomeShortfall));
+  const debtRatio = Math.max(0, asEngineNumber(decisionEngine.debtRatio));
+  const liquidCoverage = Math.max(0, asEngineNumber(decisionEngine.liquidCoverage));
+  const portfolioMove = portfolioDailyChange == null ? null : asEngineNumber(portfolioDailyChange);
+  const marketReliabilityPenalty =
+    Math.max(0, asEngineNumber(portfolioDiagnostic.fallbackCount)) * 8 +
+    Math.max(0, asEngineNumber(portfolioDiagnostic.errorCount)) * 12;
+
+  const risks = [
+    { id: "cashflow", label: "Cashflow", score: netFlow < 0 ? 28 : netFlow === 0 ? 16 : 4, detail: netFlow < 0 ? "Arus kas periode aktif negatif." : "Arus kas periode aktif terkendali." },
+    { id: "liquidity", label: "Liquidity", score: wallet < 0 ? 30 : liquidCoverage < 1 ? 24 : liquidCoverage < 3 ? 12 : 3, detail: wallet < 0 ? "Wallet negatif." : `Coverage likuiditas ${liquidCoverage.toFixed(1)}x.` },
+    { id: "debt", label: "Debt", score: debtRatio >= 65 ? 28 : debtRatio >= 40 ? 18 : debtRatio > 0 ? 8 : 2, detail: `Debt ratio ${Math.round(debtRatio)}%.` },
+    { id: "forecast", label: "Forecast", score: projectedWallet < 0 || projectedNetWorth < 0 ? 30 : downsideGap > 0 ? 20 : 4, detail: downsideGap > 0 ? `Downside gap ${formatRupiah(downsideGap)}.` : "Skenario dasar tidak menunjukkan gap negatif." },
+    { id: "income", label: "Income", score: incomeShortfall > 0 ? 22 : income <= 0 && expense > 0 ? 20 : 4, detail: incomeShortfall > 0 ? `Income shortfall ${formatRupiah(incomeShortfall)}.` : "Target income inti tercukupi." },
+    { id: "market", label: "Market Data", score: Math.min(24, marketReliabilityPenalty), detail: marketReliabilityPenalty > 0 ? "Sebagian valuasi masih memakai fallback/error." : "Data valuasi portfolio cukup reliabel." },
+  ];
+  const riskScore = Math.max(0, Math.min(100, Math.round(risks.reduce((sum, row) => sum + row.score, 0) / risks.length * 3.4)));
+  const topRisks = [...risks].sort((a, b) => b.score - a.score).slice(0, 3);
+  const forwardDelta = projectedNetWorth - nw;
+  const trendDirection = forwardDelta > Math.max(1000, Math.abs(nw) * 0.02) && netFlow >= 0
+    ? "Improving"
+    : forwardDelta < -Math.max(1000, Math.abs(nw) * 0.02) || netFlow < 0
+      ? "Deteriorating"
+      : "Stable";
+  const outlookStatus = riskScore >= 70 || projectedWallet < 0 || projectedNetWorth < 0
+    ? "High Risk Outlook"
+    : riskScore >= 45 || downsideGap > 0 || healthScore < 60
+      ? "Watch Outlook"
+      : trendDirection === "Improving"
+        ? "Positive Outlook"
+        : "Stable Outlook";
+  const statusColor = outlookStatus === "High Risk Outlook" ? "#fca5a5" : outlookStatus === "Watch Outlook" ? "#fde68a" : outlookStatus === "Positive Outlook" ? "#86efac" : "#c7d2fe";
+  const statusBg = outlookStatus === "High Risk Outlook" ? "rgba(239,68,68,0.12)" : outlookStatus === "Watch Outlook" ? "rgba(245,158,11,0.11)" : outlookStatus === "Positive Outlook" ? "rgba(16,185,129,0.10)" : "rgba(99,102,241,0.10)";
+  const actions = [];
+  if (!phaseClosingEngine.phaseReady) actions.push("Tuntaskan capability Phase 6 yang belum ready sebelum memperbesar keputusan finansial.");
+  if (netFlow < 0) actions.push(`Pulihkan arus kas minimal ${formatRupiah(Math.abs(netFlow))} per periode.`);
+  if (incomeShortfall > 0) actions.push(`Tutup income shortfall ${formatRupiah(incomeShortfall)} sebelum menambah goal opsional.`);
+  if (projectedWallet < 0) actions.push("Tahan alokasi non-wajib agar proyeksi wallet kembali positif.");
+  if (downsideGap > 0) actions.push(`Bangun buffer ${formatRupiah(downsideGap)} untuk menahan skenario konservatif.`);
+  if (marketReliabilityPenalty > 0) actions.push("Perbarui harga aset fallback/error sebelum memakai hasil forecast untuk keputusan besar.");
+  if (!actions.length && trendDirection === "Improving") actions.push("Pertahankan surplus; arahkan tambahan dana ke goal wajib dan aset produktif.");
+  if (!actions.length) actions.push(recommendationEngine.primaryRecommendation?.action || "Pertahankan disiplin cashflow dan review outlook setiap periode.");
+
+  const outlookRows = [
+    { id: "current", label: "Sekarang", value: nw, tone: nw >= 0 ? "safe" : "critical" },
+    { id: "base", label: `M+${planningForecast.horizonMonths || 3}`, value: projectedNetWorth, tone: projectedNetWorth >= nw ? "safe" : "warning" },
+    { id: "wallet", label: "Wallet Forecast", value: projectedWallet, tone: projectedWallet >= 0 ? "safe" : "critical" },
+  ];
+
+  return {
+    healthScore,
+    riskScore,
+    trendDirection,
+    outlookStatus,
+    statusColor,
+    statusBg,
+    risks,
+    topRisks,
+    outlookRows,
+    forwardDelta,
+    projectedNetWorth,
+    projectedWallet,
+    downsideGap,
+    portfolioMove,
+    actions,
+    primaryAction: actions[0],
+    ok: outlookStatus === "Positive Outlook" || outlookStatus === "Stable Outlook",
+  };
+}
 
 function buildFinancialProgressMonitorGuard({
   walletTotal = 0,
@@ -4573,6 +4668,25 @@ export default function App() {
       })
     : { phaseStatus: "Locked", phaseReady: false, readinessScore: 0, statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", capabilities: [], readyCount: 0, totalCount: 0, missing: [], runtimeRisks: [], nextAction: "Role tidak memiliki akses Financial Summary.", ok: false };
 
+
+
+  const predictiveFinancialHealthEngine = canViewFinancialSummaryNow
+    ? buildPredictiveFinancialHealthEngine({
+        healthEngine: financialHealthEngine,
+        decisionEngine: financialHealthDecisionEngine,
+        planningForecast: financialPlanningForecast,
+        scenarioEngine: financialForecastScenarioEngine,
+        recommendationEngine: financialRecommendationEngine,
+        phaseClosingEngine: financialIntelligencePhaseClosingEngine,
+        portfolioDailyChange: typeof portfolioDailyChange !== "undefined" ? portfolioDailyChange : null,
+        portfolioDiagnostic: typeof portfolioDiagnostic !== "undefined" ? portfolioDiagnostic : {},
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        periodIncome: visibleIncome,
+        periodExpense: visibleExpense,
+        periodNetFlow: visibleNetFlow,
+      })
+    : { healthScore: 0, riskScore: 0, trendDirection: "Locked", outlookStatus: "Locked", statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", risks: [], topRisks: [], outlookRows: [], forwardDelta: 0, projectedNetWorth: 0, projectedWallet: 0, downsideGap: 0, portfolioMove: null, actions: [], primaryAction: "Role tidak memiliki akses Financial Summary.", ok: false };
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
     return { child, target: goals.reduce((s,g) => s+g.targetAmount, 0), current: goals.reduce((s,g) => s+calcGoalValue(g.id), 0) };
@@ -10191,6 +10305,28 @@ export default function App() {
                   </div>
                   <div style={{ marginTop: "7px", fontSize: "9px", color: financialIntelligencePhaseClosingEngine.statusColor, lineHeight: 1.45 }}><b>Next:</b> {financialIntelligencePhaseClosingEngine.nextAction}</div>
                   <div style={{ marginTop: "3px", fontSize: "8px", color: "#64748b", lineHeight: 1.4 }}>Readiness engine memeriksa kelengkapan capability; status finansial aktual tetap mengikuti data pengguna.</div>
+                </div>
+
+                <div style={{ marginTop: "9px", padding: "11px", borderRadius: "14px", background: predictiveFinancialHealthEngine.statusBg, border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", letterSpacing: "1.2px", fontWeight: 900, textTransform: "uppercase" }}>Predictive Financial Health</div>
+                    <div style={{ fontSize: "9px", color: predictiveFinancialHealthEngine.statusColor, fontWeight: 900 }}>{predictiveFinancialHealthEngine.outlookStatus} · Risk {predictiveFinancialHealthEngine.riskScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "7px", display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "6px" }}>
+                    {predictiveFinancialHealthEngine.outlookRows.map(row => (
+                      <div key={row.id} style={{ padding: "7px", borderRadius: "10px", background: "rgba(2,6,23,0.24)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ fontSize: "8px", color: "#64748b", fontWeight: 800 }}>{row.label}</div>
+                        <div style={{ marginTop: "2px", fontSize: "10px", color: row.tone === "critical" ? "#fca5a5" : row.tone === "warning" ? "#fde68a" : "#e2e8f0", fontWeight: 900 }}>{formatRupiah(row.value)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "7px", display: "flex", flexWrap: "wrap", gap: "5px" }}>
+                    {predictiveFinancialHealthEngine.topRisks.map(row => (
+                      <span key={row.id} style={{ padding: "4px 7px", borderRadius: "999px", background: "rgba(2,6,23,0.24)", border: "1px solid rgba(255,255,255,0.05)", fontSize: "8px", color: row.score >= 24 ? "#fca5a5" : row.score >= 14 ? "#fde68a" : "#94a3b8" }}>{row.label}</span>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "7px", fontSize: "9px", color: predictiveFinancialHealthEngine.statusColor, lineHeight: 1.45 }}><b>Action:</b> {predictiveFinancialHealthEngine.primaryAction}</div>
+                  <div style={{ marginTop: "3px", fontSize: "8px", color: "#64748b", lineHeight: 1.4 }}>Outlook berbasis data periode aktif dan forecast; bukan jaminan hasil masa depan.</div>
                 </div>
                 <div style={{ marginTop: "9px", padding: "11px", borderRadius: "14px", background: financialForecastScenarioEngine.statusBg, border: "1px solid rgba(255,255,255,0.08)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
