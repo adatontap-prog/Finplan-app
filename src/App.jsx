@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 6.9.9";
+const APP_VERSION = "FinPlan v1.1.0 phase 6.9.10";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "6.9.9";
-const FINANCIAL_ENGINE_NAME = "Executive Financial Dashboard Engine";
+const FINANCIAL_ENGINE_VERSION = "6.9.10";
+const FINANCIAL_ENGINE_NAME = "Financial Intelligence Phase Closing Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1881,6 +1881,60 @@ function buildExecutiveFinancialDashboardEngine({
     incomeShortfall,
     mandatoryMonthly,
     ok: executiveStatus === "Controlled",
+  };
+}
+
+
+function buildFinancialIntelligencePhaseClosingEngine({
+  healthEngine = {},
+  decisionEngine = {},
+  recommendationEngine = {},
+  planningForecast = {},
+  scenarioEngine = {},
+  executiveDashboard = {},
+  progressMonitor = {},
+  portfolioDiagnostic = {},
+} = {}) {
+  const capabilities = [
+    { id: "measurement", label: "Health Measurement", ready: Number.isFinite(asEngineNumber(healthEngine.healthScore)) && !!healthEngine.healthLabel },
+    { id: "decision", label: "Decision Support", ready: typeof decisionEngine.primaryAction === "string" || !!decisionEngine.decisionStatus },
+    { id: "recommendation", label: "Recommendation", ready: Array.isArray(recommendationEngine.recommendations) && recommendationEngine.recommendations.length > 0 },
+    { id: "planning", label: "Planning Forecast", ready: Array.isArray(planningForecast.monthlyRows) && planningForecast.monthlyRows.length > 0 },
+    { id: "scenario", label: "Scenario Forecast", ready: Array.isArray(scenarioEngine.scenarios) && scenarioEngine.scenarios.length >= 3 },
+    { id: "executive", label: "Executive Dashboard", ready: Array.isArray(executiveDashboard.kpis) && executiveDashboard.kpis.length >= 4 },
+    { id: "monitor", label: "Progress Monitor", ready: !!progressMonitor && typeof progressMonitor === "object" && "ok" in progressMonitor },
+    { id: "portfolio", label: "Portfolio Diagnostic", ready: !!portfolioDiagnostic && typeof portfolioDiagnostic === "object" },
+  ];
+  const readyCount = capabilities.filter(row => row.ready).length;
+  const readinessScore = Math.round((readyCount / capabilities.length) * 100);
+  const missing = capabilities.filter(row => !row.ready);
+  const runtimeRisks = [];
+  if (progressMonitor.ok === false) runtimeRisks.push("Progress monitor masih mendeteksi issue data/guard aktif.");
+  if (executiveDashboard.executiveStatus === "Critical Attention") runtimeRisks.push("Executive dashboard berada pada status Critical Attention.");
+  if (scenarioEngine.resilienceStatus === "Recovery Required") runtimeRisks.push("Forecast scenario membutuhkan recovery.");
+  if (recommendationEngine.criticalCount > 0) runtimeRisks.push(`${recommendationEngine.criticalCount} rekomendasi kritis masih aktif.`);
+
+  const phaseReady = missing.length === 0;
+  const phaseStatus = phaseReady ? "Phase 6 Intelligence Ready" : "Phase Closing Incomplete";
+  const statusColor = phaseReady ? "#86efac" : "#fde68a";
+  const statusBg = phaseReady ? "rgba(16,185,129,0.10)" : "rgba(245,158,11,0.11)";
+  const nextAction = !phaseReady
+    ? `Lengkapi capability: ${missing.map(row => row.label).join(", ")}.`
+    : runtimeRisks[0] || "Freeze Phase 6 intelligence layer, validasi dengan data nyata, lalu siapkan blueprint Phase 7.";
+
+  return {
+    phaseStatus,
+    phaseReady,
+    readinessScore,
+    statusColor,
+    statusBg,
+    capabilities,
+    readyCount,
+    totalCount: capabilities.length,
+    missing,
+    runtimeRisks,
+    nextAction,
+    ok: phaseReady,
   };
 }
 
@@ -4503,6 +4557,21 @@ export default function App() {
         periodNetFlow: visibleNetFlow,
       })
     : { executiveStatus: "Locked", statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", kpis: [], alerts: [], topAlerts: [], priorityActions: [], primaryAction: { title: "Role tidak memiliki akses Financial Summary.", action: "" }, savingsRate: 0, debtRatio: 0, grossAssets: 0, projectedNetWorth: 0, projectedWallet: 0, safeSpendingMonthly: 0, incomeShortfall: 0, mandatoryMonthly: 0, ok: false };
+
+
+
+  const financialIntelligencePhaseClosingEngine = canViewFinancialSummaryNow
+    ? buildFinancialIntelligencePhaseClosingEngine({
+        healthEngine: financialHealthEngine,
+        decisionEngine: financialHealthDecisionEngine,
+        recommendationEngine: financialRecommendationEngine,
+        planningForecast: financialPlanningForecast,
+        scenarioEngine: financialForecastScenarioEngine,
+        executiveDashboard: executiveFinancialDashboardEngine,
+        progressMonitor: financialProgressMonitorGuard,
+        portfolioDiagnostic: typeof portfolioDiagnostic !== "undefined" ? portfolioDiagnostic : {},
+      })
+    : { phaseStatus: "Locked", phaseReady: false, readinessScore: 0, statusColor: "#94a3b8", statusBg: "rgba(148,163,184,0.10)", capabilities: [], readyCount: 0, totalCount: 0, missing: [], runtimeRisks: [], nextAction: "Role tidak memiliki akses Financial Summary.", ok: false };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -10107,6 +10176,21 @@ export default function App() {
                     ))}
                   </div>
                   <div style={{ marginTop: "7px", fontSize: "9px", color: executiveFinancialDashboardEngine.statusColor, lineHeight: 1.45 }}><b>Priority:</b> {executiveFinancialDashboardEngine.primaryAction.action}</div>
+                </div>
+
+                <div style={{ marginTop: "9px", padding: "11px", borderRadius: "14px", background: financialIntelligencePhaseClosingEngine.statusBg, border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", letterSpacing: "1.2px", fontWeight: 900, textTransform: "uppercase" }}>Phase 6 Intelligence Closing</div>
+                    <div style={{ fontSize: "9px", color: financialIntelligencePhaseClosingEngine.statusColor, fontWeight: 900 }}>{financialIntelligencePhaseClosingEngine.phaseStatus}</div>
+                  </div>
+                  <div style={{ marginTop: "7px", display: "flex", alignItems: "center", gap: "8px" }}>
+                    <div style={{ flex: 1, height: "6px", borderRadius: "999px", background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                      <div style={{ width: `${financialIntelligencePhaseClosingEngine.readinessScore}%`, height: "100%", borderRadius: "999px", background: financialIntelligencePhaseClosingEngine.statusColor }} />
+                    </div>
+                    <div style={{ fontSize: "9px", color: financialIntelligencePhaseClosingEngine.statusColor, fontWeight: 900 }}>{financialIntelligencePhaseClosingEngine.readyCount}/{financialIntelligencePhaseClosingEngine.totalCount}</div>
+                  </div>
+                  <div style={{ marginTop: "7px", fontSize: "9px", color: financialIntelligencePhaseClosingEngine.statusColor, lineHeight: 1.45 }}><b>Next:</b> {financialIntelligencePhaseClosingEngine.nextAction}</div>
+                  <div style={{ marginTop: "3px", fontSize: "8px", color: "#64748b", lineHeight: 1.4 }}>Readiness engine memeriksa kelengkapan capability; status finansial aktual tetap mengikuti data pengguna.</div>
                 </div>
                 <div style={{ marginTop: "9px", padding: "11px", borderRadius: "14px", background: financialForecastScenarioEngine.statusBg, border: "1px solid rgba(255,255,255,0.08)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "10px", alignItems: "center" }}>
