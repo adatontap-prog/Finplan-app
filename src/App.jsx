@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.0.0";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.0.1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.0.0";
-const FINANCIAL_ENGINE_NAME = "Predictive Financial Health Engine";
+const FINANCIAL_ENGINE_VERSION = "7.0.1";
+const FINANCIAL_ENGINE_NAME = "Predictive Recovery Health Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1198,9 +1198,9 @@ function buildFinancialConsolidationGuard({
   const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
-    ? "Progress 7.0.0: Consolidation Guard clear · engine siap baseline Phase 7.0.0."
-    : "Progress 7.0.0: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
-  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.0.";
+    ? "Progress 7.0.1: Consolidation Guard clear · engine siap baseline Phase 7.0.1."
+    : "Progress 7.0.1: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.1.";
 
   return {
     issues,
@@ -1367,7 +1367,7 @@ function buildFinancialHealthEngine({
   const primaryAction = actionCandidates[0] || "Financial Health Engine clear: lanjutkan monitoring rutin dan mulai baca rekomendasi goal/income.";
 
   const progressPercent = Math.max(0, Math.min(100, Math.round((healthScore * 0.75) + (dataQualityScore * 0.15) + (safeEngineScore * 0.10))));
-  const healthNotice = `Progress 7.0.0: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
+  const healthNotice = `Progress 7.0.1: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
   const issueCount = actionCandidates.length;
   return {
     healthScore,
@@ -1577,6 +1577,9 @@ function buildPredictiveFinancialHealthEngine({
   const safeLoan = Math.max(0, asEngineNumber(loanTotal));
   const safeNetWorth = asEngineNumber(netWorth);
   const safeDebtRatio = Math.max(0, asEngineNumber(debtRatio));
+  const negativeWalletLock = safeWallet < 0;
+  const negativeNetWorthLock = safeNetWorth < 0;
+  const recoveryGap = Math.max(0, -safeWallet);
   const healthScore = Math.max(0, Math.min(100, asEngineNumber(healthEngine?.healthScore)));
   const monthlyCommitments = Math.max(0,
     asEngineNumber(decisionEngine?.mandatoryMonthly) +
@@ -1602,20 +1605,22 @@ function buildPredictiveFinancialHealthEngine({
     const expected = safeWallet + predictiveMonthlyNet * months;
     const lower = safeWallet + (predictiveMonthlyNet - Math.max(normalizedMonthlyExpense * 0.15, incomeShortfall * 0.25)) * months;
     const upper = safeWallet + (predictiveMonthlyNet + Math.max(normalizedMonthlyIncome * 0.10, safeSpendingDaily * 30 * 0.20)) * months;
-    const risk = lower < 0 ? "High" : expected < 0 ? "Medium" : lower < normalizedMonthlyExpense * 0.25 ? "Watch" : "Clear";
+    const risk = negativeWalletLock || lower < 0 ? "High" : expected < 0 ? "Medium" : lower < normalizedMonthlyExpense * 0.25 ? "Watch" : "Clear";
     return { days, label: `${days} hari`, expected, lower, upper, risk };
   });
 
   const dailyDeficit = Math.max(0, dailyExpense30 - dailyIncome30 + (mandatoryGap / 30));
-  const runwayDaysRaw = dailyDeficit > 0 ? safeWallet / dailyDeficit : 999;
+  const runwayDaysRaw = negativeWalletLock ? 0 : dailyDeficit > 0 ? safeWallet / dailyDeficit : 999;
   const runwayDays = Math.max(0, Math.min(999, Math.round(runwayDaysRaw)));
-  const runwayLabel = runwayDays >= 180 ? "Long Runway" : runwayDays >= 90 ? "Stable Runway" : runwayDays >= 30 ? "Tight Runway" : "Critical Runway";
+  const runwayLabel = negativeWalletLock ? "Recovery Required" : runwayDays >= 180 ? "Long Runway" : runwayDays >= 90 ? "Stable Runway" : runwayDays >= 30 ? "Tight Runway" : "Critical Runway";
   const trendLabel = netFlowTrend >= 0 ? "Improving" : Math.abs(netFlowTrend) <= Math.max(250000, Math.abs(previousNetFlow) * 0.10) ? "Flat" : "Deteriorating";
   const trendColor = trendLabel === "Improving" ? "#86efac" : trendLabel === "Flat" ? "#c7d2fe" : "#fde68a";
 
   const volatilityBase = Math.max(1, Math.abs(previousNetFlow));
   const volatilityRatio = Math.min(3, Math.abs(netFlowTrend) / volatilityBase);
   const riskPenalty =
+    (negativeWalletLock ? 34 : 0) +
+    (negativeNetWorthLock ? 18 : 0) +
     (forecastRows.some(row => row.expected < 0) ? 28 : 0) +
     (forecastRows.some(row => row.lower < 0) ? 18 : 0) +
     (runwayDays < 30 ? 28 : runwayDays < 60 ? 16 : runwayDays < 90 ? 8 : 0) +
@@ -1626,13 +1631,23 @@ function buildPredictiveFinancialHealthEngine({
     (safeDebtRatio >= 65 ? 14 : safeDebtRatio >= 35 ? 7 : 0) +
     (healthScore < 45 ? 16 : healthScore < 65 ? 8 : 0) +
     (volatilityRatio > 1.25 ? 6 : 0);
-  const predictiveScore = Math.max(0, Math.min(100, Math.round(100 - riskPenalty)));
-  const predictiveLabel = predictiveScore >= 80 ? "Forecast Aman" : predictiveScore >= 65 ? "Forecast Stabil" : predictiveScore >= 45 ? "Forecast Waspada" : "Forecast Bahaya";
-  const predictiveStage = predictiveScore >= 80 ? "Ready to Optimize" : predictiveScore >= 65 ? "Controlled" : predictiveScore >= 45 ? "Preventive Action" : "Immediate Recovery";
+  const rawPredictiveScore = Math.round(100 - riskPenalty);
+  const scoreCaps = [100];
+  if (negativeWalletLock) scoreCaps.push(38);
+  if (negativeNetWorthLock) scoreCaps.push(45);
+  if (forecastRows.some(row => row.lower < 0)) scoreCaps.push(55);
+  const predictiveScore = Math.max(0, Math.min(...scoreCaps, rawPredictiveScore));
+  const recoveryRequired = negativeWalletLock || forecastRows.some(row => row.expected < 0 || row.lower < 0) || runwayDays < 30;
+  const recoveryMonthlyTarget = recoveryRequired ? Math.max(incomeShortfall + mandatoryGap, recoveryGap / 3, Math.abs(predictiveMonthlyNet < 0 ? predictiveMonthlyNet : 0)) : 0;
+  const recoveryDailyTarget = recoveryMonthlyTarget / 30;
+  const recoveryStage = negativeWalletLock ? "Saldo Recovery" : forecastRows.some(row => row.expected < 0 || row.lower < 0) ? "Runway Defense" : runwayDays < 30 ? "Cash Buffer Defense" : "No Recovery Lock";
+  const predictiveLabel = negativeWalletLock ? "Recovery Mode" : predictiveScore >= 80 ? "Forecast Aman" : predictiveScore >= 65 ? "Forecast Stabil" : predictiveScore >= 45 ? "Forecast Waspada" : "Forecast Bahaya";
+  const predictiveStage = negativeWalletLock ? "Cash Recovery Required" : predictiveScore >= 80 ? "Ready to Optimize" : predictiveScore >= 65 ? "Controlled" : predictiveScore >= 45 ? "Preventive Action" : "Immediate Recovery";
   const predictiveColor = predictiveScore >= 80 ? "#86efac" : predictiveScore >= 65 ? "#c7d2fe" : predictiveScore >= 45 ? "#fde68a" : "#fecaca";
   const predictiveBg = predictiveScore >= 80 ? "rgba(16,185,129,0.10)" : predictiveScore >= 65 ? "rgba(99,102,241,0.10)" : predictiveScore >= 45 ? "rgba(245,158,11,0.11)" : "rgba(239,68,68,0.12)";
 
   const actions = [];
+  if (negativeWalletLock) actions.push(`Recovery saldo keluarga: pulihkan minimal ${formatRupiah(recoveryGap)} sebelum ekspansi, goal baru, atau investasi baru.`);
   if (forecastRows[0]?.expected < 0 || forecastRows[0]?.lower < 0) actions.push("Amankan 30 hari ke depan: kurangi expense non-wajib dan tambah cash-in cepat.");
   if (runwayDays < 30) actions.push("Runway kritis: lindungi wallet utama sebelum alokasi goal/investasi baru.");
   if (incomeShortfall > 0) actions.push(`Tutup shortfall income minimal ${formatRupiah(incomeShortfall)} bulan ini.`);
@@ -1643,7 +1658,10 @@ function buildPredictiveFinancialHealthEngine({
   if (!actions.length) actions.push("Forecast aman: pertahankan cashflow, lanjutkan alokasi goal wajib, dan evaluasi peluang growth terbatas.");
 
   const primaryForecast = forecastRows[0] || { expected: safeWallet, lower: safeWallet, upper: safeWallet, risk: "Clear" };
-  const projectionNotice = `Predictive 7.0.0: ${predictiveLabel} · 30D ${formatRupiah(primaryForecast.expected)} · Runway ${runwayDays >= 999 ? "180+" : runwayDays} hari · ${actions[0]}`;
+  const recoveryNotice = recoveryRequired
+    ? `${recoveryStage}: target recovery ${formatRupiah(recoveryMonthlyTarget)}/bulan atau ${formatRupiah(recoveryDailyTarget)}/hari.`
+    : "Tidak ada recovery lock; lanjutkan optimasi bertahap.";
+  const projectionNotice = `Predictive 7.0.1: ${predictiveLabel} · 30D ${formatRupiah(primaryForecast.expected)} · Runway ${runwayDays >= 999 ? "180+" : runwayDays} hari · ${actions[0]}`;
 
   return {
     predictiveScore,
@@ -1669,6 +1687,12 @@ function buildPredictiveFinancialHealthEngine({
     predictiveMonthlyNet,
     runwayDays,
     runwayLabel,
+    recoveryRequired,
+    recoveryGap,
+    recoveryMonthlyTarget,
+    recoveryDailyTarget,
+    recoveryStage,
+    recoveryNotice,
     volatilityRatio,
     transactionWindowCount: windowRows.length,
     noTrendData: windowRows.length < 3,
@@ -1763,10 +1787,10 @@ function buildFinancialProgressMonitorGuard({
   const monitorLabel = monitorReady ? "Ready" : monitorBlocked ? "Blocked" : "Review";
   const activeLockCount = activeGuardRows.length;
   const blockingLockCount = blockingGuardRows.length;
-  const primaryAction = progressActions[0] || "Progress Monitor clear. Predictive Financial Health Engine 7.0.0 aktif setelah Phase 6.8 freeze.";
+  const primaryAction = progressActions[0] || "Progress Monitor clear. Predictive Recovery Health Engine 7.0.1 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
-    ? "Progress 7.0.0: 100% · semua guard clear · siap baseline Phase 7.0.0."
-    : "Progress 7.0.0: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
+    ? "Progress 7.0.1: 100% · semua guard clear · siap baseline Phase 7.0.1."
+    : "Progress 7.0.1: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
 
   return {
     issues,
@@ -3707,7 +3731,7 @@ export default function App() {
         releaseReadinessGuard: financialReleaseReadinessGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.0.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 7.0.0: Consolidation Guard clear · engine siap baseline Phase 7.0.0.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.1.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 7.0.1: Consolidation Guard clear · engine siap baseline Phase 7.0.1.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialProgressMonitorGuard = canViewFinancialSummaryNow
     ? buildFinancialProgressMonitorGuard({
         walletTotal: financialWalletTotal,
@@ -3732,7 +3756,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Predictive Financial Health Engine 7.0.0 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 7.0.0: 100% · semua guard clear · siap baseline Phase 7.0.0."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Predictive Recovery Health Engine 7.0.1 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 7.0.1: 100% · semua guard clear · siap baseline Phase 7.0.1."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -3874,7 +3898,7 @@ export default function App() {
         transactionQualityScore,
         noBaseline: financialNoBaseline,
       })
-    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 7.0.0: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
+    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 7.0.1: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
 
   const financialHealthDecisionEngine = canViewFinancialSummaryNow
     ? buildFinancialHealthDecisionEngine({
@@ -3898,7 +3922,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { predictiveScore: 0, predictiveLabel: "Locked", predictiveStage: "No Access", predictiveColor: "#94a3b8", predictiveBg: "rgba(148,163,184,0.10)", projectionNotice: "Predictive 7.0.0: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actions: [], forecastRows: [], runwayDays: 0, runwayLabel: "Locked", trendLabel: "Locked", trendColor: "#94a3b8", transactionWindowCount: 0, noTrendData: true, ok: false };
+    : { predictiveScore: 0, predictiveLabel: "Locked", predictiveStage: "No Access", predictiveColor: "#94a3b8", predictiveBg: "rgba(148,163,184,0.10)", projectionNotice: "Predictive 7.0.1: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actions: [], forecastRows: [], runwayDays: 0, runwayLabel: "Locked", recoveryRequired: false, recoveryGap: 0, recoveryMonthlyTarget: 0, recoveryDailyTarget: 0, recoveryStage: "Locked", recoveryNotice: "Role tidak memiliki akses Financial Summary.", trendLabel: "Locked", trendColor: "#94a3b8", transactionWindowCount: 0, noTrendData: true, ok: false };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -6400,7 +6424,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.0.0: Predictive Financial Health Engine, score health, component health, forecast runway, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.0.1: Predictive Financial Health Engine, score health, component health, forecast runway, dan net worth baseline."
       ]
     };
   }
@@ -6410,7 +6434,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-financial-health-engine-7-0-0",
+      version: APP_VERSION + " predictive-recovery-health-engine-7-0-1",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -6888,7 +6912,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 7.0.0. Predictive Financial Health Engine 7.0.0 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive financial health engine 7.0.0.
+            FinPlan v1.1.0 phase 7.0.1. Predictive Recovery Health Engine 7.0.1 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive recovery health engine 7.0.1.
           </div>
         </div>
       </div>
@@ -7407,7 +7431,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 7.0.0. Predictive Financial Health Engine 7.0.0 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive financial health engine 7.0.0.
+                FinPlan v1.1.0 phase 7.0.1. Predictive Recovery Health Engine 7.0.1 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive recovery health engine 7.0.1.
               </div>
             </div>
           </div>
@@ -9365,9 +9389,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 7.0.0</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 7.0.1</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Predictive Financial Health Engine 7.0.0</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Predictive Recovery Health Engine 7.0.1</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialHealthEngine.healthBg, color: financialHealthEngine.healthColor, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialHealthEngine.healthScore}/100 · {financialHealthEngine.healthLabel}
@@ -9429,7 +9453,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveHealthEngine.predictiveBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveHealthEngine.predictiveColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Health Engine 7.0.0</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveHealthEngine.predictiveColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Recovery Engine 7.0.1</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveHealthEngine.projectionNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveHealthEngine.predictiveColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveHealthEngine.predictiveScore}/100</div>
@@ -9451,6 +9475,7 @@ export default function App() {
                       <div style={{ marginTop: "2px", fontSize: "8px", color: "#64748b" }}>{financialPredictiveHealthEngine.transactionWindowCount} data 90D</div>
                     </div>
                   </div>
+                  {financialPredictiveHealthEngine.recoveryRequired && <div style={{ marginTop: "8px", padding: "8px 10px", borderRadius: "12px", background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.18)", color: "#fecaca", fontSize: "10px", lineHeight: 1.45 }}><b>{financialPredictiveHealthEngine.recoveryStage}</b> · {financialPredictiveHealthEngine.recoveryNotice}</div>}
                 </div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
@@ -9466,7 +9491,7 @@ export default function App() {
                 {financialSealGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialSealGuard.hardSeal ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Seal Guard aktif: {financialSealGuard.issueCount} seal lock. Prioritas: {financialSealGuard.primaryAction}</div>}
                 {financialReleaseReadinessGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialReleaseReadinessGuard.releaseBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Release Readiness baseline aktif: {financialReleaseReadinessGuard.issueCount} readiness lock. Status: {financialReleaseReadinessGuard.readinessLabel}. Prioritas: {financialReleaseReadinessGuard.primaryAction}</div>}
                 {financialConsolidationGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialConsolidationGuard.consolidationBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Consolidation baseline aktif: {financialConsolidationGuard.issueCount} consolidation lock. Status: {financialConsolidationGuard.consolidationLabel}. Prioritas: {financialConsolidationGuard.primaryAction}</div>}
-                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 7.0.0 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
+                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 7.0.1 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
