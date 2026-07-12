@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.0.9";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.0.10";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.0.9";
-const FINANCIAL_ENGINE_NAME = "Predictive Operating Rhythm Engine";
+const FINANCIAL_ENGINE_VERSION = "7.0.10";
+const FINANCIAL_ENGINE_NAME = "Predictive Phase Closure Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -1198,9 +1198,9 @@ function buildFinancialConsolidationGuard({
   const consolidationReady = issueCount === 0 && upstreamIssueCount === 0 && releaseReadinessGuard.releaseReady !== false;
   const consolidationLabel = consolidationReady ? "Consolidated" : consolidationBlocked ? "Blocked" : "Review";
   const progressNotice = consolidationReady
-    ? "Progress 7.0.9: Consolidation Guard clear · engine siap baseline Phase 7.0.9."
-    : "Progress 7.0.9: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
-  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.9.";
+    ? "Progress 7.0.10: Consolidation Guard clear · engine siap baseline Phase 7.0.10."
+    : "Progress 7.0.10: " + progressPercent + "% · " + issueCount + " lock aktif · " + consolidationLabel;
+  const primaryAction = consolidationActions[0] || "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.10.";
 
   return {
     issues,
@@ -1367,7 +1367,7 @@ function buildFinancialHealthEngine({
   const primaryAction = actionCandidates[0] || "Financial Health Engine clear: lanjutkan monitoring rutin dan mulai baca rekomendasi goal/income.";
 
   const progressPercent = Math.max(0, Math.min(100, Math.round((healthScore * 0.75) + (dataQualityScore * 0.15) + (safeEngineScore * 0.10))));
-  const healthNotice = `Progress 7.0.9: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
+  const healthNotice = `Progress 7.0.10: ${progressPercent}% · Health ${healthLabel} · ${healthStage} · ${primaryAction}`;
   const issueCount = actionCandidates.length;
   return {
     healthScore,
@@ -1661,7 +1661,7 @@ function buildPredictiveFinancialHealthEngine({
   const recoveryNotice = recoveryRequired
     ? `${recoveryStage}: target recovery ${formatRupiah(recoveryMonthlyTarget)}/bulan atau ${formatRupiah(recoveryDailyTarget)}/hari.`
     : "Tidak ada recovery lock; lanjutkan optimasi bertahap.";
-  const projectionNotice = `Predictive 7.0.9: ${predictiveLabel} · 30D ${formatRupiah(primaryForecast.expected)} · Runway ${runwayDays >= 999 ? "180+" : runwayDays} hari · ${actions[0]}`;
+  const projectionNotice = `Predictive 7.0.10: ${predictiveLabel} · 30D ${formatRupiah(primaryForecast.expected)} · Runway ${runwayDays >= 999 ? "180+" : runwayDays} hari · ${actions[0]}`;
 
   return {
     predictiveScore,
@@ -1877,7 +1877,7 @@ function buildPredictiveActionPriorityEngine({
   const actionStatus = blockerCount > 0 ? "Action Locked" : predictiveScore >= 80 && healthScore >= 70 ? "Optimize" : "Control";
   const actionColor = actionStatus === "Action Locked" ? "#fecaca" : actionStatus === "Optimize" ? "#86efac" : "#c7d2fe";
   const actionBg = actionStatus === "Action Locked" ? "rgba(239,68,68,0.11)" : actionStatus === "Optimize" ? "rgba(16,185,129,0.10)" : "rgba(99,102,241,0.10)";
-  const actionNotice = `Action 7.0.9: ${actionStatus} · ${primaryAction.label} · target ${formatRupiah(monthlyActionTarget)}`;
+  const actionNotice = `Action 7.0.10: ${actionStatus} · ${primaryAction.label} · target ${formatRupiah(monthlyActionTarget)}`;
 
   return {
     actionStatus,
@@ -1971,7 +1971,7 @@ function buildPredictiveExecutionControlEngine({
   if (safeWallet < 0) forbiddenActions.push("Jangan baca saldo keluarga sebagai sehat sebelum baseline wallet pulih.");
   if (!forbiddenActions.length) forbiddenActions.push("Tidak ada hard stop mayor; tetap pakai limit belanja dan funding plan.");
 
-  const executionNotice = `Execution 7.0.9: ${executionStatus} · ${primaryRow.label} · ${lockRows.length} lock · target ${formatRupiah(monthlyActionTarget)}`;
+  const executionNotice = `Execution 7.0.10: ${executionStatus} · ${primaryRow.label} · ${lockRows.length} lock · target ${formatRupiah(monthlyActionTarget)}`;
 
   return {
     executionStatus,
@@ -2072,7 +2072,7 @@ function buildPredictiveCommandBriefEngine({
   if (actionRows.length > 0) commandLocks.push(...actionRows.filter(row => row?.lock).slice(0, 2).map(row => row.action));
   if (!commandLocks.length) commandLocks.push("Tidak ada command lock mayor; tetap eksekusi sesuai limit dan target harian.");
 
-  const commandNotice = `Command 7.0.9: ${commandStatus} · score ${commandScore}/100 · ${blockerCount + lockCount} lock · target ${formatRupiah(monthlyActionTarget)}`;
+  const commandNotice = `Command 7.0.10: ${commandStatus} · score ${commandScore}/100 · ${blockerCount + lockCount} lock · target ${formatRupiah(monthlyActionTarget)}`;
 
   return {
     commandStatus,
@@ -2204,7 +2204,7 @@ function buildPredictiveDecisionGateEngine({
   commandLocks.slice(0, 2).forEach(lock => gateLocks.push(lock));
   if (!gateLocks.length) gateLocks.push("Tidak ada decision gate lock mayor; tetap eksekusi dengan kontrol harian.");
 
-  const gateNotice = `Decision Gate 7.0.9: ${gateLabel} · ${gateDecision} · score ${gateScore}/100 · ${gateLocks.length} lock`;
+  const gateNotice = `Decision Gate 7.0.10: ${gateLabel} · ${gateDecision} · score ${gateScore}/100 · ${gateLocks.length} lock`;
 
   return {
     gateDecision,
@@ -2352,7 +2352,7 @@ function buildPredictiveGovernancePolicyEngine({
   if (actionRows.some(row => row?.lock)) governanceLocks.push("Action priority masih memiliki lock.");
   if (!governanceLocks.length) governanceLocks.push("Tidak ada governance lock mayor; policy tetap dikontrol harian.");
 
-  const governanceNotice = `Governance 7.0.9: ${policyLabel} · ${policyStatus} · score ${governanceScore}/100 · ${governanceLocks.length} lock`;
+  const governanceNotice = `Governance 7.0.10: ${policyLabel} · ${policyStatus} · score ${governanceScore}/100 · ${governanceLocks.length} lock`;
 
   return {
     policyMode,
@@ -2502,7 +2502,7 @@ function buildPredictiveGovernanceComplianceEngine({
 
   const complianceLocks = [...breachRows.slice(0, 2), ...governanceLocks.slice(0, 2), ...gateLocks.slice(0, 1), ...forbiddenActions.slice(0, 1)];
   if (!complianceLocks.length) complianceLocks.push("Compliance clear: tetap gunakan allowed moves dan blocked moves sebagai guardrail.");
-  const complianceNotice = `Compliance 7.0.9: ${complianceLabel} · ${complianceStage} · score ${complianceScore}/100 · ${complianceLocks.length} lock`;
+  const complianceNotice = `Compliance 7.0.10: ${complianceLabel} · ${complianceStage} · score ${complianceScore}/100 · ${complianceLocks.length} lock`;
 
   return {
     complianceStatus,
@@ -2679,7 +2679,7 @@ function buildPredictiveCfoAdvisoryEngine({
   const advisoryLocks = [...breachRows.slice(0, 2), ...complianceLocks.slice(0, 2), ...doNot.slice(0, 2)];
   if (!advisoryLocks.length) advisoryLocks.push("CFO advisory clear: eksekusi command harian dengan guardrail.");
   const cfoMemo = `${advisoryLabel}: ${doNow[0]} Next: ${doNext[0]} Guardrail: ${doNot[0]}`;
-  const advisoryNotice = `CFO Advisory 7.0.9: ${advisoryLabel} · ${advisoryStage} · score ${advisoryScore}/100`;
+  const advisoryNotice = `CFO Advisory 7.0.10: ${advisoryLabel} · ${advisoryStage} · score ${advisoryScore}/100`;
 
   return {
     advisoryStatus,
@@ -2855,7 +2855,7 @@ function buildPredictiveOperatingRhythmEngine({
   const reviewLocks = [...advisoryLocks.slice(0, 2), ...complianceLocks.slice(0, 2), ...blockedMoves.slice(0, 2), ...doNot.slice(0, 1)];
   if (!reviewLocks.length) reviewLocks.push("Operating rhythm clear: jalankan daily/weekly/monthly cadence tanpa ekspansi liar.");
   const operatingCadence = `${rhythmLabel}: Daily = ${dailyRhythm[0]} Weekly = ${weeklyRhythm[0]} Monthly = ${monthlyRhythm[0]}`;
-  const rhythmNotice = `Operating Rhythm 7.0.9: ${rhythmLabel} · ${rhythmStage} · score ${rhythmScore}/100`;
+  const rhythmNotice = `Operating Rhythm 7.0.10: ${rhythmLabel} · ${rhythmStage} · score ${rhythmScore}/100`;
 
   return {
     rhythmStatus,
@@ -2881,6 +2881,142 @@ function buildPredictiveOperatingRhythmEngine({
     recoveryRequired,
     growthLocked,
     ok: rhythmStatus === "RHYTHM_GROWTH" && rhythmScore >= 70 && !recoveryRequired && !growthLocked,
+  };
+}
+
+
+
+function buildPredictivePhaseClosureEngine({
+  rhythmEngine = {},
+  cfoEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  commandEngine = {},
+  executionEngine = {},
+  actionEngine = {},
+  predictiveEngine = {},
+  healthEngine = {},
+  decisionEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  debtRatio = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeDebtRatio = asEngineNumber(debtRatio);
+  const rhythmScore = Math.max(0, Math.min(100, asEngineNumber(rhythmEngine?.rhythmScore)));
+  const advisoryScore = Math.max(0, Math.min(100, asEngineNumber(cfoEngine?.advisoryScore)));
+  const complianceScore = Math.max(0, Math.min(100, asEngineNumber(complianceEngine?.complianceScore)));
+  const governanceScore = Math.max(0, Math.min(100, asEngineNumber(governanceEngine?.governanceScore)));
+  const executionScore = Math.max(0, Math.min(100, asEngineNumber(executionEngine?.executionScore)));
+  const commandScore = Math.max(0, Math.min(100, asEngineNumber(commandEngine?.commandScore)));
+  const predictiveScore = Math.max(0, Math.min(100, asEngineNumber(predictiveEngine?.predictiveScore)));
+  const healthScore = Math.max(0, Math.min(100, asEngineNumber(healthEngine?.score ?? healthEngine?.healthScore)));
+  const actionPriority = Math.max(0, Math.min(100, asEngineNumber(actionEngine?.primaryPriority)));
+  const rhythmStatus = String(rhythmEngine?.rhythmStatus || "RHYTHM_LOCKED").toUpperCase();
+  const advisoryStatus = String(cfoEngine?.advisoryStatus || "CFO_LOCKED").toUpperCase();
+  const complianceStatus = String(complianceEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || cfoEngine?.gateDecision || "LOCKED").toUpperCase();
+  const recoveryRequired = !!rhythmEngine?.recoveryRequired || !!cfoEngine?.recoveryRequired || !!predictiveEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0;
+  const growthLocked = !!rhythmEngine?.growthLocked || !!cfoEngine?.growthLocked || !!executionEngine?.growthLocked || !!commandEngine?.growthLocked;
+  const incomeShortfall = Math.max(0, asEngineNumber(decisionEngine?.incomeShortfall));
+  const mandatoryGap = Math.max(0, asEngineNumber(decisionEngine?.mandatoryGap));
+  const monthlyActionTarget = Math.max(0, asEngineNumber(rhythmEngine?.monthlyActionTarget), asEngineNumber(cfoEngine?.monthlyActionTarget), asEngineNumber(actionEngine?.monthlyActionTarget));
+  const dailyCashTarget = Math.max(0, asEngineNumber(rhythmEngine?.dailyCashTarget), asEngineNumber(cfoEngine?.dailyCashTarget), asEngineNumber(commandEngine?.dailyCashTarget));
+  const reviewLocks = Array.isArray(rhythmEngine?.reviewLocks) ? rhythmEngine.reviewLocks : [];
+  const advisoryLocks = Array.isArray(cfoEngine?.advisoryLocks) ? cfoEngine.advisoryLocks : [];
+  const complianceLocks = Array.isArray(complianceEngine?.complianceLocks) ? complianceEngine.complianceLocks : [];
+  const blockedMoves = Array.isArray(governanceEngine?.blockedMoves) ? governanceEngine.blockedMoves : [];
+  const doNot = Array.isArray(cfoEngine?.doNot) ? cfoEngine.doNot : [];
+  const weightedBase = Math.round(
+    (rhythmScore * 0.20) +
+    (advisoryScore * 0.18) +
+    (complianceScore * 0.15) +
+    (governanceScore * 0.13) +
+    (executionScore * 0.12) +
+    (commandScore * 0.10) +
+    (predictiveScore * 0.08) +
+    (healthScore * 0.04)
+  );
+  const closurePenalty =
+    (safeWallet < 0 ? 18 : 0) +
+    (safeNetWorth < 0 ? 18 : 0) +
+    (safeDebtRatio >= 65 ? 10 : safeDebtRatio >= 45 ? 6 : 0) +
+    (recoveryRequired ? 16 : 0) +
+    (growthLocked ? 10 : 0) +
+    (incomeShortfall > 0 ? 8 : 0) +
+    (mandatoryGap > 0 ? 8 : 0) +
+    (advisoryStatus === "CFO_LOCKED" ? 26 : advisoryStatus === "CFO_RECOVERY" ? 14 : advisoryStatus === "CFO_CONTROL" ? 7 : 0) +
+    (complianceStatus === "LOCKED" ? 24 : complianceStatus === "BREACH" ? 16 : complianceStatus === "WATCH" ? 8 : 0) +
+    (rhythmStatus === "RHYTHM_LOCKED" ? 22 : rhythmStatus === "RHYTHM_RECOVERY" ? 12 : rhythmStatus === "RHYTHM_CONTROL" ? 6 : 0) +
+    Math.min(14, (reviewLocks.length + advisoryLocks.length + complianceLocks.length) * 2) +
+    Math.min(10, blockedMoves.length * 2);
+  const closureCap = Math.min(
+    safeWallet < 0 ? 40 : 100,
+    safeNetWorth < 0 ? 44 : 100,
+    recoveryRequired ? 58 : 100,
+    complianceStatus === "LOCKED" ? 25 : complianceStatus === "BREACH" ? 52 : complianceStatus === "WATCH" ? 72 : 100,
+    advisoryStatus === "CFO_LOCKED" ? 25 : advisoryStatus === "CFO_RECOVERY" ? 56 : advisoryStatus === "CFO_CONTROL" ? 76 : 100,
+    rhythmStatus === "RHYTHM_LOCKED" ? 28 : rhythmStatus === "RHYTHM_RECOVERY" ? 58 : rhythmStatus === "RHYTHM_CONTROL" ? 76 : 100,
+    gateDecision === "RECOVERY" ? 58 : gateDecision === "HOLD" ? 76 : 100,
+    policyMode === "RECOVERY_POLICY" ? 58 : policyMode === "CONTROL_POLICY" ? 78 : 100
+  );
+  const closureScore = Math.max(0, Math.min(closureCap, weightedBase - closurePenalty + 18));
+  let closureStatus = "PHASE_READY";
+  let closureLabel = "Phase Ready";
+  let nextPhaseGate = "READY_FOR_7_1";
+  let closureStage = "Close 7.0 and prepare 7.1";
+  if (complianceStatus === "LOCKED" || advisoryStatus === "CFO_LOCKED" || rhythmStatus === "RHYTHM_LOCKED") {
+    closureStatus = "PHASE_LOCKED";
+    closureLabel = "Phase Locked";
+    nextPhaseGate = "NO_NEXT_PHASE";
+    closureStage = "Resolve access / policy lock";
+  } else if (recoveryRequired || closureScore < 45) {
+    closureStatus = "PHASE_RECOVERY";
+    closureLabel = "Recovery Closure";
+    nextPhaseGate = "RECOVERY_BEFORE_7_1";
+    closureStage = "Complete recovery before expansion";
+  } else if (growthLocked || complianceStatus === "WATCH" || closureScore < 72) {
+    closureStatus = "PHASE_CONTROL";
+    closureLabel = "Control Closure";
+    nextPhaseGate = "CONTROLLED_7_1";
+    closureStage = "Controlled next phase only";
+  }
+  const closureColor = closureStatus === "PHASE_READY" ? "#86efac" : closureStatus === "PHASE_CONTROL" ? "#fde68a" : closureStatus === "PHASE_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const closureBg = closureStatus === "PHASE_READY" ? "rgba(16,185,129,0.10)" : closureStatus === "PHASE_CONTROL" ? "rgba(245,158,11,0.11)" : closureStatus === "PHASE_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const closureLocks = [...reviewLocks.slice(0, 2), ...advisoryLocks.slice(0, 2), ...complianceLocks.slice(0, 2), ...blockedMoves.slice(0, 2), ...doNot.slice(0, 1)];
+  if (!closureLocks.length) closureLocks.push("Phase 7.0 closure clear: boleh masuk 7.1 dengan baseline freeze dan backup audit.");
+  const closureRows = [
+    { key: "closure-gate", label: "Next Phase Gate", value: nextPhaseGate, metric: closureLabel, color: closureColor },
+    { key: "closure-cash", label: "Cash Close", value: dailyCashTarget > 0 ? `Daily cash target ${formatRupiah(dailyCashTarget)}` : "Cash baseline clear", metric: safeWallet < 0 ? "Recovery" : "Clear", color: closureColor },
+    { key: "closure-month", label: "Monthly Close", value: monthlyActionTarget > 0 ? `Monthly action target ${formatRupiah(monthlyActionTarget)}` : "Monthly action target clear", metric: incomeShortfall > 0 ? "Shortfall" : "Stable", color: closureColor },
+  ];
+  const phaseClosureMemo = `${closureLabel}: ${closureStage}. Gate ${nextPhaseGate}. ${closureLocks[0]}`;
+  const closureNotice = `Phase Closure 7.0.10: ${closureLabel} · ${nextPhaseGate} · score ${closureScore}/100`;
+  return {
+    closureStatus,
+    closureLabel,
+    closureStage,
+    nextPhaseGate,
+    closureScore,
+    closureColor,
+    closureBg,
+    closureNotice,
+    phaseClosureMemo,
+    closureRows,
+    closureLocks,
+    dailyCashTarget,
+    monthlyActionTarget,
+    rhythmStatus,
+    advisoryStatus,
+    complianceStatus,
+    policyMode,
+    gateDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: closureStatus === "PHASE_READY" && closureScore >= 72 && !recoveryRequired && !growthLocked,
   };
 }
 
@@ -2972,10 +3108,10 @@ function buildFinancialProgressMonitorGuard({
   const monitorLabel = monitorReady ? "Ready" : monitorBlocked ? "Blocked" : "Review";
   const activeLockCount = activeGuardRows.length;
   const blockingLockCount = blockingGuardRows.length;
-  const primaryAction = progressActions[0] || "Progress Monitor clear. Predictive Operating Rhythm Engine 7.0.9 aktif setelah Phase 6.8 freeze.";
+  const primaryAction = progressActions[0] || "Progress Monitor clear. Predictive Phase Closure Engine 7.0.10 aktif setelah Phase 6.8 freeze.";
   const progressNotice = monitorReady
-    ? "Progress 7.0.9: 100% · semua guard clear · siap baseline Phase 7.0.9."
-    : "Progress 7.0.9: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
+    ? "Progress 7.0.10: 100% · semua guard clear · siap baseline Phase 7.0.10."
+    : "Progress 7.0.10: " + progressPercent + "% · " + activeLockCount + " guard aktif · " + blockingLockCount + " blocking · " + monitorLabel;
 
   return {
     issues,
@@ -4916,7 +5052,7 @@ export default function App() {
         releaseReadinessGuard: financialReleaseReadinessGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.9.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 7.0.9: Consolidation Guard clear · engine siap baseline Phase 7.0.9.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], consolidationActions: [], primaryAction: "Consolidation Guard clear. Financial Engine sudah rapi sebagai baseline final sebagai baseline Phase 7.0.10.", upstreamIssueCount: 0, recomputedNetWorth: 0, recomputedGrossAssets: 0, consolidationFormulaDelta: 0, consolidationGrossDelta: 0, consolidationDataOpen: false, consolidationFormulaOpen: false, consolidationSafetyOpen: false, consolidationHealthOpen: false, consolidationLiquidityReview: false, consolidationDoubleCountOpen: false, consolidationBaselineOpen: false, consolidationCascadeOpen: false, consolidationBlocked: false, consolidationReview: false, consolidationReady: true, consolidationLabel: "Consolidated", progressPercent: 100, progressNotice: "Progress 7.0.10: Consolidation Guard clear · engine siap baseline Phase 7.0.10.", issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialProgressMonitorGuard = canViewFinancialSummaryNow
     ? buildFinancialProgressMonitorGuard({
         walletTotal: financialWalletTotal,
@@ -4941,7 +5077,7 @@ export default function App() {
         consolidationGuard: financialConsolidationGuard,
         noBaseline: financialNoBaseline,
       })
-    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Predictive Operating Rhythm Engine 7.0.9 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 7.0.9: 100% · semua guard clear · siap baseline Phase 7.0.9."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
+    : { issues: [], progressActions: [], primaryAction: "Progress Monitor clear. Predictive Phase Closure Engine 7.0.10 aktif setelah Phase 6.8 freeze.", guardStack: [], activeGuardRows: [], blockingGuardRows: [], activeLockCount: 0, blockingLockCount: 0, upstreamIssueCount: 0, componentCount: 0, formulaDelta: 0, assetDelta: 0, formulaDrift: false, healthBlocked: false, baselineBlocked: false, cascadeBlocked: false, monitorBlocked: false, monitorReview: false, monitorReady: true, monitorLabel: "Ready", progressPercent: 100, progressNotice: buildFinancialDeploymentSyncNotice("Progress 7.0.10: 100% · semua guard clear · siap baseline Phase 7.0.10."), issueCount: 0, scorePenalty: 0, scoreCap: 100, ok: true };
   const financialEngineIssues = [
     ...(financialNetWorth < 0 ? ["Net Worth negatif"] : []),
     ...(financialWalletTotal < 0 ? ["Total Wallet negatif"] : []),
@@ -5083,7 +5219,7 @@ export default function App() {
         transactionQualityScore,
         noBaseline: financialNoBaseline,
       })
-    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 7.0.9: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
+    : { healthScore: 0, healthLabel: "Locked", healthStage: "No Access", healthColor: "#94a3b8", healthBg: "rgba(148,163,184,0.10)", progressPercent: 0, healthNotice: "Progress 7.0.10: Financial Health Engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actionCandidates: [], componentRows: [], issueCount: 0, ok: false };
 
   const financialHealthDecisionEngine = canViewFinancialSummaryNow
     ? buildFinancialHealthDecisionEngine({
@@ -5107,7 +5243,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { predictiveScore: 0, predictiveLabel: "Locked", predictiveStage: "No Access", predictiveColor: "#94a3b8", predictiveBg: "rgba(148,163,184,0.10)", projectionNotice: "Predictive 7.0.9: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actions: [], forecastRows: [], runwayDays: 0, runwayLabel: "Locked", recoveryRequired: false, recoveryGap: 0, recoveryMonthlyTarget: 0, recoveryDailyTarget: 0, recoveryStage: "Locked", recoveryNotice: "Role tidak memiliki akses Financial Summary.", trendLabel: "Locked", trendColor: "#94a3b8", transactionWindowCount: 0, noTrendData: true, ok: false };
+    : { predictiveScore: 0, predictiveLabel: "Locked", predictiveStage: "No Access", predictiveColor: "#94a3b8", predictiveBg: "rgba(148,163,184,0.10)", projectionNotice: "Predictive 7.0.10: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", actions: [], forecastRows: [], runwayDays: 0, runwayLabel: "Locked", recoveryRequired: false, recoveryGap: 0, recoveryMonthlyTarget: 0, recoveryDailyTarget: 0, recoveryStage: "Locked", recoveryNotice: "Role tidak memiliki akses Financial Summary.", trendLabel: "Locked", trendColor: "#94a3b8", transactionWindowCount: 0, noTrendData: true, ok: false };
 
   const financialPredictiveActionEngine = canViewFinancialSummaryNow
     ? buildPredictiveActionPriorityEngine({
@@ -5120,7 +5256,7 @@ export default function App() {
         loanTotal: financialLoanTotal,
         debtRatio: financialDebtRatio,
       })
-    : { actionStatus: "Locked", actionColor: "#94a3b8", actionBg: "rgba(148,163,184,0.10)", actionNotice: "Action 7.0.9: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", primaryLabel: "Locked", primaryPriority: 0, actionRows: [], blockerCount: 0, totalImpact: 0, monthlyActionTarget: 0, dailyActionTarget: 0, ok: false };
+    : { actionStatus: "Locked", actionColor: "#94a3b8", actionBg: "rgba(148,163,184,0.10)", actionNotice: "Action 7.0.10: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", primaryLabel: "Locked", primaryPriority: 0, actionRows: [], blockerCount: 0, totalImpact: 0, monthlyActionTarget: 0, dailyActionTarget: 0, ok: false };
 
   const financialPredictiveExecutionEngine = canViewFinancialSummaryNow
     ? buildPredictiveExecutionControlEngine({
@@ -5132,7 +5268,7 @@ export default function App() {
         netWorth: financialNetWorth,
         loanTotal: financialLoanTotal,
       })
-    : { executionStatus: "Locked", executionLabel: "No Access", executionScore: 0, executionColor: "#94a3b8", executionBg: "rgba(148,163,184,0.10)", executionNotice: "Execution 7.0.9: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", primaryLabel: "Locked", executionRows: [], forbiddenActions: ["Role tidak memiliki akses Financial Summary."], lockRows: [], lockCount: 0, monthlyExecutionTarget: 0, dailyExecutionTarget: 0, growthLocked: true, recoveryLock: false, ok: false };
+    : { executionStatus: "Locked", executionLabel: "No Access", executionScore: 0, executionColor: "#94a3b8", executionBg: "rgba(148,163,184,0.10)", executionNotice: "Execution 7.0.10: engine terkunci untuk role ini.", primaryAction: "Role tidak memiliki akses Financial Summary.", primaryLabel: "Locked", executionRows: [], forbiddenActions: ["Role tidak memiliki akses Financial Summary."], lockRows: [], lockCount: 0, monthlyExecutionTarget: 0, dailyExecutionTarget: 0, growthLocked: true, recoveryLock: false, ok: false };
 
   const financialPredictiveCommandBriefEngine = canViewFinancialSummaryNow
     ? buildPredictiveCommandBriefEngine({
@@ -5144,7 +5280,7 @@ export default function App() {
         walletTotal: financialWalletTotal,
         netWorth: financialNetWorth,
       })
-    : { commandStatus: "Locked", commandLabel: "No Access", commandScore: 0, commandColor: "#94a3b8", commandBg: "rgba(148,163,184,0.10)", commandNotice: "Command 7.0.9: engine terkunci untuk role ini.", commandRows: [], commandLocks: ["Role tidak memiliki akses Financial Summary."], primaryCommand: "Role tidak memiliki akses Financial Summary.", dailyCashTarget: 0, monthlyActionTarget: 0, blockerCount: 0, lockCount: 0, recoveryRequired: false, growthLocked: true, ok: false };
+    : { commandStatus: "Locked", commandLabel: "No Access", commandScore: 0, commandColor: "#94a3b8", commandBg: "rgba(148,163,184,0.10)", commandNotice: "Command 7.0.10: engine terkunci untuk role ini.", commandRows: [], commandLocks: ["Role tidak memiliki akses Financial Summary."], primaryCommand: "Role tidak memiliki akses Financial Summary.", dailyCashTarget: 0, monthlyActionTarget: 0, blockerCount: 0, lockCount: 0, recoveryRequired: false, growthLocked: true, ok: false };
 
   const financialPredictiveDecisionGateEngine = canViewFinancialSummaryNow
     ? buildPredictiveDecisionGateEngine({
@@ -5158,7 +5294,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { gateDecision: "LOCKED", gateLabel: "No Access", gateStage: "Locked", gateScore: 0, gateColor: "#94a3b8", gateBg: "rgba(148,163,184,0.10)", gateNotice: "Decision Gate 7.0.9: engine terkunci untuk role ini.", gateRows: [], gateLocks: ["Role tidak memiliki akses Financial Summary."], nextAction: "Role tidak memiliki akses Financial Summary.", recoveryRequired: false, growthLocked: true, incomeShortfall: 0, safeSpendingDaily: 0, actionBlockers: 0, ok: false };
+    : { gateDecision: "LOCKED", gateLabel: "No Access", gateStage: "Locked", gateScore: 0, gateColor: "#94a3b8", gateBg: "rgba(148,163,184,0.10)", gateNotice: "Decision Gate 7.0.10: engine terkunci untuk role ini.", gateRows: [], gateLocks: ["Role tidak memiliki akses Financial Summary."], nextAction: "Role tidak memiliki akses Financial Summary.", recoveryRequired: false, growthLocked: true, incomeShortfall: 0, safeSpendingDaily: 0, actionBlockers: 0, ok: false };
 
   const financialPredictiveGovernancePolicyEngine = canViewFinancialSummaryNow
     ? buildPredictiveGovernancePolicyEngine({
@@ -5173,7 +5309,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { policyMode: "LOCKED", policyLabel: "No Access", policyStatus: "Locked", governanceScore: 0, policyColor: "#94a3b8", policyBg: "rgba(148,163,184,0.10)", governanceNotice: "Governance 7.0.9: engine terkunci untuk role ini.", governanceRows: [], allowedMoves: [], blockedMoves: ["Role tidak memiliki akses Financial Summary."], governanceLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, recoveryRequired: false, growthLocked: true, ok: false };
+    : { policyMode: "LOCKED", policyLabel: "No Access", policyStatus: "Locked", governanceScore: 0, policyColor: "#94a3b8", policyBg: "rgba(148,163,184,0.10)", governanceNotice: "Governance 7.0.10: engine terkunci untuk role ini.", governanceRows: [], allowedMoves: [], blockedMoves: ["Role tidak memiliki akses Financial Summary."], governanceLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, recoveryRequired: false, growthLocked: true, ok: false };
 
 
   const financialPredictiveGovernanceComplianceEngine = canViewFinancialSummaryNow
@@ -5190,7 +5326,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { complianceStatus: "LOCKED", complianceLabel: "No Access", complianceStage: "Locked", complianceScore: 0, complianceColor: "#94a3b8", complianceBg: "rgba(148,163,184,0.10)", complianceNotice: "Compliance 7.0.9: engine terkunci untuk role ini.", complianceRows: [], breachRows: [], complianceLocks: ["Role tidak memiliki akses Financial Summary."], primaryCorrection: "Role tidak memiliki akses Financial Summary.", monthlyActionTarget: 0, dailyCashTarget: 0, allowedMoves: [], blockedMoves: ["Role tidak memiliki akses Financial Summary."], policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+    : { complianceStatus: "LOCKED", complianceLabel: "No Access", complianceStage: "Locked", complianceScore: 0, complianceColor: "#94a3b8", complianceBg: "rgba(148,163,184,0.10)", complianceNotice: "Compliance 7.0.10: engine terkunci untuk role ini.", complianceRows: [], breachRows: [], complianceLocks: ["Role tidak memiliki akses Financial Summary."], primaryCorrection: "Role tidak memiliki akses Financial Summary.", monthlyActionTarget: 0, dailyCashTarget: 0, allowedMoves: [], blockedMoves: ["Role tidak memiliki akses Financial Summary."], policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
 
 
   const financialPredictiveCfoAdvisoryEngine = canViewFinancialSummaryNow
@@ -5208,7 +5344,7 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { advisoryStatus: "CFO_LOCKED", advisoryLabel: "No Access", advisoryStage: "Locked", advisoryScore: 0, advisoryColor: "#94a3b8", advisoryBg: "rgba(148,163,184,0.10)", advisoryNotice: "CFO Advisory 7.0.9: engine terkunci untuk role ini.", cfoMemo: "Role tidak memiliki akses Financial Summary.", cfoRows: [], doNow: ["Role tidak memiliki akses Financial Summary."], doNext: [], doNot: ["Role tidak memiliki akses Financial Summary."], advisoryLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, gateDecision: "LOCKED", policyMode: "LOCKED", complianceStatus: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+    : { advisoryStatus: "CFO_LOCKED", advisoryLabel: "No Access", advisoryStage: "Locked", advisoryScore: 0, advisoryColor: "#94a3b8", advisoryBg: "rgba(148,163,184,0.10)", advisoryNotice: "CFO Advisory 7.0.10: engine terkunci untuk role ini.", cfoMemo: "Role tidak memiliki akses Financial Summary.", cfoRows: [], doNow: ["Role tidak memiliki akses Financial Summary."], doNext: [], doNot: ["Role tidak memiliki akses Financial Summary."], advisoryLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, gateDecision: "LOCKED", policyMode: "LOCKED", complianceStatus: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
 
 
 
@@ -5226,7 +5362,27 @@ export default function App() {
         netWorth: financialNetWorth,
         debtRatio: financialDebtRatio,
       })
-    : { rhythmStatus: "RHYTHM_LOCKED", rhythmLabel: "No Access", rhythmStage: "Locked", rhythmScore: 0, rhythmColor: "#94a3b8", rhythmBg: "rgba(148,163,184,0.10)", rhythmNotice: "Operating Rhythm 7.0.9: engine terkunci untuk role ini.", operatingCadence: "Role tidak memiliki akses Financial Summary.", meetingMode: "Locked", rhythmRows: [], dailyRhythm: ["Role tidak memiliki akses Financial Summary."], weeklyRhythm: [], monthlyRhythm: [], reviewLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, advisoryStatus: "CFO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+    : { rhythmStatus: "RHYTHM_LOCKED", rhythmLabel: "No Access", rhythmStage: "Locked", rhythmScore: 0, rhythmColor: "#94a3b8", rhythmBg: "rgba(148,163,184,0.10)", rhythmNotice: "Operating Rhythm 7.0.10: engine terkunci untuk role ini.", operatingCadence: "Role tidak memiliki akses Financial Summary.", meetingMode: "Locked", rhythmRows: [], dailyRhythm: ["Role tidak memiliki akses Financial Summary."], weeklyRhythm: [], monthlyRhythm: [], reviewLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, advisoryStatus: "CFO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+  const financialPredictivePhaseClosureEngine = canViewFinancialSummaryNow
+    ? buildPredictivePhaseClosureEngine({
+        rhythmEngine: financialPredictiveOperatingRhythmEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        commandEngine: financialPredictiveCommandBriefEngine,
+        executionEngine: financialPredictiveExecutionEngine,
+        actionEngine: financialPredictiveActionEngine,
+        predictiveEngine: financialPredictiveHealthEngine,
+        healthEngine: financialHealthEngine,
+        decisionEngine: financialHealthDecisionEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        debtRatio: financialDebtRatio,
+      })
+    : { closureStatus: "PHASE_LOCKED", closureLabel: "No Access", closureStage: "Locked", nextPhaseGate: "NO_ACCESS", closureScore: 0, closureColor: "#94a3b8", closureBg: "rgba(148,163,184,0.10)", closureNotice: "Phase Closure 7.0.10: engine terkunci untuk role ini.", phaseClosureMemo: "Role tidak memiliki akses Financial Summary.", closureRows: [], closureLocks: ["Role tidak memiliki akses Financial Summary."], dailyCashTarget: 0, monthlyActionTarget: 0, rhythmStatus: "RHYTHM_LOCKED", advisoryStatus: "CFO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -7724,6 +7880,7 @@ export default function App() {
       { key: "predictiveGovernanceComplianceEngine", label: "Predictive Governance Compliance Engine", count: financialPredictiveGovernanceComplianceEngine ? 1 : 0, critical: false },
       { key: "predictiveCfoAdvisoryEngine", label: "Predictive CFO Advisory Engine", count: financialPredictiveCfoAdvisoryEngine ? 1 : 0, critical: false },
       { key: "predictiveOperatingRhythmEngine", label: "Predictive Operating Rhythm Engine", count: financialPredictiveOperatingRhythmEngine ? 1 : 0, critical: false },
+      { key: "predictivePhaseClosureEngine", label: "Predictive Phase Closure Engine", count: financialPredictivePhaseClosureEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -7737,7 +7894,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.0.9: Predictive Operating Rhythm Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.0.10: Predictive Phase Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, dan net worth baseline."
       ]
     };
   }
@@ -7747,7 +7904,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-operating-rhythm-engine-7-0-9",
+      version: APP_VERSION + " predictive-phase-closure-engine-7-0-10",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -7783,6 +7940,7 @@ export default function App() {
       predictiveGovernanceComplianceEngine: financialPredictiveGovernanceComplianceEngine,
       predictiveCfoAdvisoryEngine: financialPredictiveCfoAdvisoryEngine,
       predictiveOperatingRhythmEngine: financialPredictiveOperatingRhythmEngine,
+      predictivePhaseClosureEngine: financialPredictivePhaseClosureEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -8234,7 +8392,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 7.0.9. Predictive Operating Rhythm Engine 7.0.9 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive operating rhythm engine 7.0.9.
+            FinPlan v1.1.0 phase 7.0.10. Predictive Phase Closure Engine 7.0.10 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive phase closure engine 7.0.10.
           </div>
         </div>
       </div>
@@ -8753,7 +8911,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 7.0.9. Predictive Operating Rhythm Engine 7.0.9 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive operating rhythm engine 7.0.9.
+                FinPlan v1.1.0 phase 7.0.10. Predictive Phase Closure Engine 7.0.10 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive phase closure engine 7.0.10.
               </div>
             </div>
           </div>
@@ -10711,9 +10869,9 @@ export default function App() {
             <div style={{ marginTop: "12px", padding: "16px", borderRadius: "20px", background: "linear-gradient(135deg,rgba(15,23,42,0.96),rgba(30,41,59,0.72))", border: "1px solid rgba(99,102,241,0.25)", boxShadow: "0 18px 50px rgba(0,0,0,0.28)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "12px" }}>
                 <div>
-                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 7.0.9</div>
+                  <div style={{ fontSize: "10px", letterSpacing: "2px", color: "#a5b4fc", fontWeight: 900, textTransform: "uppercase" }}>Financial Engine · Phase 7.0.10</div>
                   <div style={{ fontSize: "18px", fontWeight: 900, color: "#fff", marginTop: "4px" }}>Net Worth Console</div>
-                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Predictive Action Priority Engine 7.0.9</div>
+                  <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "3px" }}>{financialScopeUser ? "Scope user: " + financialScopeUser : "Scope keluarga"} · Wallet + Goals + Investasi - Pinjaman · Predictive Action Priority Engine 7.0.10</div>
                 </div>
                 <div style={{ padding: "8px 10px", borderRadius: "14px", background: financialHealthEngine.healthBg, color: financialHealthEngine.healthColor, fontSize: "11px", fontWeight: 900, whiteSpace: "nowrap" }}>
                   {financialHealthEngine.healthScore}/100 · {financialHealthEngine.healthLabel}
@@ -10775,7 +10933,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveHealthEngine.predictiveBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveHealthEngine.predictiveColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Action Engine 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveHealthEngine.predictiveColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Action Engine 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveHealthEngine.projectionNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveHealthEngine.predictiveColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveHealthEngine.predictiveScore}/100</div>
@@ -10802,7 +10960,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveActionEngine.actionBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveActionEngine.actionColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Action Priority 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveActionEngine.actionColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Action Priority 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveActionEngine.actionNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveActionEngine.actionColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveActionEngine.blockerCount} lock</div>
@@ -10828,7 +10986,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveExecutionEngine.executionBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveExecutionEngine.executionColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Execution Control 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveExecutionEngine.executionColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Execution Control 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveExecutionEngine.executionNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveExecutionEngine.executionColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveExecutionEngine.executionScore}/100</div>
@@ -10851,7 +11009,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveCommandBriefEngine.commandBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveCommandBriefEngine.commandColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Command Brief 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveCommandBriefEngine.commandColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Command Brief 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveCommandBriefEngine.commandNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveCommandBriefEngine.commandColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveCommandBriefEngine.commandScore}/100</div>
@@ -10874,7 +11032,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveDecisionGateEngine.gateBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveDecisionGateEngine.gateColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Decision Gate 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveDecisionGateEngine.gateColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Decision Gate 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveDecisionGateEngine.gateNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveDecisionGateEngine.gateColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveDecisionGateEngine.gateDecision}</div>
@@ -10897,7 +11055,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveGovernancePolicyEngine.policyBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveGovernancePolicyEngine.policyColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Governance Policy 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveGovernancePolicyEngine.policyColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Governance Policy 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveGovernancePolicyEngine.governanceNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveGovernancePolicyEngine.policyColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveGovernancePolicyEngine.policyStatus}</div>
@@ -10924,7 +11082,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveGovernanceComplianceEngine.complianceBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveGovernanceComplianceEngine.complianceColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Governance Compliance 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveGovernanceComplianceEngine.complianceColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Governance Compliance 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveGovernanceComplianceEngine.complianceNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveGovernanceComplianceEngine.complianceColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveGovernanceComplianceEngine.complianceStatus}</div>
@@ -10951,7 +11109,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveCfoAdvisoryEngine.advisoryBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveCfoAdvisoryEngine.advisoryColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive CFO Advisory 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveCfoAdvisoryEngine.advisoryColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive CFO Advisory 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveCfoAdvisoryEngine.advisoryNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveCfoAdvisoryEngine.advisoryColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveCfoAdvisoryEngine.advisoryScore}/100</div>
@@ -10977,7 +11135,7 @@ export default function App() {
                 <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveOperatingRhythmEngine.rhythmBg, border: "1px solid rgba(255,255,255,0.07)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveOperatingRhythmEngine.rhythmColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Operating Rhythm 7.0.9</div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveOperatingRhythmEngine.rhythmColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Operating Rhythm 7.0.10</div>
                       <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveOperatingRhythmEngine.rhythmNotice}</div>
                     </div>
                     <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveOperatingRhythmEngine.rhythmColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveOperatingRhythmEngine.rhythmScore}/100</div>
@@ -11000,6 +11158,32 @@ export default function App() {
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Review lock: {financialPredictiveOperatingRhythmEngine.reviewLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictivePhaseClosureEngine.closureBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictivePhaseClosureEngine.closureColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Phase Closure 7.0.10</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictivePhaseClosureEngine.closureNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictivePhaseClosureEngine.closureColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictivePhaseClosureEngine.closureScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictivePhaseClosureEngine.closureRows.slice(0, 3).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.value}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictivePhaseClosureEngine.closureColor, lineHeight: 1.45 }}>Memo: {financialPredictivePhaseClosureEngine.phaseClosureMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Closure lock: {financialPredictivePhaseClosureEngine.closureLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
                 {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
@@ -11014,7 +11198,7 @@ export default function App() {
                 {financialSealGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialSealGuard.hardSeal ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Seal Guard aktif: {financialSealGuard.issueCount} seal lock. Prioritas: {financialSealGuard.primaryAction}</div>}
                 {financialReleaseReadinessGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialReleaseReadinessGuard.releaseBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Release Readiness baseline aktif: {financialReleaseReadinessGuard.issueCount} readiness lock. Status: {financialReleaseReadinessGuard.readinessLabel}. Prioritas: {financialReleaseReadinessGuard.primaryAction}</div>}
                 {financialConsolidationGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialConsolidationGuard.consolidationBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Consolidation baseline aktif: {financialConsolidationGuard.issueCount} consolidation lock. Status: {financialConsolidationGuard.consolidationLabel}. Prioritas: {financialConsolidationGuard.primaryAction}</div>}
-                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 7.0.9 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
+                {financialProgressMonitorGuard.issueCount > 0 && <div style={{ marginTop: "7px", fontSize: "11px", color: financialProgressMonitorGuard.monitorBlocked ? "#fecaca" : "#fde68a", lineHeight: 1.45 }}>Progress Monitor 7.0.10 aktif: {financialProgressMonitorGuard.issueCount} progress lock · {financialProgressMonitorGuard.activeLockCount} guard aktif. Prioritas: {financialProgressMonitorGuard.primaryAction}</div>}
                 {financialScopeUser && <div style={{ marginTop: "9px", fontSize: "11px", color: "#94a3b8", lineHeight: 1.45 }}>Catatan: Goal adalah data keluarga. Nilai Goal penuh ditampilkan saat filter “Semua”.</div>}
               </div>
 
