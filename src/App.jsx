@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.1.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.2.0";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.1.5";
-const FINANCIAL_ENGINE_NAME = "Predictive Scenario Closure Engine";
+const FINANCIAL_ENGINE_VERSION = "7.2.0";
+const FINANCIAL_ENGINE_NAME = "Predictive Allocation Planning Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -4045,6 +4045,194 @@ function buildPredictiveScenarioClosureEngine({
 
 
 
+function buildPredictiveAllocationPlanningEngine({
+  scenarioClosureEngine = {},
+  scenarioEngine = {},
+  stressEngine = {},
+  projectionEngine = {},
+  goalFeasibilityEngine = {},
+  decisionRecommendationEngine = {},
+  cfoEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  healthEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+  mandatoryMonthlyTarget = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const scenarioClosureScore = Math.max(0, Math.min(100, asEngineNumber(scenarioClosureEngine?.scenarioClosureScore)));
+  const scenarioScore = Math.max(0, Math.min(100, asEngineNumber(scenarioEngine?.scenarioScore)));
+  const stressScore = Math.max(0, Math.min(100, asEngineNumber(stressEngine?.stressScore)));
+  const projectionScore = Math.max(0, Math.min(100, asEngineNumber(projectionEngine?.projectionScore)));
+  const goalScore = Math.max(0, Math.min(100, asEngineNumber(goalFeasibilityEngine?.goalFeasibilityScore)));
+  const decisionScore = Math.max(0, Math.min(100, asEngineNumber(decisionRecommendationEngine?.decisionScore)));
+  const advisoryScore = Math.max(0, Math.min(100, asEngineNumber(cfoEngine?.advisoryScore)));
+  const complianceScore = Math.max(0, Math.min(100, asEngineNumber(complianceEngine?.complianceScore)));
+  const governanceScore = Math.max(0, Math.min(100, asEngineNumber(governanceEngine?.governanceScore)));
+  const healthScore = Math.max(0, Math.min(100, asEngineNumber(healthEngine?.score ?? healthEngine?.healthScore)));
+  const scenarioClosureStatus = String(scenarioClosureEngine?.scenarioClosureStatus || "SCENARIO_LOCKED").toUpperCase();
+  const nextScenarioTrack = String(scenarioClosureEngine?.nextScenarioTrack || "LOCKED_BEFORE_7_2").toUpperCase();
+  const scenarioStatus = String(scenarioEngine?.scenarioStatus || "SCENARIO_LOCKED").toUpperCase();
+  const stressStatus = String(stressEngine?.stressStatus || "STRESS_LOCKED").toUpperCase();
+  const projectionStatus = String(projectionEngine?.projectionStatus || "CASHFLOW_LOCKED").toUpperCase();
+  const goalFeasibilityStatus = String(goalFeasibilityEngine?.goalFeasibilityStatus || "GOAL_LOCKED").toUpperCase();
+  const decisionStatus = String(decisionRecommendationEngine?.decisionStatus || "DECISION_LOCKED").toUpperCase();
+  const decisionRecommendation = String(decisionRecommendationEngine?.decisionRecommendation || "LOCKED_SCENARIO").toUpperCase();
+  const complianceStatus = String(complianceEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || "LOCKED").toUpperCase();
+  const recoveryRequired = !!scenarioClosureEngine?.recoveryRequired || !!scenarioEngine?.recoveryRequired || !!decisionRecommendationEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || decisionRecommendation === "RECOVERY_FIRST";
+  const growthLocked = !!scenarioClosureEngine?.growthLocked || !!scenarioEngine?.growthLocked || !!decisionRecommendationEngine?.growthLocked || policyMode === "RECOVERY" || gateDecision === "RECOVERY" || nextScenarioTrack.includes("RECOVERY");
+  const scenarioTarget = Math.max(0, asEngineNumber(scenarioEngine?.recommendedScenario?.target), asEngineNumber(scenarioEngine?.targetMonthlyRecovery));
+  const closureBuffer = Math.max(0, asEngineNumber(scenarioClosureEngine?.requiredMonthlyClosureBuffer));
+  const stressBuffer = Math.max(0, asEngineNumber(stressEngine?.requiredStressBuffer));
+  const projectionBuffer = Math.max(0, asEngineNumber(projectionEngine?.requiredMonthlyProjectionBuffer));
+  const goalBuffer = Math.max(0, asEngineNumber(goalFeasibilityEngine?.requiredMonthlyGoalBuffer));
+  const decisionBuffer = Math.max(0, asEngineNumber(decisionRecommendationEngine?.requiredMonthlyDecisionBuffer));
+  const mandatoryBuffer = Math.max(0, asEngineNumber(mandatoryMonthlyTarget));
+  const recoveryGap = Math.max(0, safeWallet < 0 ? Math.abs(safeWallet) : 0, safeNetWorth < 0 ? Math.ceil(Math.abs(safeNetWorth) / 6) : 0);
+  const requiredMonthlyAllocationBuffer = Math.max(scenarioTarget, closureBuffer, stressBuffer, projectionBuffer, goalBuffer, decisionBuffer, mandatoryBuffer, Math.ceil(recoveryGap / 3));
+  const requiredDailyAllocationBuffer = Math.ceil(requiredMonthlyAllocationBuffer / 30);
+  const allocatableMonthly = Math.max(0, safeIncome - safeExpense);
+  const protectedMonthly = Math.max(0, Math.min(safeIncome, safeExpense + mandatoryBuffer));
+  const recoveryAllocation = recoveryRequired ? Math.max(Math.ceil(recoveryGap / 3), decisionBuffer, projectionBuffer) : Math.max(0, Math.ceil(requiredMonthlyAllocationBuffer * 0.25));
+  const mandatoryGoalAllocation = Math.max(goalBuffer, mandatoryBuffer);
+  const controlBufferAllocation = Math.max(stressBuffer, closureBuffer, Math.ceil(Math.max(0, safeIncome) * 0.05));
+  const growthAllocation = (!recoveryRequired && !growthLocked && scenarioClosureStatus === "SCENARIO_READY") ? Math.max(0, allocatableMonthly - mandatoryGoalAllocation - controlBufferAllocation) : 0;
+  const allocationShortfall = Math.max(0, requiredMonthlyAllocationBuffer - allocatableMonthly);
+  const allocationBlend = Math.round((scenarioClosureScore * 0.18) + (decisionScore * 0.16) + (projectionScore * 0.14) + (goalScore * 0.12) + (stressScore * 0.12) + (scenarioScore * 0.10) + (advisoryScore * 0.08) + (complianceScore * 0.05) + (governanceScore * 0.03) + (healthScore * 0.02));
+  const allocationPenalty =
+    (safeWallet < 0 ? 18 : 0) +
+    (safeNetWorth < 0 ? 16 : 0) +
+    (netMonthlyCashflow < 0 ? 14 : 0) +
+    (allocationShortfall > 0 ? 12 : 0) +
+    (scenarioClosureStatus === "SCENARIO_LOCKED" ? 20 : scenarioClosureStatus === "SCENARIO_RECOVERY" ? 12 : scenarioClosureStatus === "SCENARIO_CONTROL" ? 6 : 0) +
+    (decisionStatus === "DECISION_LOCKED" ? 18 : decisionStatus === "DECISION_RECOVERY" ? 12 : decisionStatus === "DECISION_CONTROL" ? 6 : 0) +
+    (projectionStatus === "CASHFLOW_LOCKED" ? 16 : projectionStatus === "CASHFLOW_DEFICIT" ? 12 : projectionStatus === "CASHFLOW_WATCH" ? 5 : 0) +
+    (goalFeasibilityStatus === "GOAL_LOCKED" ? 14 : goalFeasibilityStatus === "GOAL_GAP" ? 10 : goalFeasibilityStatus === "GOAL_WATCH" ? 4 : 0) +
+    (["LOCKED", "BREACH"].includes(complianceStatus) ? 10 : complianceStatus === "WATCH" ? 4 : 0) +
+    (growthLocked ? 6 : 0);
+  const allocationCap = Math.min(
+    safeWallet < 0 ? 40 : 100,
+    safeNetWorth < 0 ? 42 : 100,
+    scenarioClosureStatus === "SCENARIO_LOCKED" ? 28 : scenarioClosureStatus === "SCENARIO_RECOVERY" ? 58 : 100,
+    decisionStatus === "DECISION_LOCKED" ? 32 : decisionStatus === "DECISION_RECOVERY" ? 60 : 100,
+    projectionStatus === "CASHFLOW_LOCKED" ? 34 : projectionStatus === "CASHFLOW_DEFICIT" ? 60 : 100,
+    allocationShortfall > 0 ? 72 : 100,
+    recoveryRequired ? 68 : 100
+  );
+  const allocationScore = Math.max(0, Math.min(allocationCap, allocationBlend - allocationPenalty + 22));
+  let allocationStatus = "ALLOCATION_READY";
+  let allocationLabel = "Allocation Ready";
+  let allocationMode = "GROWTH_ALLOCATION";
+  if (scenarioClosureStatus === "SCENARIO_LOCKED" || decisionStatus === "DECISION_LOCKED" || complianceStatus === "LOCKED" || gateDecision === "LOCKED") {
+    allocationStatus = "ALLOCATION_LOCKED";
+    allocationLabel = "Allocation Locked";
+    allocationMode = "LOCKED_ALLOCATION";
+  } else if (recoveryRequired || decisionStatus === "DECISION_RECOVERY" || allocationScore < 48) {
+    allocationStatus = "ALLOCATION_RECOVERY";
+    allocationLabel = "Recovery Allocation";
+    allocationMode = "RECOVERY_ALLOCATION";
+  } else if (growthLocked || allocationShortfall > 0 || scenarioClosureStatus === "SCENARIO_CONTROL" || allocationScore < 76) {
+    allocationStatus = "ALLOCATION_CONTROL";
+    allocationLabel = "Control Allocation";
+    allocationMode = "CONTROL_ALLOCATION";
+  }
+  const allocationColor = allocationStatus === "ALLOCATION_READY" ? "#86efac" : allocationStatus === "ALLOCATION_CONTROL" ? "#fde68a" : allocationStatus === "ALLOCATION_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const allocationBg = allocationStatus === "ALLOCATION_READY" ? "rgba(16,185,129,0.10)" : allocationStatus === "ALLOCATION_CONTROL" ? "rgba(245,158,11,0.11)" : allocationStatus === "ALLOCATION_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const allocationRows = [
+    {
+      key: "income-base",
+      label: "Income allocation base",
+      color: safeIncome > 0 ? "#c7d2fe" : "#fecaca",
+      metric: formatRupiah(safeIncome),
+      action: safeIncome > 0 ? `Alokasi dihitung dari income bulanan ${formatRupiah(safeIncome)}.` : "Income bulanan belum cukup sebagai basis alokasi.",
+    },
+    {
+      key: "protected-spend",
+      label: "Protected expense",
+      color: "#e0e7ff",
+      metric: formatRupiah(protectedMonthly),
+      action: "Pengeluaran wajib dan kebutuhan dasar dilindungi sebelum growth.",
+    },
+    {
+      key: "recovery-buffer",
+      label: recoveryRequired ? "Recovery allocation" : "Reserve allocation",
+      color: recoveryRequired ? "#fecaca" : "#fde68a",
+      metric: formatRupiah(recoveryAllocation),
+      action: recoveryRequired ? "Prioritas pertama: tutup wallet/net worth/cashflow gap." : "Cadangan kontrol tetap disiapkan sebelum ekspansi.",
+    },
+    {
+      key: "goal-buffer",
+      label: "Mandatory goal allocation",
+      color: mandatoryGoalAllocation > 0 ? "#fde68a" : "#86efac",
+      metric: formatRupiah(mandatoryGoalAllocation),
+      action: mandatoryGoalAllocation > 0 ? "Goal wajib masuk buffer alokasi, bukan sisa uang." : "Goal wajib tidak memberi gap tambahan saat ini.",
+    },
+    {
+      key: "growth-allocation",
+      label: "Growth allocation",
+      color: growthAllocation > 0 ? "#86efac" : "#94a3b8",
+      metric: formatRupiah(growthAllocation),
+      action: growthAllocation > 0 ? "Growth boleh memakai sisa setelah recovery, goal, dan buffer aman." : "Growth ditahan sampai recovery/control clear.",
+    },
+  ];
+  const allocationLocks = [];
+  if (allocationStatus === "ALLOCATION_LOCKED") allocationLocks.push("Allocation locked: scenario closure / decision / compliance / gate belum clear.");
+  if (recoveryRequired) allocationLocks.push("Recovery allocation wajib menjadi prioritas pertama.");
+  if (allocationShortfall > 0) allocationLocks.push(`Allocation shortfall ${formatRupiah(allocationShortfall)}/bulan harus ditutup.`);
+  if (growthLocked) allocationLocks.push("Growth allocation ditahan oleh governance/gate/scenario lock.");
+  if (!allocationLocks.length) allocationLocks.push("Allocation clear: distribusi cash bisa masuk mode growth terkontrol.");
+  const allocationMemo = `${allocationLabel}: ${allocationMode} · buffer ${formatRupiah(requiredMonthlyAllocationBuffer)}/bulan · shortfall ${formatRupiah(allocationShortfall)}.`;
+  const allocationNotice = `Allocation Planning 7.2.0: ${allocationMode} · ${allocationStatus} · score ${allocationScore}/100`;
+  return {
+    allocationStatus,
+    allocationLabel,
+    allocationMode,
+    allocationScore,
+    allocationColor,
+    allocationBg,
+    allocationNotice,
+    allocationMemo,
+    allocationRows,
+    allocationLocks,
+    requiredMonthlyAllocationBuffer,
+    requiredDailyAllocationBuffer,
+    allocationShortfall,
+    allocatableMonthly,
+    protectedMonthly,
+    recoveryAllocation,
+    mandatoryGoalAllocation,
+    controlBufferAllocation,
+    growthAllocation,
+    netMonthlyCashflow,
+    scenarioClosureStatus,
+    nextScenarioTrack,
+    scenarioStatus,
+    stressStatus,
+    projectionStatus,
+    goalFeasibilityStatus,
+    decisionStatus,
+    decisionRecommendation,
+    complianceStatus,
+    policyMode,
+    gateDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: allocationStatus === "ALLOCATION_READY" && allocationScore >= 76 && allocationShortfall === 0 && !recoveryRequired,
+  };
+}
+
+
+
 function buildFinancialProgressMonitorGuard({
   walletTotal = 0,
   goalTotal = 0,
@@ -6528,6 +6716,29 @@ export default function App() {
         monthlyExpense,
       })
     : { scenarioClosureStatus: "SCENARIO_LOCKED", scenarioClosureLabel: "No Access", scenarioClosureScore: 0, scenarioClosureColor: "#94a3b8", scenarioClosureBg: "rgba(148,163,184,0.10)", scenarioClosureNotice: "Scenario Closure 7.1.5: engine terkunci untuk role ini.", scenarioClosureMemo: "Role tidak memiliki akses Financial Summary.", closureRows: [], scenarioClosureLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, requiredMonthlyClosureBuffer: 0, requiredDailyClosureBuffer: 0, nextScenarioTrack: "LOCKED_BEFORE_7_2", netMonthlyCashflow: 0, recommendedMode: "LOCKED", scenarioStatus: "SCENARIO_LOCKED", stressStatus: "STRESS_LOCKED", projectionStatus: "CASHFLOW_LOCKED", goalFeasibilityStatus: "GOAL_LOCKED", decisionStatus: "DECISION_LOCKED", decisionRecommendation: "LOCKED_SCENARIO", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", phaseClosureStatus: "PHASE_LOCKED", nextPhaseGate: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+  const financialPredictiveAllocationPlanningEngine = canViewFinancialSummaryNow
+    ? buildPredictiveAllocationPlanningEngine({
+        scenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+        scenarioEngine: financialPredictiveScenarioSimulationEngine,
+        stressEngine: financialPredictiveScenarioStressTestEngine,
+        projectionEngine: financialPredictiveScenarioCashflowProjectionEngine,
+        goalFeasibilityEngine: financialPredictiveScenarioGoalFeasibilityEngine,
+        decisionRecommendationEngine: financialPredictiveScenarioDecisionRecommendationEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        healthEngine: financialHealthEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+        mandatoryMonthlyTarget: financialHealthDecisionEngine?.mandatoryMonthlyTarget || 0,
+      })
+    : { allocationStatus: "ALLOCATION_LOCKED", allocationLabel: "No Access", allocationMode: "LOCKED_ALLOCATION", allocationScore: 0, allocationColor: "#94a3b8", allocationBg: "rgba(148,163,184,0.10)", allocationNotice: "Allocation Planning 7.2.0: engine terkunci untuk role ini.", allocationMemo: "Role tidak memiliki akses Financial Summary.", allocationRows: [], allocationLocks: ["Role tidak memiliki akses Financial Summary."], requiredMonthlyAllocationBuffer: 0, requiredDailyAllocationBuffer: 0, allocationShortfall: 0, allocatableMonthly: 0, protectedMonthly: 0, recoveryAllocation: 0, mandatoryGoalAllocation: 0, controlBufferAllocation: 0, growthAllocation: 0, netMonthlyCashflow: 0, scenarioClosureStatus: "SCENARIO_LOCKED", nextScenarioTrack: "NO_ACCESS", scenarioStatus: "SCENARIO_LOCKED", stressStatus: "STRESS_LOCKED", projectionStatus: "CASHFLOW_LOCKED", goalFeasibilityStatus: "GOAL_LOCKED", decisionStatus: "DECISION_LOCKED", decisionRecommendation: "LOCKED_SCENARIO", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
 
 
   const childTotals = ["aroon","arunika","arkaja"].map(child => {
@@ -9033,6 +9244,7 @@ export default function App() {
       { key: "predictiveScenarioGoalFeasibilityEngine", label: "Predictive Scenario Goal Feasibility Engine", count: financialPredictiveScenarioGoalFeasibilityEngine ? 1 : 0, critical: false },
       { key: "predictiveScenarioDecisionRecommendationEngine", label: "Predictive Scenario Decision Recommendation Engine", count: financialPredictiveScenarioDecisionRecommendationEngine ? 1 : 0, critical: false },
       { key: "predictiveScenarioClosureEngine", label: "Predictive Scenario Closure Engine", count: financialPredictiveScenarioClosureEngine ? 1 : 0, critical: false },
+      { key: "predictiveAllocationPlanningEngine", label: "Predictive Allocation Planning Engine", count: financialPredictiveAllocationPlanningEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -9046,7 +9258,7 @@ export default function App() {
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.1.5: Predictive Scenario Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.2.0: Predictive Allocation Planning Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, dan net worth baseline."
       ]
     };
   }
@@ -9056,7 +9268,7 @@ export default function App() {
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-scenario-closure-engine-7-1-5",
+      version: APP_VERSION + " predictive-allocation-planning-engine-7-2-0",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -9099,6 +9311,7 @@ export default function App() {
       predictiveScenarioGoalFeasibilityEngine: financialPredictiveScenarioGoalFeasibilityEngine,
       predictiveScenarioDecisionRecommendationEngine: financialPredictiveScenarioDecisionRecommendationEngine,
       predictiveScenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+      predictiveAllocationPlanningEngine: financialPredictiveAllocationPlanningEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -9550,7 +9763,7 @@ export default function App() {
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 7.1.5. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive scenario closure engine 7.1.5.
+            FinPlan v1.1.0 phase 7.2.0. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive allocation planning engine 7.2.0.
           </div>
         </div>
       </div>
@@ -10069,7 +10282,7 @@ export default function App() {
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 7.1.5. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive scenario closure engine 7.1.5.
+                FinPlan v1.1.0 phase 7.2.0. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive allocation planning engine 7.2.0.
               </div>
             </div>
           </div>
@@ -12500,6 +12713,34 @@ export default function App() {
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Scenario closure: {financialPredictiveScenarioClosureEngine.scenarioClosureLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveAllocationPlanningEngine.allocationBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveAllocationPlanningEngine.allocationColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Allocation Planning 7.2.0</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveAllocationPlanningEngine.allocationNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveAllocationPlanningEngine.allocationColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveAllocationPlanningEngine.allocationScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveAllocationPlanningEngine.allocationRows.slice(0, 5).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveAllocationPlanningEngine.allocationColor, lineHeight: 1.45 }}>Memo: {financialPredictiveAllocationPlanningEngine.allocationMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Allocation lock: {financialPredictiveAllocationPlanningEngine.allocationLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
                 {financialLedgerValidation.issueCount > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Validation Layer aktif: {financialLedgerValidation.issueCount} isu ledger terdeteksi. Cek ledger tanpa wallet, wallet hilang, atau transfer internal yang belum balance.</div>}
