@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.3.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.3.6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.3.5";
-const FINANCIAL_ENGINE_NAME = "Predictive Budget Rebalancing Engine";
+const FINANCIAL_ENGINE_VERSION = "7.3.6";
+const FINANCIAL_ENGINE_NAME = "Predictive Budget Closure Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -9252,6 +9252,279 @@ function buildPredictiveBudgetRebalancingEngine({
 
 
 
+function buildPredictiveBudgetClosureEngine({
+  budgetRebalancingEngine = {},
+  budgetMonitoringEngine = {},
+  budgetExecutionEngine = {},
+  budgetComplianceEngine = {},
+  budgetAlertEngine = {},
+  budgetControlEngine = {},
+  allocationClosureEngine = {},
+  scenarioClosureEngine = {},
+  cfoEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const budgetRebalancingStatus = String(budgetRebalancingEngine?.budgetRebalancingStatus || "BUDGET_REBALANCE_LOCKED").toUpperCase();
+  const budgetRebalancingMode = String(budgetRebalancingEngine?.budgetRebalancingMode || "LOCKED_BUDGET_REBALANCE").toUpperCase();
+  const budgetRebalancingScore = Math.max(0, Math.min(100, asEngineNumber(budgetRebalancingEngine?.budgetRebalancingScore)));
+  const budgetMonitoringStatus = String(budgetRebalancingEngine?.budgetMonitoringStatus || budgetMonitoringEngine?.budgetMonitoringStatus || "BUDGET_MONITOR_LOCKED").toUpperCase();
+  const budgetExecutionStatus = String(budgetRebalancingEngine?.budgetExecutionStatus || budgetExecutionEngine?.budgetExecutionStatus || "BUDGET_EXECUTION_LOCKED").toUpperCase();
+  const budgetComplianceStatus = String(budgetRebalancingEngine?.budgetComplianceStatus || budgetComplianceEngine?.budgetComplianceStatus || "BUDGET_COMPLIANCE_LOCKED").toUpperCase();
+  const alertStatus = String(budgetRebalancingEngine?.alertStatus || budgetAlertEngine?.alertStatus || "ALERT_LOCKED").toUpperCase();
+  const budgetStatus = String(budgetRebalancingEngine?.budgetStatus || budgetControlEngine?.budgetStatus || "BUDGET_LOCKED").toUpperCase();
+  const allocationClosureStatus = String(budgetRebalancingEngine?.allocationClosureStatus || allocationClosureEngine?.closureStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const scenarioClosureStatus = String(budgetRebalancingEngine?.scenarioClosureStatus || scenarioClosureEngine?.scenarioClosureStatus || "SCENARIO_LOCKED").toUpperCase();
+  const cfoDecision = String(budgetRebalancingEngine?.cfoDecision || cfoEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const policyComplianceStatus = String(budgetRebalancingEngine?.policyComplianceStatus || complianceEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(budgetRebalancingEngine?.policyMode || governanceEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(budgetRebalancingEngine?.gateDecision || gateEngine?.gateDecision || "LOCKED").toUpperCase();
+
+  const rebalanceAmount = Math.max(0, asEngineNumber(budgetRebalancingEngine?.rebalanceAmount));
+  const dailyRebalanceTarget = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyRebalanceTarget), Math.ceil(rebalanceAmount / 30));
+  const budgetRebalanceGap = Math.max(0, asEngineNumber(budgetRebalancingEngine?.budgetRebalanceGap));
+  const dailyBudgetRebalanceGap = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyBudgetRebalanceGap), Math.ceil(budgetRebalanceGap / 30));
+  const spendingCutRequired = Math.max(0, asEngineNumber(budgetRebalancingEngine?.spendingCutRequired));
+  const dailySpendingCutRequired = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailySpendingCutRequired), Math.ceil(spendingCutRequired / 30));
+  const recoveryRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.recoveryRebalance));
+  const dailyRecoveryRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyRecoveryRebalance), Math.ceil(recoveryRebalance / 30));
+  const goalReserveRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.goalReserveRebalance));
+  const dailyGoalReserveRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyGoalReserveRebalance), Math.ceil(goalReserveRebalance / 30));
+  const holdCashRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.holdCashRebalance));
+  const dailyHoldCashRebalance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyHoldCashRebalance), Math.ceil(holdCashRebalance / 30));
+  const growthReleaseAdjustment = Math.max(0, asEngineNumber(budgetRebalancingEngine?.growthReleaseAdjustment));
+  const dailyGrowthReleaseAdjustment = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyGrowthReleaseAdjustment), Math.floor(growthReleaseAdjustment / 30));
+  const monthlySpendAllowance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.monthlySpendAllowance), asEngineNumber(budgetExecutionEngine?.monthlySpendAllowance));
+  const dailySpendAllowance = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailySpendAllowance), asEngineNumber(budgetExecutionEngine?.dailySpendAllowance), Math.floor(monthlySpendAllowance / 30));
+  const monthlySpendPace = Math.max(0, asEngineNumber(budgetRebalancingEngine?.monthlySpendPace), safeExpense);
+  const dailySpendPace = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailySpendPace), Math.ceil(monthlySpendPace / 30));
+  const budgetBurnRate = Math.max(0, asEngineNumber(budgetRebalancingEngine?.budgetBurnRate));
+  const monthlyOverspendRisk = Math.max(0, asEngineNumber(budgetRebalancingEngine?.monthlyOverspendRisk), asEngineNumber(budgetAlertEngine?.monthlyOverspendRisk));
+  const dailyOverspendRisk = Math.max(0, asEngineNumber(budgetRebalancingEngine?.dailyOverspendRisk), Math.ceil(monthlyOverspendRisk / 30));
+  const protectedCashNeed = Math.max(0, asEngineNumber(budgetRebalancingEngine?.protectedCashNeed), asEngineNumber(budgetExecutionEngine?.protectedCashNeed));
+  const minimumRecoveryFloor = Math.max(0, asEngineNumber(budgetRebalancingEngine?.minimumRecoveryFloor), safeWallet < 0 ? Math.abs(safeWallet) : 0, safeNetWorth < 0 ? Math.ceil(Math.abs(safeNetWorth) / 6) : 0);
+  const recoveryRequired = !!budgetRebalancingEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || recoveryRebalance > 0 || budgetRebalancingStatus === "BUDGET_REBALANCE_BREACH";
+  const growthLocked = !!budgetRebalancingEngine?.growthLocked || budgetRebalancingStatus !== "BUDGET_REBALANCE_OK" || budgetMonitoringStatus !== "BUDGET_MONITOR_OK" || budgetComplianceStatus !== "BUDGET_COMPLIANT" || alertStatus !== "ALERT_CLEAR";
+
+  const closureBuffer = Math.max(0, protectedCashNeed, holdCashRebalance, minimumRecoveryFloor, spendingCutRequired + recoveryRebalance + goalReserveRebalance);
+  const dailyClosureBuffer = Math.ceil(closureBuffer / 30);
+  const closureGap = Math.max(0, budgetRebalanceGap, closureBuffer - Math.max(0, safeWallet), spendingCutRequired - Math.max(0, netMonthlyCashflow));
+  const dailyClosureGap = Math.ceil(closureGap / 30);
+  const safeReleaseAfterClosure = Math.max(0, growthReleaseAdjustment - closureGap);
+  const dailySafeReleaseAfterClosure = Math.floor(safeReleaseAfterClosure / 30);
+  const monthlyBudgetClosureRoom = Math.max(0, monthlySpendAllowance - monthlySpendPace - spendingCutRequired - recoveryRebalance);
+  const dailyBudgetClosureRoom = Math.floor(monthlyBudgetClosureRoom / 30);
+  const closurePressureRatio = monthlySpendAllowance > 0 ? Math.round((closureBuffer / Math.max(1, monthlySpendAllowance)) * 100) : (closureBuffer > 0 ? 999 : 0);
+  const canAdvanceToCashflowCommand = budgetRebalancingStatus === "BUDGET_REBALANCE_OK" && budgetMonitoringStatus === "BUDGET_MONITOR_OK" && budgetExecutionStatus === "BUDGET_EXECUTE" && budgetComplianceStatus === "BUDGET_COMPLIANT" && alertStatus === "ALERT_CLEAR" && allocationClosureStatus === "ALLOCATION_READY" && scenarioClosureStatus === "SCENARIO_READY" && !recoveryRequired && closureGap === 0 && safeWallet >= 0 && safeNetWorth >= 0;
+
+  const blockers = [];
+  if (budgetRebalancingStatus === "BUDGET_REBALANCE_LOCKED") blockers.push("budget_rebalancing_locked");
+  if (budgetRebalancingStatus === "BUDGET_REBALANCE_BREACH") blockers.push("budget_rebalancing_breach");
+  if (budgetMonitoringStatus !== "BUDGET_MONITOR_OK") blockers.push("budget_monitor_not_ok");
+  if (budgetExecutionStatus !== "BUDGET_EXECUTE") blockers.push("budget_execution_not_execute");
+  if (budgetComplianceStatus !== "BUDGET_COMPLIANT") blockers.push("budget_compliance_not_clear");
+  if (alertStatus !== "ALERT_CLEAR") blockers.push("budget_alert_not_clear");
+  if (budgetStatus === "BUDGET_LOCKED") blockers.push("budget_locked");
+  if (allocationClosureStatus !== "ALLOCATION_READY") blockers.push("allocation_layer_not_closed");
+  if (scenarioClosureStatus !== "SCENARIO_READY") blockers.push("scenario_layer_not_closed");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  if (["LOCKED", "BREACH"].includes(policyComplianceStatus)) blockers.push("policy_compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("gate_not_clear");
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+  if (closureGap > 0) blockers.push("budget_closure_gap");
+  if (spendingCutRequired > 0) blockers.push("spending_cut_required");
+  if (recoveryRequired) blockers.push("recovery_required");
+  if (budgetBurnRate >= 100) blockers.push("budget_burn_rate_high");
+
+  const closurePenalty =
+    (budgetRebalancingStatus === "BUDGET_REBALANCE_LOCKED" ? 26 : budgetRebalancingStatus === "BUDGET_REBALANCE_BREACH" ? 18 : budgetRebalancingStatus === "BUDGET_REBALANCE_WATCH" ? 8 : 0) +
+    (budgetMonitoringStatus !== "BUDGET_MONITOR_OK" ? 12 : 0) +
+    (budgetExecutionStatus !== "BUDGET_EXECUTE" ? 10 : 0) +
+    (budgetComplianceStatus !== "BUDGET_COMPLIANT" ? 12 : 0) +
+    (alertStatus !== "ALERT_CLEAR" ? 8 : 0) +
+    (safeWallet < 0 ? 16 : 0) +
+    (safeNetWorth < 0 ? 14 : 0) +
+    (netMonthlyCashflow < 0 ? 10 : 0) +
+    (closureGap > 0 ? 16 : 0) +
+    (spendingCutRequired > 0 ? 10 : 0) +
+    (recoveryRequired ? 12 : 0) +
+    (closurePressureRatio >= 100 ? 8 : closurePressureRatio >= 70 ? 4 : 0) +
+    (growthLocked ? 4 : 0);
+  const closureCap = Math.min(
+    budgetRebalancingStatus === "BUDGET_REBALANCE_LOCKED" ? 32 : budgetRebalancingStatus === "BUDGET_REBALANCE_BREACH" ? 58 : budgetRebalancingStatus === "BUDGET_REBALANCE_WATCH" ? 78 : 100,
+    budgetComplianceStatus === "BUDGET_COMPLIANCE_LOCKED" ? 34 : budgetComplianceStatus === "BUDGET_BREACH" ? 58 : 100,
+    alertStatus === "ALERT_LOCKED" ? 34 : alertStatus === "ALERT_BREACH" ? 58 : 100,
+    safeWallet < 0 ? 38 : 100,
+    safeNetWorth < 0 ? 42 : 100,
+    closureGap > 0 ? 64 : 100,
+    recoveryRequired ? 66 : 100
+  );
+  const closureBase = Math.round((budgetRebalancingScore * 0.46) + ((closureGap === 0 ? 100 : 45) * 0.18) + ((canAdvanceToCashflowCommand ? 100 : 50) * 0.16) + ((monthlyBudgetClosureRoom > 0 ? 100 : 45) * 0.10) + ((closurePressureRatio <= 50 ? 100 : closurePressureRatio <= 100 ? 62 : 35) * 0.10));
+  const budgetClosureScore = Math.max(0, Math.min(closureCap, closureBase - closurePenalty + 18));
+
+  let budgetClosureStatus = "BUDGET_CLOSURE_READY";
+  let budgetClosureLabel = "Budget Closure Ready";
+  let budgetClosureMode = "READY_BUDGET_CLOSURE";
+  let nextBudgetTrack = "READY_7_4_CASHFLOW_COMMAND";
+  if (budgetRebalancingStatus === "BUDGET_REBALANCE_LOCKED" || budgetComplianceStatus === "BUDGET_COMPLIANCE_LOCKED" || alertStatus === "ALERT_LOCKED" || gateDecision === "LOCKED") {
+    budgetClosureStatus = "BUDGET_CLOSURE_LOCKED";
+    budgetClosureLabel = "Budget Closure Locked";
+    budgetClosureMode = "LOCKED_BUDGET_CLOSURE";
+    nextBudgetTrack = "LOCKED_STAY_7_3";
+  } else if (recoveryRequired || closureGap > 0 || spendingCutRequired > 0 || budgetClosureScore < 50) {
+    budgetClosureStatus = "BUDGET_CLOSURE_RECOVERY";
+    budgetClosureLabel = "Budget Closure Recovery";
+    budgetClosureMode = "RECOVERY_BUDGET_CLOSURE";
+    nextBudgetTrack = "RECOVERY_BEFORE_7_4";
+  } else if (!canAdvanceToCashflowCommand || growthLocked || budgetClosureScore < 76) {
+    budgetClosureStatus = "BUDGET_CLOSURE_CONTROL";
+    budgetClosureLabel = "Budget Closure Control";
+    budgetClosureMode = "CONTROL_BUDGET_CLOSURE";
+    nextBudgetTrack = "CONTROLLED_7_4_CASHFLOW_COMMAND";
+  }
+
+  const budgetClosureColor = budgetClosureStatus === "BUDGET_CLOSURE_READY" ? "#86efac" : budgetClosureStatus === "BUDGET_CLOSURE_CONTROL" ? "#fde68a" : budgetClosureStatus === "BUDGET_CLOSURE_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const budgetClosureBg = budgetClosureStatus === "BUDGET_CLOSURE_READY" ? "rgba(16,185,129,0.10)" : budgetClosureStatus === "BUDGET_CLOSURE_CONTROL" ? "rgba(245,158,11,0.11)" : budgetClosureStatus === "BUDGET_CLOSURE_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const budgetClosureRows = [
+    {
+      key: "closure-status",
+      label: "Budget closure gate",
+      color: budgetClosureColor,
+      metric: budgetClosureStatus.replace("BUDGET_CLOSURE_", ""),
+      action: budgetClosureStatus === "BUDGET_CLOSURE_READY" ? "Budget layer siap ditutup dan lanjut cashflow command." : budgetClosureStatus === "BUDGET_CLOSURE_CONTROL" ? "Budget boleh lanjut secara controlled; growth tetap dibatasi." : budgetClosureStatus === "BUDGET_CLOSURE_RECOVERY" ? "Budget belum ditutup; recovery dan spending cut wajib diprioritaskan." : "Budget closure terkunci sampai budget rebalancing/compliance clear.",
+    },
+    {
+      key: "next-track",
+      label: "Next track",
+      color: budgetClosureColor,
+      metric: nextBudgetTrack.replace(/_/g, " "),
+      action: nextBudgetTrack.includes("7_4") ? "Track berikutnya masuk Predictive Cashflow Command Layer." : "Tetap di budget layer sampai blocker hilang.",
+    },
+    {
+      key: "closure-gap",
+      label: "Closure gap",
+      color: closureGap > 0 ? "#fecaca" : "#86efac",
+      metric: closureGap > 0 ? `${formatRupiah(closureGap)}` : "Clear",
+      action: closureGap > 0 ? `Tutup gap sekitar ${formatRupiah(dailyClosureGap)}/hari sebelum advance.` : "Tidak ada gap utama untuk menutup layer budget.",
+    },
+    {
+      key: "closure-buffer",
+      label: "Closure buffer",
+      color: closureBuffer > 0 ? "#c7d2fe" : "#94a3b8",
+      metric: `${formatRupiah(dailyClosureBuffer)}/hari`,
+      action: "Buffer menjaga recovery, goal/reserve, dan protected cash sebelum pindah layer.",
+    },
+    {
+      key: "safe-release-after-closure",
+      label: "Safe release after closure",
+      color: dailySafeReleaseAfterClosure > 0 ? "#86efac" : "#94a3b8",
+      metric: `${formatRupiah(dailySafeReleaseAfterClosure)}/hari`,
+      action: dailySafeReleaseAfterClosure > 0 ? "Release aman tersedia setelah closure." : "Tidak ada release aman; cash tetap ditahan.",
+    },
+    {
+      key: "budget-room",
+      label: "Budget closure room",
+      color: dailyBudgetClosureRoom > 0 ? "#86efac" : "#fde68a",
+      metric: `${formatRupiah(Math.max(0, dailyBudgetClosureRoom))}/hari`,
+      action: dailyBudgetClosureRoom > 0 ? "Budget punya ruang harian setelah allowance dan recovery." : "Budget room sempit; kontrol spending tetap aktif.",
+    },
+  ];
+  const budgetClosureLocks = blockers.length
+    ? blockers.slice(0, 5).map(item => `Budget closure blocker: ${item}.`)
+    : ["Budget closure clear: budget, allocation, scenario, dan CFO gate siap lanjut ke cashflow command."];
+  const budgetClosureMemo = budgetClosureStatus === "BUDGET_CLOSURE_READY"
+    ? `Ready: budget layer tertutup; lanjut 7.4 Cashflow Command dengan release aman ${formatRupiah(dailySafeReleaseAfterClosure)}/hari.`
+    : budgetClosureStatus === "BUDGET_CLOSURE_CONTROL"
+      ? `Control: boleh lanjut controlled 7.4, tapi tetap jaga buffer ${formatRupiah(dailyClosureBuffer)}/hari.`
+      : budgetClosureStatus === "BUDGET_CLOSURE_RECOVERY"
+        ? `Recovery: tutup gap ${formatRupiah(dailyClosureGap)}/hari dan potong spending ${formatRupiah(dailySpendingCutRequired)}/hari.`
+        : "Locked: budget layer belum valid untuk ditutup.";
+  const budgetClosureNotice = `Budget Closure 7.3.6: ${budgetClosureMode} · ${budgetClosureStatus} · score ${budgetClosureScore}/100`;
+
+  return {
+    engine: "Predictive Budget Closure Engine",
+    phase: "7.3.6",
+    budgetClosureStatus,
+    budgetClosureLabel,
+    budgetClosureMode,
+    budgetClosureScore,
+    budgetClosureColor,
+    budgetClosureBg,
+    budgetClosureNotice,
+    budgetClosureMemo,
+    budgetClosureRows,
+    budgetClosureLocks,
+    blockers,
+    blockerCount: blockers.length,
+    nextBudgetTrack,
+    canAdvanceToCashflowCommand,
+    closureBuffer,
+    dailyClosureBuffer,
+    closureGap,
+    dailyClosureGap,
+    safeReleaseAfterClosure,
+    dailySafeReleaseAfterClosure,
+    monthlyBudgetClosureRoom,
+    dailyBudgetClosureRoom,
+    closurePressureRatio,
+    rebalanceAmount,
+    dailyRebalanceTarget,
+    budgetRebalanceGap,
+    dailyBudgetRebalanceGap,
+    spendingCutRequired,
+    dailySpendingCutRequired,
+    recoveryRebalance,
+    dailyRecoveryRebalance,
+    goalReserveRebalance,
+    dailyGoalReserveRebalance,
+    holdCashRebalance,
+    dailyHoldCashRebalance,
+    growthReleaseAdjustment,
+    dailyGrowthReleaseAdjustment,
+    monthlySpendAllowance,
+    dailySpendAllowance,
+    monthlySpendPace,
+    dailySpendPace,
+    budgetBurnRate,
+    monthlyOverspendRisk,
+    dailyOverspendRisk,
+    protectedCashNeed,
+    minimumRecoveryFloor,
+    budgetRebalancingStatus,
+    budgetRebalancingMode,
+    budgetRebalancingScore,
+    budgetMonitoringStatus,
+    budgetExecutionStatus,
+    budgetComplianceStatus,
+    alertStatus,
+    budgetStatus,
+    allocationClosureStatus,
+    scenarioClosureStatus,
+    cfoDecision,
+    policyComplianceStatus,
+    policyMode,
+    gateDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: budgetClosureStatus === "BUDGET_CLOSURE_READY" && budgetClosureScore >= 76 && canAdvanceToCashflowCommand,
+  };
+}
+
+
+
   const financialPredictiveBudgetExecutionEngine = canViewFinancialSummaryNow
     ? buildPredictiveBudgetExecutionEngine({
         budgetComplianceEngine: financialPredictiveBudgetComplianceEngine,
@@ -9312,6 +9585,29 @@ function buildPredictiveBudgetRebalancingEngine({
         monthlyExpense,
       })
     : { budgetRebalancingStatus: "BUDGET_REBALANCE_LOCKED", budgetRebalancingLabel: "No Access", budgetRebalancingMode: "LOCKED_BUDGET_REBALANCE", budgetRebalancingScore: 0, budgetRebalancingColor: "#94a3b8", budgetRebalancingBg: "rgba(148,163,184,0.10)", budgetRebalancingNotice: "Budget Rebalancing 7.3.5: engine terkunci untuk role ini.", budgetRebalancingMemo: "Role tidak memiliki akses Financial Summary.", budgetRebalancingRows: [], budgetRebalancingLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, rebalanceAmount: 0, dailyRebalanceTarget: 0, budgetRebalanceGap: 0, dailyBudgetRebalanceGap: 0, rebalancePressureRatio: 0, spendingCutRequired: 0, dailySpendingCutRequired: 0, recoveryRebalance: 0, dailyRecoveryRebalance: 0, goalReserveRebalance: 0, dailyGoalReserveRebalance: 0, holdCashRebalance: 0, dailyHoldCashRebalance: 0, growthReleaseAdjustment: 0, dailyGrowthReleaseAdjustment: 0, monthlySpendAllowance: 0, dailySpendAllowance: 0, monthlySpendPace: 0, dailySpendPace: 0, budgetBurnRate: 0, monitorGap: 0, dailyMonitorGap: 0, monthlyAllowanceGap: 0, dailyAllowanceGap: 0, monthlyOverspendRisk: 0, dailyOverspendRisk: 0, holdCash: 0, cashToHoldDaily: 0, recoveryExecutionAmount: 0, recoveryDailyTarget: 0, goalExecutionAmount: 0, reserveExecutionAmount: 0, goalReserveDailyTarget: 0, growthExecutionRoom: 0, growthDailyRoom: 0, safeDailyRelease: 0, executionGap: 0, protectedCashNeed: 0, minimumRecoveryFloor: 0, budgetMonitoringStatus: "BUDGET_MONITOR_LOCKED", budgetMonitoringMode: "LOCKED_BUDGET_MONITORING", budgetMonitoringScore: 0, budgetExecutionStatus: "BUDGET_EXECUTION_LOCKED", budgetComplianceStatus: "BUDGET_COMPLIANCE_LOCKED", alertStatus: "ALERT_LOCKED", budgetStatus: "BUDGET_LOCKED", allocationRebalanceMode: "LOCKED_REBALANCE", allocationClosureStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+  const financialPredictiveBudgetClosureEngine = canViewFinancialSummaryNow
+    ? buildPredictiveBudgetClosureEngine({
+        budgetRebalancingEngine: financialPredictiveBudgetRebalancingEngine,
+        budgetMonitoringEngine: financialPredictiveBudgetMonitoringEngine,
+        budgetExecutionEngine: financialPredictiveBudgetExecutionEngine,
+        budgetComplianceEngine: financialPredictiveBudgetComplianceEngine,
+        budgetAlertEngine: financialPredictiveBudgetAlertEngine,
+        budgetControlEngine: financialPredictiveBudgetControlEngine,
+        allocationClosureEngine: financialPredictiveAllocationClosureEngine,
+        scenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", budgetClosureLabel: "No Access", budgetClosureMode: "LOCKED_BUDGET_CLOSURE", budgetClosureScore: 0, budgetClosureColor: "#94a3b8", budgetClosureBg: "rgba(148,163,184,0.10)", budgetClosureNotice: "Budget Closure 7.3.6: engine terkunci untuk role ini.", budgetClosureMemo: "Role tidak memiliki akses Financial Summary.", budgetClosureRows: [], budgetClosureLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, nextBudgetTrack: "LOCKED_STAY_7_3", canAdvanceToCashflowCommand: false, closureBuffer: 0, dailyClosureBuffer: 0, closureGap: 0, dailyClosureGap: 0, safeReleaseAfterClosure: 0, dailySafeReleaseAfterClosure: 0, monthlyBudgetClosureRoom: 0, dailyBudgetClosureRoom: 0, closurePressureRatio: 0, rebalanceAmount: 0, dailyRebalanceTarget: 0, budgetRebalanceGap: 0, dailyBudgetRebalanceGap: 0, spendingCutRequired: 0, dailySpendingCutRequired: 0, recoveryRebalance: 0, dailyRecoveryRebalance: 0, goalReserveRebalance: 0, dailyGoalReserveRebalance: 0, holdCashRebalance: 0, dailyHoldCashRebalance: 0, growthReleaseAdjustment: 0, dailyGrowthReleaseAdjustment: 0, monthlySpendAllowance: 0, dailySpendAllowance: 0, monthlySpendPace: 0, dailySpendPace: 0, budgetBurnRate: 0, monthlyOverspendRisk: 0, dailyOverspendRisk: 0, protectedCashNeed: 0, minimumRecoveryFloor: 0, budgetRebalancingStatus: "BUDGET_REBALANCE_LOCKED", budgetRebalancingMode: "LOCKED_BUDGET_REBALANCE", budgetRebalancingScore: 0, budgetMonitoringStatus: "BUDGET_MONITOR_LOCKED", budgetExecutionStatus: "BUDGET_EXECUTION_LOCKED", budgetComplianceStatus: "BUDGET_COMPLIANCE_LOCKED", alertStatus: "ALERT_LOCKED", budgetStatus: "BUDGET_LOCKED", allocationClosureStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
 
 
 
@@ -11831,6 +12127,7 @@ function buildPredictiveBudgetRebalancingEngine({
       { key: "predictiveBudgetExecutionEngine", label: "Predictive Budget Execution Engine", count: financialPredictiveBudgetExecutionEngine ? 1 : 0, critical: false },
       { key: "predictiveBudgetMonitoringEngine", label: "Predictive Budget Monitoring Engine", count: financialPredictiveBudgetMonitoringEngine ? 1 : 0, critical: false },
       { key: "predictiveBudgetRebalancingEngine", label: "Predictive Budget Rebalancing Engine", count: financialPredictiveBudgetRebalancingEngine ? 1 : 0, critical: false },
+      { key: "predictiveBudgetClosureEngine", label: "Predictive Budget Closure Engine", count: financialPredictiveBudgetClosureEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -11844,7 +12141,7 @@ function buildPredictiveBudgetRebalancingEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.3.5: Predictive Budget Rebalancing Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.3.6: Predictive Budget Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, dan net worth baseline."
       ]
     };
   }
@@ -11854,7 +12151,7 @@ function buildPredictiveBudgetRebalancingEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-budget-rebalancing-engine-7-3-5",
+      version: APP_VERSION + " predictive-budget-closure-engine-7-3-6",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -11909,6 +12206,7 @@ function buildPredictiveBudgetRebalancingEngine({
       predictiveBudgetExecutionEngine: financialPredictiveBudgetExecutionEngine,
       predictiveBudgetMonitoringEngine: financialPredictiveBudgetMonitoringEngine,
       predictiveBudgetRebalancingEngine: financialPredictiveBudgetRebalancingEngine,
+      predictiveBudgetClosureEngine: financialPredictiveBudgetClosureEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -15648,6 +15946,35 @@ function buildPredictiveBudgetRebalancingEngine({
                   <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
                     <div style={{ fontSize: "10px", color: financialPredictiveBudgetRebalancingEngine.budgetRebalancingColor, lineHeight: 1.45 }}>Memo: {financialPredictiveBudgetRebalancingEngine.budgetRebalancingMemo}</div>
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Rebalance lock: {financialPredictiveBudgetRebalancingEngine.budgetRebalancingLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveBudgetClosureEngine.budgetClosureBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveBudgetClosureEngine.budgetClosureColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Budget Closure 7.3.6</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveBudgetClosureEngine.budgetClosureNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveBudgetClosureEngine.budgetClosureColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveBudgetClosureEngine.budgetClosureScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveBudgetClosureEngine.budgetClosureRows.slice(0, 6).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{typeof row.metric === "number" ? formatFull(row.metric) : row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveBudgetClosureEngine.budgetClosureColor, lineHeight: 1.45 }}>Memo: {financialPredictiveBudgetClosureEngine.budgetClosureMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Closure lock: {financialPredictiveBudgetClosureEngine.budgetClosureLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
 
