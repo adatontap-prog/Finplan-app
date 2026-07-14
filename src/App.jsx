@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.4.0";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.4.1";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.4.0";
-const FINANCIAL_ENGINE_NAME = "Predictive Cashflow Command Engine";
+const FINANCIAL_ENGINE_VERSION = "7.4.1";
+const FINANCIAL_ENGINE_NAME = "Predictive Cashflow Guardrail Alert Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -9791,6 +9791,249 @@ function buildPredictiveCashflowCommandEngine({
 
 
 
+function buildPredictiveCashflowGuardrailAlertEngine({
+  cashflowCommandEngine = {},
+  budgetClosureEngine = {},
+  budgetMonitoringEngine = {},
+  budgetComplianceEngine = {},
+  cfoEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const commandStatus = String(cashflowCommandEngine?.cashflowCommandStatus || "CASHFLOW_COMMAND_LOCKED").toUpperCase();
+  const commandMode = String(cashflowCommandEngine?.cashflowCommandMode || "LOCKED_CASHFLOW_COMMAND").toUpperCase();
+  const commandScore = Math.max(0, Math.min(100, asEngineNumber(cashflowCommandEngine?.cashflowCommandScore)));
+  const budgetClosureStatus = String(cashflowCommandEngine?.budgetClosureStatus || budgetClosureEngine?.budgetClosureStatus || "BUDGET_CLOSURE_LOCKED").toUpperCase();
+  const budgetMonitoringStatus = String(cashflowCommandEngine?.budgetMonitoringStatus || budgetMonitoringEngine?.budgetMonitoringStatus || "BUDGET_MONITOR_LOCKED").toUpperCase();
+  const budgetComplianceStatus = String(cashflowCommandEngine?.budgetComplianceStatus || budgetComplianceEngine?.budgetComplianceStatus || "BUDGET_COMPLIANCE_LOCKED").toUpperCase();
+  const cfoDecision = String(cashflowCommandEngine?.cfoDecision || cfoEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const policyComplianceStatus = String(cashflowCommandEngine?.policyComplianceStatus || complianceEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(cashflowCommandEngine?.policyMode || governanceEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(cashflowCommandEngine?.gateDecision || gateEngine?.gateDecision || "LOCKED").toUpperCase();
+
+  const dailyCashInCommand = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailyCashInCommand), Math.ceil(safeIncome / 30));
+  const dailyCashOutLimit = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailyCashOutLimit), Math.floor(safeExpense / 30));
+  const dailySpendPace = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailySpendPace), Math.ceil(safeExpense / 30));
+  const dailyHoldCashCommand = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailyHoldCashCommand));
+  const dailyRecoveryCashCommand = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailyRecoveryCashCommand));
+  const dailySafeCashRelease = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailySafeCashRelease));
+  const dailyCashflowCommandGap = Math.max(0, asEngineNumber(cashflowCommandEngine?.dailyCashflowCommandGap));
+  const cashflowCoverageRatio = Math.max(0, asEngineNumber(cashflowCommandEngine?.cashflowCoverageRatio));
+  const minimumRecoveryFloor = Math.max(0, asEngineNumber(cashflowCommandEngine?.minimumRecoveryFloor));
+  const protectedCashNeed = Math.max(0, asEngineNumber(cashflowCommandEngine?.protectedCashNeed));
+  const recoveryRequired = !!cashflowCommandEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || commandStatus === "CASHFLOW_COMMAND_RECOVERY";
+  const growthLocked = !!cashflowCommandEngine?.growthLocked || commandStatus !== "CASHFLOW_COMMAND_READY";
+
+  const dailyOverspendRisk = Math.max(0, dailySpendPace - dailyCashOutLimit);
+  const monthlyOverspendRisk = dailyOverspendRisk * 30;
+  const cashInShortfallDaily = Math.max(0, dailyCashOutLimit + dailyHoldCashCommand + dailyRecoveryCashCommand - dailyCashInCommand);
+  const cashInShortfallMonthly = cashInShortfallDaily * 30;
+  const emergencyHoldFloor = Math.max(0, dailyHoldCashCommand * 30, protectedCashNeed, minimumRecoveryFloor);
+  const releaseFreeze = growthLocked || recoveryRequired || dailyCashflowCommandGap > 0 || dailyOverspendRisk > 0 || commandStatus !== "CASHFLOW_COMMAND_READY";
+  const safeDailyReleaseAfterGuardrail = releaseFreeze ? 0 : Math.max(0, dailySafeCashRelease - dailyOverspendRisk - cashInShortfallDaily);
+  const safeMonthlyReleaseAfterGuardrail = safeDailyReleaseAfterGuardrail * 30;
+  const guardrailGapDaily = Math.max(0, dailyCashflowCommandGap, dailyOverspendRisk, cashInShortfallDaily, recoveryRequired ? dailyRecoveryCashCommand : 0);
+  const guardrailGapMonthly = guardrailGapDaily * 30;
+  const breachCount = [
+    commandStatus === "CASHFLOW_COMMAND_LOCKED",
+    dailyOverspendRisk > 0,
+    cashInShortfallDaily > 0,
+    dailyCashflowCommandGap > 0,
+    recoveryRequired,
+    safeWallet < 0,
+    safeNetWorth < 0,
+    netMonthlyCashflow < 0,
+    ["BUDGET_COMPLIANCE_LOCKED", "BUDGET_BREACH"].includes(budgetComplianceStatus),
+    ["LOCKED", "BREACH"].includes(policyComplianceStatus),
+    ["LOCKED", "RECOVERY"].includes(gateDecision),
+  ].filter(Boolean).length;
+
+  const blockers = [];
+  if (commandStatus === "CASHFLOW_COMMAND_LOCKED") blockers.push("cashflow_command_locked");
+  if (commandStatus === "CASHFLOW_COMMAND_RECOVERY") blockers.push("cashflow_command_recovery");
+  if (budgetClosureStatus === "BUDGET_CLOSURE_LOCKED") blockers.push("budget_closure_locked");
+  if (budgetMonitoringStatus !== "BUDGET_MONITOR_OK") blockers.push("budget_monitor_not_ok");
+  if (budgetComplianceStatus !== "BUDGET_COMPLIANT") blockers.push("budget_compliance_not_clear");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  if (["LOCKED", "BREACH"].includes(policyComplianceStatus)) blockers.push("policy_compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("decision_gate_not_clear");
+  if (dailyOverspendRisk > 0) blockers.push("daily_overspend_risk");
+  if (cashInShortfallDaily > 0) blockers.push("cash_in_shortfall");
+  if (dailyCashflowCommandGap > 0) blockers.push("cashflow_command_gap");
+  if (recoveryRequired) blockers.push("recovery_required");
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+
+  const guardrailPenalty =
+    (commandStatus === "CASHFLOW_COMMAND_LOCKED" ? 30 : commandStatus === "CASHFLOW_COMMAND_RECOVERY" ? 22 : commandStatus === "CASHFLOW_COMMAND_CONTROL" ? 10 : 0) +
+    (dailyOverspendRisk > 0 ? 16 : 0) +
+    (cashInShortfallDaily > 0 ? 14 : 0) +
+    (dailyCashflowCommandGap > 0 ? 16 : 0) +
+    (recoveryRequired ? 14 : 0) +
+    (safeWallet < 0 ? 16 : 0) +
+    (safeNetWorth < 0 ? 14 : 0) +
+    (netMonthlyCashflow < 0 ? 12 : 0) +
+    (budgetComplianceStatus !== "BUDGET_COMPLIANT" ? 10 : 0) +
+    (policyComplianceStatus === "BREACH" ? 14 : policyComplianceStatus === "LOCKED" ? 10 : 0);
+  const guardrailCap = Math.min(
+    commandStatus === "CASHFLOW_COMMAND_LOCKED" ? 34 : commandStatus === "CASHFLOW_COMMAND_RECOVERY" ? 58 : commandStatus === "CASHFLOW_COMMAND_CONTROL" ? 78 : 100,
+    dailyOverspendRisk > 0 ? 72 : 100,
+    cashInShortfallDaily > 0 ? 70 : 100,
+    dailyCashflowCommandGap > 0 ? 66 : 100,
+    recoveryRequired ? 62 : 100,
+    safeWallet < 0 ? 40 : 100,
+    safeNetWorth < 0 ? 44 : 100,
+    netMonthlyCashflow < 0 ? 62 : 100
+  );
+  const incomeCoverageScore = cashflowCoverageRatio >= 120 ? 100 : cashflowCoverageRatio >= 100 ? 86 : cashflowCoverageRatio >= 80 ? 68 : 42;
+  const spendDisciplineScore = dailySpendPace <= dailyCashOutLimit ? 100 : dailyCashOutLimit > 0 ? Math.max(20, Math.round((dailyCashOutLimit / Math.max(1, dailySpendPace)) * 100)) : 20;
+  const guardrailBase = Math.round((commandScore * 0.36) + (incomeCoverageScore * 0.20) + (spendDisciplineScore * 0.20) + ((guardrailGapDaily === 0 ? 100 : 42) * 0.14) + ((safeDailyReleaseAfterGuardrail > 0 ? 100 : 58) * 0.10));
+  const guardrailScore = Math.max(0, Math.min(guardrailCap, guardrailBase - guardrailPenalty + 12));
+
+  let guardrailStatus = "CASHFLOW_ALERT_CLEAR";
+  let guardrailLabel = "Cashflow Alert Clear";
+  let guardrailMode = "GROWTH_CASHFLOW_GUARDRAIL";
+  if (commandStatus === "CASHFLOW_COMMAND_LOCKED" || gateDecision === "LOCKED" || budgetComplianceStatus === "BUDGET_COMPLIANCE_LOCKED") {
+    guardrailStatus = "CASHFLOW_ALERT_LOCKED";
+    guardrailLabel = "Cashflow Alert Locked";
+    guardrailMode = "LOCKED_CASHFLOW_GUARDRAIL";
+  } else if (breachCount >= 4 || dailyCashflowCommandGap > 0 || safeWallet < 0 || safeNetWorth < 0 || guardrailScore < 50) {
+    guardrailStatus = "CASHFLOW_ALERT_BREACH";
+    guardrailLabel = "Cashflow Alert Breach";
+    guardrailMode = "RECOVERY_CASHFLOW_GUARDRAIL";
+  } else if (breachCount > 0 || commandStatus === "CASHFLOW_COMMAND_CONTROL" || guardrailScore < 76) {
+    guardrailStatus = "CASHFLOW_ALERT_WATCH";
+    guardrailLabel = "Cashflow Alert Watch";
+    guardrailMode = "CONTROL_CASHFLOW_GUARDRAIL";
+  }
+
+  const guardrailColor = guardrailStatus === "CASHFLOW_ALERT_CLEAR" ? "#86efac" : guardrailStatus === "CASHFLOW_ALERT_WATCH" ? "#fde68a" : guardrailStatus === "CASHFLOW_ALERT_BREACH" ? "#fecaca" : "#94a3b8";
+  const guardrailBg = guardrailStatus === "CASHFLOW_ALERT_CLEAR" ? "rgba(16,185,129,0.10)" : guardrailStatus === "CASHFLOW_ALERT_WATCH" ? "rgba(245,158,11,0.11)" : guardrailStatus === "CASHFLOW_ALERT_BREACH" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const guardrailRows = [
+    {
+      key: "cashflow-alert-status",
+      label: "Cashflow alert gate",
+      color: guardrailColor,
+      metric: guardrailStatus.replace("CASHFLOW_ALERT_", ""),
+      action: guardrailStatus === "CASHFLOW_ALERT_CLEAR" ? "Cashflow clear; alert layer tidak menemukan breach utama." : guardrailStatus === "CASHFLOW_ALERT_WATCH" ? "Cashflow perlu watch; batasi outflow dan cek cash-in harian." : guardrailStatus === "CASHFLOW_ALERT_BREACH" ? "Cashflow breach; stop release dan fokus recovery/guardrail." : "Cashflow alert locked sampai command layer valid.",
+    },
+    {
+      key: "daily-spend-guardrail",
+      label: "Daily spend guardrail",
+      color: dailyOverspendRisk > 0 ? "#fecaca" : "#86efac",
+      metric: dailyOverspendRisk > 0 ? `${formatRupiah(dailyOverspendRisk)}/hari risk` : "Clear",
+      action: dailyOverspendRisk > 0 ? "Spending pace melewati cash-out limit harian." : "Spending pace masih dalam limit harian.",
+    },
+    {
+      key: "cash-in-shortfall",
+      label: "Cash-in shortfall",
+      color: cashInShortfallDaily > 0 ? "#fecaca" : "#86efac",
+      metric: cashInShortfallDaily > 0 ? `${formatRupiah(cashInShortfallDaily)}/hari` : "Clear",
+      action: cashInShortfallDaily > 0 ? "Cash-in harian belum cukup menutup outflow, hold cash, dan recovery." : "Cash-in harian cukup untuk command utama.",
+    },
+    {
+      key: "recovery-floor",
+      label: "Recovery floor",
+      color: dailyRecoveryCashCommand > 0 ? "#fecaca" : "#86efac",
+      metric: dailyRecoveryCashCommand > 0 ? `${formatRupiah(dailyRecoveryCashCommand)}/hari` : "Clear",
+      action: dailyRecoveryCashCommand > 0 ? "Recovery floor aktif; release/growth ditahan." : "Tidak ada recovery floor utama.",
+    },
+    {
+      key: "cash-hold-floor",
+      label: "Cash hold floor",
+      color: emergencyHoldFloor > 0 ? "#c7d2fe" : "#94a3b8",
+      metric: `${formatRupiah(emergencyHoldFloor)}`,
+      action: "Cash minimum yang harus tetap ditahan sebelum release.",
+    },
+    {
+      key: "safe-release-after-guardrail",
+      label: "Safe release after guardrail",
+      color: safeDailyReleaseAfterGuardrail > 0 ? "#86efac" : "#94a3b8",
+      metric: `${formatRupiah(safeDailyReleaseAfterGuardrail)}/hari`,
+      action: safeDailyReleaseAfterGuardrail > 0 ? "Release aman tersedia setelah alert guardrail." : "Release tidak aman; tahan cash dulu.",
+    },
+  ];
+  const guardrailLocks = blockers.length
+    ? blockers.slice(0, 5).map(item => `Cashflow guardrail blocker: ${item}.`)
+    : ["Cashflow guardrail clear: cash-in, cash-out, recovery floor, dan release aman sinkron."];
+  const guardrailMemo = guardrailStatus === "CASHFLOW_ALERT_CLEAR"
+    ? `Clear: cash-out limit ${formatRupiah(dailyCashOutLimit)}/hari, safe release ${formatRupiah(safeDailyReleaseAfterGuardrail)}/hari.`
+    : guardrailStatus === "CASHFLOW_ALERT_WATCH"
+      ? `Watch: jaga cash-out ${formatRupiah(dailyCashOutLimit)}/hari dan tutup gap ${formatRupiah(guardrailGapDaily)}/hari.`
+      : guardrailStatus === "CASHFLOW_ALERT_BREACH"
+        ? `Breach: freeze release, cut overspend ${formatRupiah(dailyOverspendRisk)}/hari, dan recovery ${formatRupiah(dailyRecoveryCashCommand)}/hari.`
+        : "Locked: cashflow command belum valid untuk alert guardrail.";
+  const guardrailNotice = `Cashflow Guardrail Alert 7.4.1: ${guardrailMode} · ${guardrailStatus} · score ${guardrailScore}/100`;
+
+  return {
+    engine: "Predictive Cashflow Guardrail Alert Engine",
+    phase: "7.4.1",
+    guardrailStatus,
+    guardrailLabel,
+    guardrailMode,
+    guardrailScore,
+    guardrailColor,
+    guardrailBg,
+    guardrailNotice,
+    guardrailMemo,
+    guardrailRows,
+    guardrailLocks,
+    blockers,
+    blockerCount: blockers.length,
+    dailyCashInCommand,
+    dailyCashOutLimit,
+    dailySpendPace,
+    dailyHoldCashCommand,
+    dailyRecoveryCashCommand,
+    dailySafeCashRelease,
+    dailySafeCashReleaseAfterGuardrail: safeDailyReleaseAfterGuardrail,
+    safeDailyReleaseAfterGuardrail,
+    safeMonthlyReleaseAfterGuardrail,
+    dailyOverspendRisk,
+    monthlyOverspendRisk,
+    cashInShortfallDaily,
+    cashInShortfallMonthly,
+    emergencyHoldFloor,
+    guardrailGapDaily,
+    guardrailGapMonthly,
+    cashflowCoverageRatio,
+    releaseFreeze,
+    breachCount,
+    recoveryRequired,
+    growthLocked,
+    safeWallet,
+    safeNetWorth,
+    safeIncome,
+    safeExpense,
+    netMonthlyCashflow,
+    commandStatus,
+    commandMode,
+    commandScore,
+    budgetClosureStatus,
+    budgetMonitoringStatus,
+    budgetComplianceStatus,
+    cfoDecision,
+    policyComplianceStatus,
+    policyMode,
+    gateDecision,
+    ok: guardrailStatus === "CASHFLOW_ALERT_CLEAR" && guardrailScore >= 76 && guardrailGapDaily === 0 && !releaseFreeze,
+  };
+}
+
+
+
   const financialPredictiveBudgetExecutionEngine = canViewFinancialSummaryNow
     ? buildPredictiveBudgetExecutionEngine({
         budgetComplianceEngine: financialPredictiveBudgetComplianceEngine,
@@ -9895,6 +10138,24 @@ function buildPredictiveCashflowCommandEngine({
         monthlyExpense,
       })
     : { cashflowCommandStatus: "CASHFLOW_COMMAND_LOCKED", cashflowCommandLabel: "No Access", cashflowCommandMode: "LOCKED_CASHFLOW_COMMAND", cashflowCommandScore: 0, cashflowCommandColor: "#94a3b8", cashflowCommandBg: "rgba(148,163,184,0.10)", cashflowCommandNotice: "Cashflow Command 7.4.0: engine terkunci untuk role ini.", cashflowCommandMemo: "Role tidak memiliki akses Financial Summary.", cashflowCommandRows: [], cashflowCommandLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, cashInCommand: 0, dailyCashInCommand: 0, cashOutLimit: 0, dailyCashOutLimit: 0, holdCashCommand: 0, dailyHoldCashCommand: 0, recoveryCashCommand: 0, dailyRecoveryCashCommand: 0, safeCashRelease: 0, dailySafeCashRelease: 0, cashflowCommandGap: 0, dailyCashflowCommandGap: 0, cashflowCoverageRatio: 0, dailyIncomeBase: 0, dailyExpenseBase: 0, netMonthlyCashflow: 0, budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", budgetClosureMode: "LOCKED_BUDGET_CLOSURE", budgetClosureScore: 0, nextBudgetTrack: "LOCKED_STAY_7_3", canAdvanceToCashflowCommand: false, budgetRebalancingStatus: "BUDGET_REBALANCE_LOCKED", budgetMonitoringStatus: "BUDGET_MONITOR_LOCKED", budgetExecutionStatus: "BUDGET_EXECUTION_LOCKED", budgetComplianceStatus: "BUDGET_COMPLIANCE_LOCKED", alertStatus: "ALERT_LOCKED", allocationClosureStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", closureBuffer: 0, dailyClosureBuffer: 0, closureGap: 0, dailyClosureGap: 0, safeReleaseAfterClosure: 0, dailySafeReleaseAfterClosure: 0, monthlyBudgetClosureRoom: 0, dailyBudgetClosureRoom: 0, monthlySpendAllowance: 0, dailySpendAllowance: 0, monthlySpendPace: 0, dailySpendPace: 0, protectedCashNeed: 0, minimumRecoveryFloor: 0, recoveryRequired: false, growthLocked: true, ok: false };
+
+
+  const financialPredictiveCashflowGuardrailAlertEngine = canViewFinancialSummaryNow
+    ? buildPredictiveCashflowGuardrailAlertEngine({
+        cashflowCommandEngine: financialPredictiveCashflowCommandEngine,
+        budgetClosureEngine: financialPredictiveBudgetClosureEngine,
+        budgetMonitoringEngine: financialPredictiveBudgetMonitoringEngine,
+        budgetComplianceEngine: financialPredictiveBudgetComplianceEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { guardrailStatus: "CASHFLOW_ALERT_LOCKED", guardrailLabel: "No Access", guardrailMode: "LOCKED_CASHFLOW_GUARDRAIL", guardrailScore: 0, guardrailColor: "#94a3b8", guardrailBg: "rgba(148,163,184,0.10)", guardrailNotice: "Cashflow Guardrail Alert 7.4.1: engine terkunci untuk role ini.", guardrailMemo: "Role tidak memiliki akses Financial Summary.", guardrailRows: [], guardrailLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, dailyCashInCommand: 0, dailyCashOutLimit: 0, dailySpendPace: 0, dailyHoldCashCommand: 0, dailyRecoveryCashCommand: 0, dailySafeCashRelease: 0, dailySafeCashReleaseAfterGuardrail: 0, safeDailyReleaseAfterGuardrail: 0, safeMonthlyReleaseAfterGuardrail: 0, dailyOverspendRisk: 0, monthlyOverspendRisk: 0, cashInShortfallDaily: 0, cashInShortfallMonthly: 0, emergencyHoldFloor: 0, guardrailGapDaily: 0, guardrailGapMonthly: 0, cashflowCoverageRatio: 0, releaseFreeze: true, breachCount: 0, recoveryRequired: false, growthLocked: true, safeWallet: 0, safeNetWorth: 0, safeIncome: 0, safeExpense: 0, netMonthlyCashflow: 0, commandStatus: "CASHFLOW_COMMAND_LOCKED", commandMode: "LOCKED_CASHFLOW_COMMAND", commandScore: 0, budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", budgetMonitoringStatus: "BUDGET_MONITOR_LOCKED", budgetComplianceStatus: "BUDGET_COMPLIANCE_LOCKED", cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", ok: false };
 
 
 
@@ -12417,6 +12678,7 @@ function buildPredictiveCashflowCommandEngine({
       { key: "predictiveBudgetRebalancingEngine", label: "Predictive Budget Rebalancing Engine", count: financialPredictiveBudgetRebalancingEngine ? 1 : 0, critical: false },
       { key: "predictiveBudgetClosureEngine", label: "Predictive Budget Closure Engine", count: financialPredictiveBudgetClosureEngine ? 1 : 0, critical: false },
       { key: "predictiveCashflowCommandEngine", label: "Predictive Cashflow Command Engine", count: financialPredictiveCashflowCommandEngine ? 1 : 0, critical: false },
+      { key: "predictiveCashflowGuardrailAlertEngine", label: "Predictive Cashflow Guardrail Alert Engine", count: financialPredictiveCashflowGuardrailAlertEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -12430,7 +12692,7 @@ function buildPredictiveCashflowCommandEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.4.0: Predictive Cashflow Command Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.4.1: Predictive Cashflow Guardrail Alert Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, cashflow guardrail alert, dan net worth baseline."
       ]
     };
   }
@@ -12440,7 +12702,7 @@ function buildPredictiveCashflowCommandEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-cashflow-command-engine-7-4-0",
+      version: APP_VERSION + " predictive-cashflow-guardrail-alert-engine-7-4-1",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -12497,6 +12759,7 @@ function buildPredictiveCashflowCommandEngine({
       predictiveBudgetRebalancingEngine: financialPredictiveBudgetRebalancingEngine,
       predictiveBudgetClosureEngine: financialPredictiveBudgetClosureEngine,
       predictiveCashflowCommandEngine: financialPredictiveCashflowCommandEngine,
+      predictiveCashflowGuardrailAlertEngine: financialPredictiveCashflowGuardrailAlertEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -16299,6 +16562,35 @@ function buildPredictiveCashflowCommandEngine({
                   </div>
                 </div>
 
+
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveCashflowGuardrailAlertEngine.guardrailBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveCashflowGuardrailAlertEngine.guardrailColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Cashflow Guardrail Alert 7.4.1</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveCashflowGuardrailAlertEngine.guardrailNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveCashflowGuardrailAlertEngine.guardrailColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveCashflowGuardrailAlertEngine.guardrailScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveCashflowGuardrailAlertEngine.guardrailRows.slice(0, 6).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{typeof row.metric === "number" ? formatFull(row.metric) : row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveCashflowGuardrailAlertEngine.guardrailColor, lineHeight: 1.45 }}>Memo: {financialPredictiveCashflowGuardrailAlertEngine.guardrailMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Guardrail lock: {financialPredictiveCashflowGuardrailAlertEngine.guardrailLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
 
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
                 {financialGoalBreakdown.duplicateGuardRows.length > 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fde68a", lineHeight: 1.45 }}>Anti double count aktif: {formatFull(financialGoalBreakdown.duplicateGuardTotal)} aset Goal tidak dihitung ulang karena masih terdeteksi di Investasi.</div>}
