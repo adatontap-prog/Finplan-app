@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.2.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.3.0";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.2.5";
-const FINANCIAL_ENGINE_NAME = "Predictive Allocation Closure Engine";
+const FINANCIAL_ENGINE_VERSION = "7.3.0";
+const FINANCIAL_ENGINE_NAME = "Predictive Budget Control Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -7724,6 +7724,223 @@ function buildPredictiveAllocationClosureEngine({
 }
 
 
+function buildPredictiveBudgetControlEngine({
+  allocationClosureEngine = {},
+  rebalancingEngine = {},
+  monitoringEngine = {},
+  executionEngine = {},
+  guardrailEngine = {},
+  allocationEngine = {},
+  scenarioClosureEngine = {},
+  decisionEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  cfoEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const closureStatus = String(allocationClosureEngine?.closureStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const closureMode = String(allocationClosureEngine?.closureMode || "LOCKED_ALLOCATION_CLOSE").toUpperCase();
+  const rebalanceStatus = String(rebalancingEngine?.rebalanceStatus || allocationClosureEngine?.rebalanceStatus || "REBALANCE_LOCKED").toUpperCase();
+  const monitoringStatus = String(monitoringEngine?.monitoringStatus || allocationClosureEngine?.monitoringStatus || "MONITOR_LOCKED").toUpperCase();
+  const executionStatus = String(executionEngine?.executionStatus || allocationClosureEngine?.executionStatus || "EXECUTION_LOCKED").toUpperCase();
+  const guardrailStatus = String(guardrailEngine?.guardrailStatus || allocationClosureEngine?.guardrailStatus || "GUARDRAIL_LOCKED").toUpperCase();
+  const allocationStatus = String(allocationEngine?.allocationStatus || allocationClosureEngine?.allocationStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const scenarioClosureStatus = String(scenarioClosureEngine?.scenarioClosureStatus || allocationClosureEngine?.scenarioClosureStatus || "SCENARIO_LOCKED").toUpperCase();
+  const decisionStatus = String(decisionEngine?.decisionStatus || "DECISION_LOCKED").toUpperCase();
+  const complianceStatus = String(complianceEngine?.complianceStatus || allocationClosureEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || allocationClosureEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || allocationClosureEngine?.gateDecision || "LOCKED").toUpperCase();
+  const cfoDecision = String(cfoEngine?.cfoDecision || allocationClosureEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const closureScore = Math.max(0, Math.min(100, asEngineNumber(allocationClosureEngine?.closureScore)));
+  const rebalanceScore = Math.max(0, Math.min(100, asEngineNumber(rebalancingEngine?.rebalanceScore)));
+  const monitoringScore = Math.max(0, Math.min(100, asEngineNumber(monitoringEngine?.monitoringScore)));
+  const executionScore = Math.max(0, Math.min(100, asEngineNumber(executionEngine?.executionScore)));
+  const guardrailScore = Math.max(0, Math.min(100, asEngineNumber(guardrailEngine?.guardrailScore)));
+  const allocationScore = Math.max(0, Math.min(100, asEngineNumber(allocationEngine?.allocationScore)));
+  const closureGap = Math.max(0, asEngineNumber(allocationClosureEngine?.closureGap));
+  const dailyClosureGap = Math.max(0, asEngineNumber(allocationClosureEngine?.dailyClosureGap));
+  const monthlyClosureBuffer = Math.max(0, asEngineNumber(allocationClosureEngine?.monthlyClosureBuffer));
+  const safeToRelease = Math.max(0, asEngineNumber(allocationClosureEngine?.safeToRelease));
+  const releaseCashNow = Math.max(0, asEngineNumber(executionEngine?.releaseCashNow), asEngineNumber(monitoringEngine?.releaseCashNow));
+  const holdCash = Math.max(0, asEngineNumber(executionEngine?.holdCash), asEngineNumber(monitoringEngine?.holdCash));
+  const recoveryExecution = Math.max(0, asEngineNumber(executionEngine?.recoveryExecution), asEngineNumber(rebalancingEngine?.recoverToFloor));
+  const goalExecution = Math.max(0, asEngineNumber(executionEngine?.goalExecution), asEngineNumber(rebalancingEngine?.protectGoal));
+  const reserveExecution = Math.max(0, asEngineNumber(executionEngine?.reserveExecution), asEngineNumber(rebalancingEngine?.reserveTopUp));
+  const growthExecution = Math.max(0, asEngineNumber(executionEngine?.growthExecution), asEngineNumber(rebalancingEngine?.growthRebalance));
+  const requiredMonthlyAllocationBuffer = Math.max(0, asEngineNumber(allocationEngine?.requiredMonthlyAllocationBuffer), monthlyClosureBuffer);
+  const recoveryRequired = !!allocationClosureEngine?.recoveryRequired || !!rebalancingEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || gateDecision === "RECOVERY" || cfoDecision === "CFO_RECOVERY";
+  const growthLocked = !!allocationClosureEngine?.growthLocked || !!rebalancingEngine?.growthLocked || policyMode === "RECOVERY" || gateDecision === "RECOVERY" || complianceStatus !== "COMPLIANT" || closureStatus !== "ALLOCATION_READY";
+  const protectedExpense = Math.max(0, Math.ceil(safeExpense * 0.72));
+  const recoveryBudget = Math.max(0, recoveryExecution, safeWallet < 0 ? Math.abs(safeWallet) : 0, safeNetWorth < 0 ? Math.ceil(Math.abs(safeNetWorth) / 6) : 0);
+  const mandatoryGoalBudget = Math.max(0, goalExecution);
+  const reserveBudget = Math.max(0, reserveExecution, Math.ceil(protectedExpense * 0.15));
+  const controlledSpendLimit = Math.max(0, safeIncome - recoveryBudget - mandatoryGoalBudget - reserveBudget - Math.max(0, closureGap));
+  const monthlyBudgetLimit = Math.max(0, Math.min(safeExpense, controlledSpendLimit || safeExpense));
+  const dailyBudgetLimit = Math.ceil(monthlyBudgetLimit / 30);
+  const discretionaryBudget = Math.max(0, safeIncome - protectedExpense - recoveryBudget - mandatoryGoalBudget - reserveBudget - Math.max(0, closureGap));
+  const growthBudgetCap = growthLocked ? 0 : Math.max(0, Math.min(growthExecution, discretionaryBudget, safeToRelease));
+  const budgetGap = Math.max(0, protectedExpense + recoveryBudget + mandatoryGoalBudget + reserveBudget - safeIncome, closureGap);
+  const dailyBudgetGap = Math.ceil(budgetGap / 30);
+  const blockers = [];
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+  if (closureStatus === "ALLOCATION_LOCKED") blockers.push("allocation_closure_locked");
+  if (closureStatus === "ALLOCATION_RECOVERY") blockers.push("allocation_recovery_required");
+  if (rebalanceStatus === "REBALANCE_LOCKED") blockers.push("rebalance_locked");
+  if (monitoringStatus === "MONITOR_LOCKED") blockers.push("monitor_locked");
+  if (executionStatus === "EXECUTION_LOCKED") blockers.push("execution_locked");
+  if (guardrailStatus === "GUARDRAIL_LOCKED") blockers.push("guardrail_locked");
+  if (allocationStatus === "ALLOCATION_LOCKED") blockers.push("allocation_locked");
+  if (scenarioClosureStatus === "SCENARIO_LOCKED") blockers.push("scenario_locked");
+  if (["DECISION_LOCKED", "DECISION_RECOVERY"].includes(decisionStatus)) blockers.push("scenario_decision_not_clear");
+  if (["LOCKED", "BREACH"].includes(complianceStatus)) blockers.push("compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("gate_not_clear");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  if (budgetGap > 0) blockers.push("budget_gap");
+  const budgetPenalty =
+    (safeWallet < 0 ? 18 : 0) +
+    (safeNetWorth < 0 ? 16 : 0) +
+    (netMonthlyCashflow < 0 ? 14 : 0) +
+    (budgetGap > 0 ? 16 : 0) +
+    (closureStatus === "ALLOCATION_LOCKED" ? 24 : closureStatus === "ALLOCATION_RECOVERY" ? 18 : closureStatus === "ALLOCATION_CONTROL" ? 8 : 0) +
+    (executionStatus === "EXECUTION_LOCKED" ? 12 : executionStatus === "EXECUTION_RECOVERY" ? 8 : 0) +
+    (guardrailStatus === "GUARDRAIL_LOCKED" ? 12 : guardrailStatus !== "GUARDRAIL_CLEAR" ? 6 : 0) +
+    (["LOCKED", "BREACH"].includes(complianceStatus) ? 10 : complianceStatus === "WATCH" ? 4 : 0) +
+    (growthLocked ? 4 : 0);
+  const budgetCap = Math.min(
+    safeWallet < 0 ? 36 : 100,
+    safeNetWorth < 0 ? 40 : 100,
+    closureStatus === "ALLOCATION_LOCKED" ? 28 : closureStatus === "ALLOCATION_RECOVERY" ? 54 : closureStatus === "ALLOCATION_CONTROL" ? 76 : 100,
+    executionStatus === "EXECUTION_LOCKED" ? 34 : executionStatus === "EXECUTION_RECOVERY" ? 64 : 100,
+    budgetGap > 0 ? 68 : 100,
+    recoveryRequired ? 64 : 100
+  );
+  const budgetBase = Math.round((closureScore * 0.36) + (rebalanceScore * 0.18) + (monitoringScore * 0.14) + (executionScore * 0.14) + (guardrailScore * 0.10) + (allocationScore * 0.08));
+  const budgetScore = Math.max(0, Math.min(budgetCap, budgetBase - budgetPenalty + 24));
+  let budgetStatus = "BUDGET_READY";
+  let budgetLabel = "Budget Ready";
+  let budgetMode = "GROWTH_BUDGET";
+  if (closureStatus === "ALLOCATION_LOCKED" || executionStatus === "EXECUTION_LOCKED" || guardrailStatus === "GUARDRAIL_LOCKED" || complianceStatus === "LOCKED" || gateDecision === "LOCKED") {
+    budgetStatus = "BUDGET_LOCKED";
+    budgetLabel = "Budget Locked";
+    budgetMode = "LOCKED_BUDGET";
+  } else if (recoveryRequired || closureStatus === "ALLOCATION_RECOVERY" || budgetGap > 0 || budgetScore < 50) {
+    budgetStatus = "BUDGET_RECOVERY";
+    budgetLabel = "Budget Recovery";
+    budgetMode = "RECOVERY_BUDGET";
+  } else if (growthLocked || closureStatus === "ALLOCATION_CONTROL" || budgetScore < 76) {
+    budgetStatus = "BUDGET_CONTROL";
+    budgetLabel = "Budget Control";
+    budgetMode = "CONTROL_BUDGET";
+  }
+  const budgetColor = budgetStatus === "BUDGET_READY" ? "#86efac" : budgetStatus === "BUDGET_CONTROL" ? "#fde68a" : budgetStatus === "BUDGET_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const budgetBg = budgetStatus === "BUDGET_READY" ? "rgba(16,185,129,0.10)" : budgetStatus === "BUDGET_CONTROL" ? "rgba(245,158,11,0.11)" : budgetStatus === "BUDGET_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const budgetRows = [
+    {
+      key: "budget-status",
+      label: "Budget control",
+      color: budgetColor,
+      metric: budgetStatus.replace("BUDGET_", ""),
+      action: budgetStatus === "BUDGET_READY" ? "Budget siap dijalankan dengan kontrol growth yang aman." : budgetStatus === "BUDGET_CONTROL" ? "Budget boleh berjalan, tapi growth dan discretionary cash harus dibatasi." : budgetStatus === "BUDGET_RECOVERY" ? "Prioritaskan recovery, goal wajib, dan reserve sebelum spending tambahan." : "Budget terkunci sampai blocker utama selesai.",
+    },
+    {
+      key: "monthly-budget-limit",
+      label: "Monthly spend limit",
+      color: budgetStatus === "BUDGET_READY" ? "#86efac" : "#fde68a",
+      metric: monthlyBudgetLimit,
+      action: "Batas pengeluaran bulanan yang boleh dirilis berdasarkan cash, recovery, goal, dan reserve.",
+    },
+    {
+      key: "daily-budget-limit",
+      label: "Daily spend limit",
+      color: budgetStatus === "BUDGET_READY" ? "#86efac" : "#c7d2fe",
+      metric: dailyBudgetLimit,
+      action: "Batas belanja harian agar budget bulanan tidak bocor.",
+    },
+    {
+      key: "recovery-budget",
+      label: "Recovery budget",
+      color: recoveryBudget > 0 ? "#fecaca" : "#86efac",
+      metric: recoveryBudget,
+      action: recoveryBudget > 0 ? "Budget recovery wajib dilindungi sebelum growth." : "Tidak ada recovery budget besar yang wajib dipaksa saat ini.",
+    },
+    {
+      key: "growth-budget-cap",
+      label: "Growth cap",
+      color: growthBudgetCap > 0 ? "#86efac" : "#94a3b8",
+      metric: growthBudgetCap,
+      action: growthBudgetCap > 0 ? "Growth budget tersedia dalam batas aman." : "Growth budget ditahan sampai control/recovery clear.",
+    },
+  ];
+  const budgetLocks = blockers.length
+    ? blockers.slice(0, 5).map(b => b.replaceAll("_", " "))
+    : ["Budget control clear", "Budget dapat dipakai sebagai dasar spending discipline"];
+  const budgetMemo = budgetStatus === "BUDGET_READY"
+    ? "Budget control clear. Release spending boleh mengikuti batas harian/bulanan."
+    : budgetStatus === "BUDGET_CONTROL"
+      ? "Budget control mode. Tahan discretionary spending dan review mingguan."
+      : budgetStatus === "BUDGET_RECOVERY"
+        ? "Budget recovery mode. Cash wajib diarahkan ke recovery, goal wajib, dan reserve."
+        : "Budget locked. Jangan release spending tambahan sebelum blocker utama selesai.";
+  const budgetNotice = `Budget Control 7.3.0: ${budgetMode} · ${budgetStatus} · score ${budgetScore}/100`;
+  return {
+    engine: "Predictive Budget Control Engine",
+    version: "7.3.0",
+    budgetStatus,
+    budgetLabel,
+    budgetMode,
+    budgetScore,
+    budgetColor,
+    budgetBg,
+    budgetNotice,
+    budgetMemo,
+    budgetRows,
+    budgetLocks,
+    blockers,
+    blockerCount: blockers.length,
+    monthlyBudgetLimit,
+    dailyBudgetLimit,
+    protectedExpense,
+    recoveryBudget,
+    mandatoryGoalBudget,
+    reserveBudget,
+    discretionaryBudget,
+    growthBudgetCap,
+    budgetGap,
+    dailyBudgetGap,
+    safeToRelease,
+    closureStatus,
+    closureMode,
+    closureScore,
+    rebalanceStatus,
+    monitoringStatus,
+    executionStatus,
+    guardrailStatus,
+    allocationStatus,
+    scenarioClosureStatus,
+    decisionStatus,
+    complianceStatus,
+    policyMode,
+    gateDecision,
+    cfoDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: budgetStatus === "BUDGET_READY" && budgetScore >= 76 && budgetGap === 0 && !recoveryRequired,
+  };
+}
+
+
 
 
 
@@ -7783,6 +8000,29 @@ function buildPredictiveAllocationClosureEngine({
         monthlyExpense,
       })
     : { closureStatus: "ALLOCATION_LOCKED", closureLabel: "No Access", closureMode: "LOCKED_ALLOCATION_CLOSE", closureScore: 0, closureColor: "#94a3b8", closureBg: "rgba(148,163,184,0.10)", closureNotice: "Allocation Closure 7.2.5: engine terkunci untuk role ini.", closureMemo: "Role tidak memiliki akses Financial Summary.", closureRows: [], closureLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, closureGap: 0, dailyClosureGap: 0, monthlyClosureBuffer: 0, dailyClosureBuffer: 0, safeToRelease: 0, nextAllocationTrack: "Locked", rebalanceStatus: "REBALANCE_LOCKED", rebalanceMode: "LOCKED_REBALANCE", rebalanceScore: 0, monitoringStatus: "MONITOR_LOCKED", executionStatus: "EXECUTION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+
+  const financialPredictiveBudgetControlEngine = canViewFinancialSummaryNow
+    ? buildPredictiveBudgetControlEngine({
+        allocationClosureEngine: financialPredictiveAllocationClosureEngine,
+        rebalancingEngine: financialPredictiveAllocationRebalancingEngine,
+        monitoringEngine: financialPredictiveAllocationMonitoringEngine,
+        executionEngine: financialPredictiveAllocationExecutionEngine,
+        guardrailEngine: financialPredictiveAllocationGuardrailEngine,
+        allocationEngine: financialPredictiveAllocationPlanningEngine,
+        scenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+        decisionEngine: financialPredictiveScenarioDecisionRecommendationEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { budgetStatus: "BUDGET_LOCKED", budgetLabel: "No Access", budgetMode: "LOCKED_BUDGET", budgetScore: 0, budgetColor: "#94a3b8", budgetBg: "rgba(148,163,184,0.10)", budgetNotice: "Budget Control 7.3.0: engine terkunci untuk role ini.", budgetMemo: "Role tidak memiliki akses Financial Summary.", budgetRows: [], budgetLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, monthlyBudgetLimit: 0, dailyBudgetLimit: 0, protectedExpense: 0, recoveryBudget: 0, mandatoryGoalBudget: 0, reserveBudget: 0, discretionaryBudget: 0, growthBudgetCap: 0, budgetGap: 0, dailyBudgetGap: 0, safeToRelease: 0, closureStatus: "ALLOCATION_LOCKED", closureMode: "LOCKED_ALLOCATION_CLOSE", closureScore: 0, rebalanceStatus: "REBALANCE_LOCKED", monitoringStatus: "MONITOR_LOCKED", executionStatus: "EXECUTION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", decisionStatus: "DECISION_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
 
     const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -10293,6 +10533,7 @@ function buildPredictiveAllocationClosureEngine({
       { key: "predictiveAllocationMonitoringEngine", label: "Predictive Allocation Monitoring Engine", count: financialPredictiveAllocationMonitoringEngine ? 1 : 0, critical: false },
       { key: "predictiveAllocationRebalancingEngine", label: "Predictive Allocation Rebalancing Engine", count: financialPredictiveAllocationRebalancingEngine ? 1 : 0, critical: false },
       { key: "predictiveAllocationClosureEngine", label: "Predictive Allocation Closure Engine", count: financialPredictiveAllocationClosureEngine ? 1 : 0, critical: false },
+      { key: "predictiveBudgetControlEngine", label: "Predictive Budget Control Engine", count: financialPredictiveBudgetControlEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -10306,7 +10547,7 @@ function buildPredictiveAllocationClosureEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.2.5: Predictive Allocation Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.3.0: Predictive Budget Control Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, dan net worth baseline."
       ]
     };
   }
@@ -10316,7 +10557,7 @@ function buildPredictiveAllocationClosureEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-allocation-closure-engine-7-2-5",
+      version: APP_VERSION + " predictive-budget-control-engine-7-3-0",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -10365,6 +10606,7 @@ function buildPredictiveAllocationClosureEngine({
       predictiveAllocationMonitoringEngine: financialPredictiveAllocationMonitoringEngine,
       predictiveAllocationRebalancingEngine: financialPredictiveAllocationRebalancingEngine,
       predictiveAllocationClosureEngine: financialPredictiveAllocationClosureEngine,
+      predictiveBudgetControlEngine: financialPredictiveBudgetControlEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -13930,6 +14172,34 @@ function buildPredictiveAllocationClosureEngine({
                   <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
                     <div style={{ fontSize: "10px", color: financialPredictiveAllocationClosureEngine.closureColor, lineHeight: 1.45 }}>Memo: {financialPredictiveAllocationClosureEngine.closureMemo}</div>
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Closure lock: {financialPredictiveAllocationClosureEngine.closureLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveBudgetControlEngine.budgetBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveBudgetControlEngine.budgetColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Budget Control 7.3.0</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveBudgetControlEngine.budgetNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveBudgetControlEngine.budgetColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveBudgetControlEngine.budgetScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveBudgetControlEngine.budgetRows.slice(0, 5).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{typeof row.metric === "number" ? formatFull(row.metric) : row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveBudgetControlEngine.budgetColor, lineHeight: 1.45 }}>Memo: {financialPredictiveBudgetControlEngine.budgetMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Budget lock: {financialPredictiveBudgetControlEngine.budgetLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
 
