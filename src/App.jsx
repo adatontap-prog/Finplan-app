@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.3.1";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.3.2";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.3.1";
-const FINANCIAL_ENGINE_NAME = "Predictive Budget Alert Engine";
+const FINANCIAL_ENGINE_VERSION = "7.3.2";
+const FINANCIAL_ENGINE_NAME = "Predictive Budget Compliance Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -8148,6 +8148,215 @@ function buildPredictiveBudgetAlertEngine({
 }
 
 
+function buildPredictiveBudgetComplianceEngine({
+  budgetAlertEngine = {},
+  budgetControlEngine = {},
+  allocationClosureEngine = {},
+  guardrailEngine = {},
+  allocationEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  cfoEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const budgetStatus = String(budgetControlEngine?.budgetStatus || budgetAlertEngine?.budgetStatus || "BUDGET_LOCKED").toUpperCase();
+  const budgetMode = String(budgetControlEngine?.budgetMode || budgetAlertEngine?.budgetMode || "LOCKED_BUDGET").toUpperCase();
+  const alertStatus = String(budgetAlertEngine?.alertStatus || "ALERT_LOCKED").toUpperCase();
+  const alertMode = String(budgetAlertEngine?.alertMode || "LOCKED_ALERT").toUpperCase();
+  const budgetScore = Math.max(0, Math.min(100, asEngineNumber(budgetControlEngine?.budgetScore)));
+  const alertScore = Math.max(0, Math.min(100, asEngineNumber(budgetAlertEngine?.alertScore)));
+  const monthlyBudgetLimit = Math.max(0, asEngineNumber(budgetControlEngine?.monthlyBudgetLimit), asEngineNumber(budgetAlertEngine?.monthlyBudgetLimit));
+  const dailyBudgetLimit = Math.max(0, asEngineNumber(budgetControlEngine?.dailyBudgetLimit), asEngineNumber(budgetAlertEngine?.dailyBudgetLimit));
+  const protectedExpense = Math.max(0, asEngineNumber(budgetControlEngine?.protectedExpense), asEngineNumber(budgetAlertEngine?.protectedExpense));
+  const recoveryBudget = Math.max(0, asEngineNumber(budgetControlEngine?.recoveryBudget), asEngineNumber(budgetAlertEngine?.recoveryAlertAmount));
+  const mandatoryGoalBudget = Math.max(0, asEngineNumber(budgetControlEngine?.mandatoryGoalBudget), asEngineNumber(budgetAlertEngine?.goalAlertAmount));
+  const reserveBudget = Math.max(0, asEngineNumber(budgetControlEngine?.reserveBudget), asEngineNumber(budgetAlertEngine?.reserveAlertAmount));
+  const growthBudgetCap = Math.max(0, asEngineNumber(budgetControlEngine?.growthBudgetCap));
+  const budgetGap = Math.max(0, asEngineNumber(budgetControlEngine?.budgetGap), asEngineNumber(budgetAlertEngine?.budgetGap));
+  const dailyBudgetGap = Math.max(0, asEngineNumber(budgetControlEngine?.dailyBudgetGap), asEngineNumber(budgetAlertEngine?.dailyBudgetGap));
+  const monthlyOverspendRisk = Math.max(0, asEngineNumber(budgetAlertEngine?.monthlyOverspendRisk), safeExpense - monthlyBudgetLimit);
+  const dailyOverspendRisk = Math.ceil(monthlyOverspendRisk / 30);
+  const closureStatus = String(allocationClosureEngine?.closureStatus || budgetControlEngine?.closureStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const guardrailStatus = String(guardrailEngine?.guardrailStatus || budgetControlEngine?.guardrailStatus || "GUARDRAIL_LOCKED").toUpperCase();
+  const allocationStatus = String(allocationEngine?.allocationStatus || budgetControlEngine?.allocationStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const policyComplianceStatus = String(complianceEngine?.complianceStatus || budgetControlEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || budgetControlEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || budgetControlEngine?.gateDecision || "LOCKED").toUpperCase();
+  const cfoDecision = String(cfoEngine?.cfoDecision || budgetControlEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const recoveryRequired = !!budgetControlEngine?.recoveryRequired || !!budgetAlertEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || budgetStatus === "BUDGET_RECOVERY" || alertStatus === "ALERT_BREACH";
+  const growthLocked = !!budgetControlEngine?.growthLocked || !!budgetAlertEngine?.growthLocked || budgetStatus !== "BUDGET_READY" || alertStatus !== "ALERT_CLEAR" || policyMode !== "GROWTH" || policyComplianceStatus !== "COMPLIANT";
+  const minimumRecoveryFloor = Math.max(0, recoveryBudget, safeWallet < 0 ? Math.abs(safeWallet) : 0, safeNetWorth < 0 ? Math.ceil(Math.abs(safeNetWorth) / 6) : 0);
+  const protectedCashNeed = Math.max(0, protectedExpense + minimumRecoveryFloor + mandatoryGoalBudget + reserveBudget);
+  const budgetComplianceGap = Math.max(0, protectedCashNeed - safeIncome, budgetGap, monthlyOverspendRisk);
+  const dailyComplianceGap = Math.ceil(budgetComplianceGap / 30);
+  const discretionaryComplianceRoom = Math.max(0, safeIncome - protectedCashNeed - monthlyOverspendRisk);
+  const compliantGrowthRoom = growthLocked ? 0 : Math.max(0, Math.min(growthBudgetCap, discretionaryComplianceRoom));
+  const blockers = [];
+  if (budgetStatus === "BUDGET_LOCKED") blockers.push("budget_locked");
+  if (budgetStatus === "BUDGET_RECOVERY") blockers.push("budget_recovery");
+  if (alertStatus === "ALERT_LOCKED") blockers.push("alert_locked");
+  if (alertStatus === "ALERT_BREACH") blockers.push("alert_breach");
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+  if (monthlyOverspendRisk > 0) blockers.push("overspend_risk");
+  if (budgetComplianceGap > 0) blockers.push("budget_compliance_gap");
+  if (closureStatus !== "ALLOCATION_READY") blockers.push("allocation_not_ready");
+  if (guardrailStatus === "GUARDRAIL_LOCKED") blockers.push("guardrail_locked");
+  if (allocationStatus === "ALLOCATION_LOCKED") blockers.push("allocation_locked");
+  if (["LOCKED", "BREACH"].includes(policyComplianceStatus)) blockers.push("policy_compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("gate_not_clear");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  const compliancePenalty =
+    (budgetStatus === "BUDGET_LOCKED" ? 22 : budgetStatus === "BUDGET_RECOVERY" ? 16 : budgetStatus === "BUDGET_CONTROL" ? 7 : 0) +
+    (alertStatus === "ALERT_LOCKED" ? 20 : alertStatus === "ALERT_BREACH" ? 15 : alertStatus === "ALERT_WATCH" ? 7 : 0) +
+    (safeWallet < 0 ? 16 : 0) +
+    (safeNetWorth < 0 ? 14 : 0) +
+    (netMonthlyCashflow < 0 ? 10 : 0) +
+    (monthlyOverspendRisk > 0 ? 14 : 0) +
+    (budgetComplianceGap > 0 ? 14 : 0) +
+    (closureStatus !== "ALLOCATION_READY" ? 7 : 0) +
+    (growthLocked ? 3 : 0);
+  const complianceCap = Math.min(
+    budgetStatus === "BUDGET_LOCKED" ? 30 : budgetStatus === "BUDGET_RECOVERY" ? 52 : budgetStatus === "BUDGET_CONTROL" ? 76 : 100,
+    alertStatus === "ALERT_LOCKED" ? 32 : alertStatus === "ALERT_BREACH" ? 58 : alertStatus === "ALERT_WATCH" ? 78 : 100,
+    safeWallet < 0 ? 38 : 100,
+    safeNetWorth < 0 ? 42 : 100,
+    monthlyOverspendRisk > 0 ? 64 : 100,
+    budgetComplianceGap > 0 ? 68 : 100,
+    recoveryRequired ? 66 : 100
+  );
+  const complianceBase = Math.round((budgetScore * 0.38) + (alertScore * 0.32) + ((budgetComplianceGap === 0 ? 100 : 46) * 0.16) + ((monthlyOverspendRisk === 0 ? 100 : 44) * 0.14));
+  const budgetComplianceScore = Math.max(0, Math.min(complianceCap, complianceBase - compliancePenalty + 20));
+  let budgetComplianceStatus = "BUDGET_COMPLIANT";
+  let budgetComplianceLabel = "Budget Compliant";
+  let budgetComplianceMode = "GROWTH_COMPLIANCE";
+  if (budgetStatus === "BUDGET_LOCKED" || alertStatus === "ALERT_LOCKED" || policyComplianceStatus === "LOCKED" || gateDecision === "LOCKED" || guardrailStatus === "GUARDRAIL_LOCKED") {
+    budgetComplianceStatus = "BUDGET_COMPLIANCE_LOCKED";
+    budgetComplianceLabel = "Budget Compliance Locked";
+    budgetComplianceMode = "LOCKED_COMPLIANCE";
+  } else if (recoveryRequired || alertStatus === "ALERT_BREACH" || budgetComplianceGap > 0 || monthlyOverspendRisk > 0 || budgetComplianceScore < 50) {
+    budgetComplianceStatus = "BUDGET_BREACH";
+    budgetComplianceLabel = "Budget Breach";
+    budgetComplianceMode = "RECOVERY_COMPLIANCE";
+  } else if (growthLocked || alertStatus === "ALERT_WATCH" || budgetStatus === "BUDGET_CONTROL" || budgetComplianceScore < 76) {
+    budgetComplianceStatus = "BUDGET_WATCH";
+    budgetComplianceLabel = "Budget Watch";
+    budgetComplianceMode = "CONTROL_COMPLIANCE";
+  }
+  const budgetComplianceColor = budgetComplianceStatus === "BUDGET_COMPLIANT" ? "#86efac" : budgetComplianceStatus === "BUDGET_WATCH" ? "#fde68a" : budgetComplianceStatus === "BUDGET_BREACH" ? "#fecaca" : "#94a3b8";
+  const budgetComplianceBg = budgetComplianceStatus === "BUDGET_COMPLIANT" ? "rgba(16,185,129,0.10)" : budgetComplianceStatus === "BUDGET_WATCH" ? "rgba(245,158,11,0.11)" : budgetComplianceStatus === "BUDGET_BREACH" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const budgetComplianceRows = [
+    {
+      key: "compliance-status",
+      label: "Budget compliance",
+      color: budgetComplianceColor,
+      metric: budgetComplianceStatus.replace("BUDGET_", ""),
+      action: budgetComplianceStatus === "BUDGET_COMPLIANT" ? "Budget patuh terhadap limit, alert, dan allocation guardrail." : budgetComplianceStatus === "BUDGET_WATCH" ? "Budget dalam mode watch: jaga limit harian dan tahan belanja opsional." : budgetComplianceStatus === "BUDGET_BREACH" ? "Budget breach: arahkan cash ke recovery, mandatory goal, dan reserve." : "Budget compliance terkunci sampai blocker utama clear.",
+    },
+    {
+      key: "limit-compliance",
+      label: "Limit compliance",
+      color: monthlyOverspendRisk > 0 ? "#fecaca" : "#86efac",
+      metric: monthlyBudgetLimit,
+      action: monthlyOverspendRisk > 0 ? `Belanja melewati limit sekitar ${formatRupiah(dailyOverspendRisk)}/hari.` : "Spending masih patuh terhadap limit bulanan/harian.",
+    },
+    {
+      key: "recovery-floor",
+      label: "Recovery floor",
+      color: minimumRecoveryFloor > 0 ? "#fde68a" : "#86efac",
+      metric: minimumRecoveryFloor,
+      action: minimumRecoveryFloor > 0 ? "Recovery floor wajib dipenuhi sebelum budget discretionary dilepas." : "Tidak ada recovery floor besar yang menahan budget.",
+    },
+    {
+      key: "goal-reserve-compliance",
+      label: "Goal + reserve compliance",
+      color: mandatoryGoalBudget + reserveBudget > discretionaryComplianceRoom ? "#fde68a" : "#86efac",
+      metric: mandatoryGoalBudget + reserveBudget,
+      action: mandatoryGoalBudget + reserveBudget > discretionaryComplianceRoom ? "Goal wajib/reserve belum sepenuhnya aman terhadap ruang cash." : "Goal wajib dan reserve masih sesuai kapasitas budget.",
+    },
+    {
+      key: "growth-compliance",
+      label: "Growth compliance",
+      color: compliantGrowthRoom > 0 ? "#86efac" : "#94a3b8",
+      metric: compliantGrowthRoom,
+      action: compliantGrowthRoom > 0 ? "Growth budget boleh dilepas dalam ruang compliance." : "Growth budget ditahan sampai compliance clear.",
+    },
+  ];
+  const budgetComplianceLocks = blockers.length
+    ? blockers.slice(0, 5).map(b => b.replaceAll("_", " "))
+    : ["Budget compliance clear", "Budget patuh terhadap control dan alert engine"];
+  const budgetComplianceMemo = budgetComplianceStatus === "BUDGET_COMPLIANT"
+    ? "Budget compliant. Spending dapat berjalan dalam limit yang ditetapkan."
+    : budgetComplianceStatus === "BUDGET_WATCH"
+      ? "Budget watch. Tahan spending opsional dan jaga limit harian."
+      : budgetComplianceStatus === "BUDGET_BREACH"
+        ? "Budget breach. Recovery, goal wajib, dan reserve harus diprioritaskan."
+        : "Budget compliance locked. Jangan release spending sampai blocker clear.";
+  const budgetComplianceNotice = `Budget Compliance 7.3.2: ${budgetComplianceMode} · ${budgetComplianceStatus} · score ${budgetComplianceScore}/100`;
+  return {
+    engine: "Predictive Budget Compliance Engine",
+    version: "7.3.2",
+    budgetComplianceStatus,
+    budgetComplianceLabel,
+    budgetComplianceMode,
+    budgetComplianceScore,
+    budgetComplianceColor,
+    budgetComplianceBg,
+    budgetComplianceNotice,
+    budgetComplianceMemo,
+    budgetComplianceRows,
+    budgetComplianceLocks,
+    blockers,
+    blockerCount: blockers.length,
+    budgetComplianceGap,
+    dailyComplianceGap,
+    protectedCashNeed,
+    discretionaryComplianceRoom,
+    compliantGrowthRoom,
+    minimumRecoveryFloor,
+    monthlyOverspendRisk,
+    dailyOverspendRisk,
+    monthlyBudgetLimit,
+    dailyBudgetLimit,
+    protectedExpense,
+    recoveryBudget,
+    mandatoryGoalBudget,
+    reserveBudget,
+    growthBudgetCap,
+    budgetGap,
+    dailyBudgetGap,
+    budgetStatus,
+    budgetMode,
+    budgetScore,
+    alertStatus,
+    alertMode,
+    alertScore,
+    closureStatus,
+    guardrailStatus,
+    allocationStatus,
+    policyComplianceStatus,
+    policyMode,
+    gateDecision,
+    cfoDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: budgetComplianceStatus === "BUDGET_COMPLIANT" && budgetComplianceScore >= 76 && budgetComplianceGap === 0 && monthlyOverspendRisk === 0 && !recoveryRequired,
+  };
+}
+
+
+
 
 
 
@@ -8252,6 +8461,28 @@ function buildPredictiveBudgetAlertEngine({
         monthlyExpense,
       })
     : { alertStatus: "ALERT_LOCKED", alertLabel: "No Access", alertMode: "LOCKED_ALERT", alertScore: 0, alertColor: "#94a3b8", alertBg: "rgba(148,163,184,0.10)", alertNotice: "Budget Alert 7.3.1: engine terkunci untuk role ini.", alertMemo: "Role tidak memiliki akses Financial Summary.", alertRows: [], alertLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, monthlyOverspendRisk: 0, dailyOverspendRisk: 0, cashLeakRisk: 0, recoveryAlertAmount: 0, reserveAlertAmount: 0, goalAlertAmount: 0, monthlyBudgetLimit: 0, dailyBudgetLimit: 0, protectedExpense: 0, recoveryBudget: 0, mandatoryGoalBudget: 0, reserveBudget: 0, growthBudgetCap: 0, budgetGap: 0, dailyBudgetGap: 0, budgetStatus: "BUDGET_LOCKED", budgetMode: "LOCKED_BUDGET", budgetScore: 0, closureStatus: "ALLOCATION_LOCKED", rebalanceStatus: "REBALANCE_LOCKED", monitoringStatus: "MONITOR_LOCKED", executionStatus: "EXECUTION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+
+
+  const financialPredictiveBudgetComplianceEngine = canViewFinancialSummaryNow
+    ? buildPredictiveBudgetComplianceEngine({
+        budgetAlertEngine: financialPredictiveBudgetAlertEngine,
+        budgetControlEngine: financialPredictiveBudgetControlEngine,
+        allocationClosureEngine: financialPredictiveAllocationClosureEngine,
+        guardrailEngine: financialPredictiveAllocationGuardrailEngine,
+        allocationEngine: financialPredictiveAllocationPlanningEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { budgetComplianceStatus: "BUDGET_COMPLIANCE_LOCKED", budgetComplianceLabel: "No Access", budgetComplianceMode: "LOCKED_COMPLIANCE", budgetComplianceScore: 0, budgetComplianceColor: "#94a3b8", budgetComplianceBg: "rgba(148,163,184,0.10)", budgetComplianceNotice: "Budget Compliance 7.3.2: engine terkunci untuk role ini.", budgetComplianceMemo: "Role tidak memiliki akses Financial Summary.", budgetComplianceRows: [], budgetComplianceLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, budgetComplianceGap: 0, dailyComplianceGap: 0, protectedCashNeed: 0, discretionaryComplianceRoom: 0, compliantGrowthRoom: 0, minimumRecoveryFloor: 0, monthlyOverspendRisk: 0, dailyOverspendRisk: 0, monthlyBudgetLimit: 0, dailyBudgetLimit: 0, protectedExpense: 0, recoveryBudget: 0, mandatoryGoalBudget: 0, reserveBudget: 0, growthBudgetCap: 0, budgetGap: 0, dailyBudgetGap: 0, budgetStatus: "BUDGET_LOCKED", budgetMode: "LOCKED_BUDGET", budgetScore: 0, alertStatus: "ALERT_LOCKED", alertMode: "LOCKED_ALERT", alertScore: 0, closureStatus: "ALLOCATION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
 
     const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -10764,6 +10995,7 @@ function buildPredictiveBudgetAlertEngine({
       { key: "predictiveAllocationClosureEngine", label: "Predictive Allocation Closure Engine", count: financialPredictiveAllocationClosureEngine ? 1 : 0, critical: false },
       { key: "predictiveBudgetControlEngine", label: "Predictive Budget Control Engine", count: financialPredictiveBudgetControlEngine ? 1 : 0, critical: false },
       { key: "predictiveBudgetAlertEngine", label: "Predictive Budget Alert Engine", count: financialPredictiveBudgetAlertEngine ? 1 : 0, critical: false },
+      { key: "predictiveBudgetComplianceEngine", label: "Predictive Budget Compliance Engine", count: financialPredictiveBudgetComplianceEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -10777,7 +11009,7 @@ function buildPredictiveBudgetAlertEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.3.1: Predictive Budget Alert Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.3.2: Predictive Budget Compliance Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, dan net worth baseline."
       ]
     };
   }
@@ -10787,7 +11019,7 @@ function buildPredictiveBudgetAlertEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-budget-alert-engine-7-3-1",
+      version: APP_VERSION + " predictive-budget-compliance-engine-7-3-2",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -10838,6 +11070,7 @@ function buildPredictiveBudgetAlertEngine({
       predictiveAllocationClosureEngine: financialPredictiveAllocationClosureEngine,
       predictiveBudgetControlEngine: financialPredictiveBudgetControlEngine,
       predictiveBudgetAlertEngine: financialPredictiveBudgetAlertEngine,
+      predictiveBudgetComplianceEngine: financialPredictiveBudgetComplianceEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -14461,6 +14694,35 @@ function buildPredictiveBudgetAlertEngine({
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Alert lock: {financialPredictiveBudgetAlertEngine.alertLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveBudgetComplianceEngine.budgetComplianceBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveBudgetComplianceEngine.budgetComplianceColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Budget Compliance 7.3.2</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveBudgetComplianceEngine.budgetComplianceNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveBudgetComplianceEngine.budgetComplianceColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveBudgetComplianceEngine.budgetComplianceScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveBudgetComplianceEngine.budgetComplianceRows.slice(0, 5).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{typeof row.metric === "number" ? formatFull(row.metric) : row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveBudgetComplianceEngine.budgetComplianceColor, lineHeight: 1.45 }}>Memo: {financialPredictiveBudgetComplianceEngine.budgetComplianceMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Compliance lock: {financialPredictiveBudgetComplianceEngine.budgetComplianceLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
 
 
                 {financialWalletTotal < 0 && <div style={{ marginTop: "9px", fontSize: "11px", color: "#fecaca", lineHeight: 1.45 }}>⚠️ Wallet negatif. Total Wallet adalah saldo kumulatif semua wallet aktif, bukan saldo periode {rangeLabel}. Cek wallet penyebab minus di audit bawah.</div>}
