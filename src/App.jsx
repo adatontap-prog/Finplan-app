@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.4.5";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.4.6";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.4.5";
-const FINANCIAL_ENGINE_NAME = "Predictive Cashflow Closure Engine";
+const FINANCIAL_ENGINE_VERSION = "7.4.6";
+const FINANCIAL_ENGINE_NAME = "Predictive Main Release Candidate Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -11063,6 +11063,269 @@ function buildPredictiveCashflowClosureEngine({
   };
 }
 
+function buildPredictiveMainReleaseCandidateEngine({
+  cashflowClosureEngine = {},
+  cashflowRebalancingEngine = {},
+  cashflowMonitoringEngine = {},
+  cashflowExecutionEngine = {},
+  cashflowGuardrailAlertEngine = {},
+  cashflowCommandEngine = {},
+  budgetClosureEngine = {},
+  allocationClosureEngine = {},
+  scenarioClosureEngine = {},
+  phaseClosureEngine = {},
+  cfoEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const cashflowClosureStatus = String(cashflowClosureEngine?.cashflowClosureStatus || "CASHFLOW_CLOSURE_LOCKED").toUpperCase();
+  const cashflowClosureScore = Math.max(0, Math.min(100, asEngineNumber(cashflowClosureEngine?.cashflowClosureScore)));
+  const nextMainReleaseGate = String(cashflowClosureEngine?.nextMainReleaseGate || "LOCKED_STAY_7_4").toUpperCase();
+  const canAdvanceToReleaseCandidate = !!cashflowClosureEngine?.canAdvanceToReleaseCandidate || nextMainReleaseGate === "READY_FOR_RELEASE_CANDIDATE";
+  const cashflowClosureGapDaily = Math.max(0, asEngineNumber(cashflowClosureEngine?.cashflowClosureGapDaily));
+  const closureBufferDaily = Math.max(0, asEngineNumber(cashflowClosureEngine?.closureBufferDaily));
+  const safeReleaseAfterCashflowClosureDaily = Math.max(0, asEngineNumber(cashflowClosureEngine?.safeReleaseAfterCashflowClosureDaily));
+  const cashflowClosureReleaseWeekly = Math.max(0, asEngineNumber(cashflowClosureEngine?.cashflowClosureReleaseWeekly), safeReleaseAfterCashflowClosureDaily * 7);
+  const rebalancingStatus = String(cashflowClosureEngine?.rebalancingStatus || cashflowRebalancingEngine?.cashflowRebalancingStatus || "CASHFLOW_REBALANCE_LOCKED").toUpperCase();
+  const monitoringStatus = String(cashflowClosureEngine?.monitoringStatus || cashflowMonitoringEngine?.cashflowMonitoringStatus || "CASHFLOW_MONITOR_LOCKED").toUpperCase();
+  const executionStatus = String(cashflowClosureEngine?.executionStatus || cashflowExecutionEngine?.cashflowExecutionStatus || "CASHFLOW_EXECUTION_LOCKED").toUpperCase();
+  const guardrailStatus = String(cashflowClosureEngine?.guardrailStatus || cashflowGuardrailAlertEngine?.guardrailStatus || "CASHFLOW_ALERT_LOCKED").toUpperCase();
+  const commandStatus = String(cashflowClosureEngine?.commandStatus || cashflowCommandEngine?.cashflowCommandStatus || "CASHFLOW_COMMAND_LOCKED").toUpperCase();
+  const budgetClosureStatus = String(cashflowClosureEngine?.budgetClosureStatus || budgetClosureEngine?.budgetClosureStatus || "BUDGET_CLOSURE_LOCKED").toUpperCase();
+  const budgetClosureScore = Math.max(0, Math.min(100, asEngineNumber(budgetClosureEngine?.budgetClosureScore)));
+  const allocationClosureStatus = String(allocationClosureEngine?.allocationClosureStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const allocationClosureScore = Math.max(0, Math.min(100, asEngineNumber(allocationClosureEngine?.allocationClosureScore)));
+  const scenarioClosureStatus = String(scenarioClosureEngine?.scenarioClosureStatus || "SCENARIO_LOCKED").toUpperCase();
+  const scenarioClosureScore = Math.max(0, Math.min(100, asEngineNumber(scenarioClosureEngine?.scenarioClosureScore)));
+  const phaseClosureStatus = String(phaseClosureEngine?.phaseClosureStatus || phaseClosureEngine?.closureStatus || "PHASE_LOCKED").toUpperCase();
+  const phaseClosureScore = Math.max(0, Math.min(100, asEngineNumber(phaseClosureEngine?.closureScore || phaseClosureEngine?.phaseClosureScore)));
+  const cfoDecision = String(cfoEngine?.cfoDecision || cashflowClosureEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const policyComplianceStatus = String(complianceEngine?.complianceStatus || cashflowClosureEngine?.policyComplianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || cashflowClosureEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || cashflowClosureEngine?.gateDecision || "LOCKED").toUpperCase();
+  const recoveryRequired = !!cashflowClosureEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || netMonthlyCashflow < 0 || cashflowClosureStatus === "CASHFLOW_CLOSURE_RECOVERY";
+  const growthLocked = !!cashflowClosureEngine?.growthLocked || safeReleaseAfterCashflowClosureDaily <= 0 || cashflowClosureStatus !== "CASHFLOW_CLOSURE_READY";
+
+  const cashflowLayerReady = cashflowClosureStatus === "CASHFLOW_CLOSURE_READY" && cashflowClosureScore >= 76 && cashflowClosureGapDaily === 0 && canAdvanceToReleaseCandidate;
+  const budgetLayerReady = budgetClosureStatus === "BUDGET_CLOSURE_READY" || budgetClosureStatus === "BUDGET_CLOSURE_CLEAR";
+  const allocationLayerReady = allocationClosureStatus === "ALLOCATION_READY" || allocationClosureStatus === "ALLOCATION_CLOSURE_READY" || allocationClosureStatus === "ALLOCATION_CLOSED" || allocationClosureEngine?.ok;
+  const scenarioLayerReady = scenarioClosureStatus === "SCENARIO_READY" || scenarioClosureStatus === "SCENARIO_CLOSED" || scenarioClosureStatus === "SCENARIO_CLOSURE_READY" || scenarioClosureEngine?.ok;
+  const foundationLayerReady = phaseClosureStatus === "PHASE_READY" || phaseClosureStatus === "PHASE_CLOSED" || phaseClosureStatus === "PHASE_CLOSURE_READY" || phaseClosureEngine?.ok;
+  const governanceReady = policyComplianceStatus === "COMPLIANT" && !["LOCKED", "RECOVERY"].includes(policyMode) && !["LOCKED", "RECOVERY"].includes(gateDecision) && !["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision);
+  const dataSafe = safeWallet >= 0 && safeNetWorth >= 0 && netMonthlyCashflow >= 0;
+  const releaseCandidateClear = cashflowLayerReady && budgetLayerReady && allocationLayerReady && scenarioLayerReady && foundationLayerReady && governanceReady && dataSafe && !recoveryRequired && !growthLocked;
+
+  const blockers = [];
+  if (!foundationLayerReady) blockers.push("phase_closure_not_ready");
+  if (!scenarioLayerReady) blockers.push("scenario_closure_not_ready");
+  if (!allocationLayerReady) blockers.push("allocation_closure_not_ready");
+  if (!budgetLayerReady) blockers.push("budget_closure_not_ready");
+  if (!cashflowLayerReady) blockers.push("cashflow_closure_not_ready");
+  if (commandStatus === "CASHFLOW_COMMAND_LOCKED") blockers.push("cashflow_command_locked");
+  if (guardrailStatus === "CASHFLOW_ALERT_LOCKED") blockers.push("cashflow_guardrail_locked");
+  if (executionStatus === "CASHFLOW_EXECUTION_LOCKED") blockers.push("cashflow_execution_locked");
+  if (monitoringStatus === "CASHFLOW_MONITOR_LOCKED") blockers.push("cashflow_monitoring_locked");
+  if (rebalancingStatus === "CASHFLOW_REBALANCE_LOCKED") blockers.push("cashflow_rebalancing_locked");
+  if (cashflowClosureGapDaily > 0) blockers.push("cashflow_closure_gap");
+  if (closureBufferDaily <= 0) blockers.push("closure_buffer_empty");
+  if (safeReleaseAfterCashflowClosureDaily <= 0) blockers.push("safe_release_empty");
+  if (["LOCKED", "BREACH"].includes(policyComplianceStatus)) blockers.push("policy_compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_mode_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("decision_gate_not_clear");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+  if (recoveryRequired) blockers.push("recovery_required");
+  if (growthLocked) blockers.push("growth_locked");
+
+  const layerScore = Math.round(
+    (Math.max(phaseClosureScore, foundationLayerReady ? 82 : 0) * 0.12) +
+    (Math.max(scenarioClosureScore, scenarioLayerReady ? 82 : 0) * 0.12) +
+    (Math.max(allocationClosureScore, allocationLayerReady ? 82 : 0) * 0.15) +
+    (Math.max(budgetClosureScore, budgetLayerReady ? 82 : 0) * 0.20) +
+    (cashflowClosureScore * 0.26) +
+    ((governanceReady ? 100 : 42) * 0.10) +
+    ((dataSafe ? 100 : 35) * 0.05)
+  );
+  const releasePenalty =
+    (cashflowClosureGapDaily > 0 ? 16 : 0) +
+    (closureBufferDaily <= 0 ? 10 : 0) +
+    (safeReleaseAfterCashflowClosureDaily <= 0 ? 10 : 0) +
+    (recoveryRequired ? 18 : 0) +
+    (growthLocked ? 8 : 0) +
+    (safeWallet < 0 ? 18 : 0) +
+    (safeNetWorth < 0 ? 16 : 0) +
+    (netMonthlyCashflow < 0 ? 12 : 0) +
+    (!governanceReady ? 12 : 0) +
+    (!budgetLayerReady ? 8 : 0) +
+    (!allocationLayerReady ? 8 : 0) +
+    (!scenarioLayerReady ? 6 : 0);
+  const releaseCap = Math.min(
+    cashflowClosureStatus === "CASHFLOW_CLOSURE_LOCKED" ? 30 : cashflowClosureStatus === "CASHFLOW_CLOSURE_RECOVERY" ? 58 : cashflowClosureStatus === "CASHFLOW_CLOSURE_CONTROL" ? 78 : 100,
+    cashflowClosureGapDaily > 0 ? 74 : 100,
+    recoveryRequired ? 62 : 100,
+    !governanceReady ? 72 : 100,
+    safeWallet < 0 ? 38 : 100,
+    safeNetWorth < 0 ? 42 : 100,
+    netMonthlyCashflow < 0 ? 64 : 100
+  );
+  const mainReleaseCandidateScore = Math.max(0, Math.min(releaseCap, layerScore - releasePenalty + 10));
+
+  let mainReleaseCandidateStatus = "MAIN_RELEASE_READY";
+  let mainReleaseCandidateLabel = "Main Release Ready";
+  let mainReleaseCandidateMode = "READY_TO_MERGE_MAIN";
+  if (["LOCKED", "CASHFLOW_CLOSURE_LOCKED"].includes(cashflowClosureStatus) || commandStatus === "CASHFLOW_COMMAND_LOCKED" || gateDecision === "LOCKED") {
+    mainReleaseCandidateStatus = "MAIN_RELEASE_LOCKED";
+    mainReleaseCandidateLabel = "Main Release Locked";
+    mainReleaseCandidateMode = "LOCKED_RELEASE_CANDIDATE";
+  } else if (recoveryRequired || cashflowClosureStatus === "CASHFLOW_CLOSURE_RECOVERY" || safeWallet < 0 || safeNetWorth < 0 || mainReleaseCandidateScore < 50) {
+    mainReleaseCandidateStatus = "MAIN_RELEASE_RECOVERY";
+    mainReleaseCandidateLabel = "Main Release Recovery";
+    mainReleaseCandidateMode = "RECOVERY_BEFORE_MAIN";
+  } else if (!releaseCandidateClear || mainReleaseCandidateScore < 80) {
+    mainReleaseCandidateStatus = "MAIN_RELEASE_CONTROL";
+    mainReleaseCandidateLabel = "Main Release Control";
+    mainReleaseCandidateMode = "FINAL_CONTROL_BEFORE_MAIN";
+  }
+
+  const mainReleaseCandidateColor = mainReleaseCandidateStatus === "MAIN_RELEASE_READY" ? "#86efac" : mainReleaseCandidateStatus === "MAIN_RELEASE_CONTROL" ? "#fde68a" : mainReleaseCandidateStatus === "MAIN_RELEASE_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const mainReleaseCandidateBg = mainReleaseCandidateStatus === "MAIN_RELEASE_READY" ? "rgba(16,185,129,0.10)" : mainReleaseCandidateStatus === "MAIN_RELEASE_CONTROL" ? "rgba(245,158,11,0.11)" : mainReleaseCandidateStatus === "MAIN_RELEASE_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const mainReleaseGate = releaseCandidateClear ? "MERGE_TO_MAIN_READY" : mainReleaseCandidateStatus === "MAIN_RELEASE_CONTROL" ? "FINAL_CHECK_REQUIRED" : mainReleaseCandidateStatus === "MAIN_RELEASE_RECOVERY" ? "RECOVERY_REQUIRED_BEFORE_MAIN" : "LOCKED_BEFORE_MAIN";
+  const mainReleaseCandidateRows = [
+    {
+      key: "release-status",
+      label: "Release status",
+      color: mainReleaseCandidateColor,
+      metric: mainReleaseCandidateStatus.replace("MAIN_RELEASE_", ""),
+      action: mainReleaseCandidateStatus === "MAIN_RELEASE_READY" ? "Release candidate siap: branch family-v1.1.0 boleh disiapkan menuju main." : mainReleaseCandidateStatus === "MAIN_RELEASE_CONTROL" ? "Masih perlu final check sebelum merge main." : mainReleaseCandidateStatus === "MAIN_RELEASE_RECOVERY" ? "Recovery wajib selesai sebelum main." : "Release terkunci sampai gate dan closure clear.",
+    },
+    {
+      key: "cashflow-layer",
+      label: "Cashflow layer",
+      color: cashflowLayerReady ? "#86efac" : "#fde68a",
+      metric: cashflowClosureStatus.replace("CASHFLOW_", ""),
+      action: cashflowLayerReady ? "Cashflow command layer sudah tertutup." : `Tutup cashflow gate: ${nextMainReleaseGate.replaceAll("_", " ")}.`,
+    },
+    {
+      key: "budget-layer",
+      label: "Budget layer",
+      color: budgetLayerReady ? "#86efac" : "#fde68a",
+      metric: budgetClosureStatus.replace("BUDGET_", ""),
+      action: budgetLayerReady ? "Budget layer sudah tertutup." : "Budget closure belum clear untuk main.",
+    },
+    {
+      key: "allocation-layer",
+      label: "Allocation layer",
+      color: allocationLayerReady ? "#86efac" : "#fde68a",
+      metric: allocationClosureStatus.replace("ALLOCATION_", ""),
+      action: allocationLayerReady ? "Allocation layer siap sebagai baseline." : "Allocation closure perlu dicek ulang.",
+    },
+    {
+      key: "governance-gate",
+      label: "Governance gate",
+      color: governanceReady ? "#86efac" : "#fecaca",
+      metric: gateDecision.replaceAll("_", " "),
+      action: governanceReady ? "Policy, compliance, CFO, dan decision gate clear." : "Governance gate belum clear untuk main.",
+    },
+    {
+      key: "cash-safety",
+      label: "Cash safety",
+      color: dataSafe ? "#86efac" : "#fecaca",
+      metric: `${formatRupiah(safeReleaseAfterCashflowClosureDaily)}/hari`,
+      action: dataSafe ? `Safe release ${formatRupiah(cashflowClosureReleaseWeekly)}/minggu setelah closure.` : "Wallet/net worth/cashflow masih menahan main release.",
+    },
+    {
+      key: "main-gate",
+      label: "Main gate",
+      color: releaseCandidateClear ? "#86efac" : "#fde68a",
+      metric: mainReleaseGate.replaceAll("_", " "),
+      action: releaseCandidateClear ? "Siap lanjut ke instruksi merge family-v1.1.0 → main." : "Selesaikan final cleanup/checklist sebelum merge main.",
+    },
+  ];
+  const mainReleaseCandidateLocks = blockers.length
+    ? blockers.slice(0, 6).map(item => `Lock: ${item.replaceAll("_", " ")}`)
+    : ["Main release candidate clear: foundation, scenario, allocation, budget, cashflow, governance, dan data safety siap."];
+  const mainReleaseCandidateNotice = `${mainReleaseCandidateLabel}. Gate ${mainReleaseGate.replaceAll("_", " ")} · Closure gap ${formatRupiah(cashflowClosureGapDaily)}/hari · Safe release ${formatRupiah(safeReleaseAfterCashflowClosureDaily)}/hari.`;
+  const mainReleaseCandidateMemo = mainReleaseCandidateStatus === "MAIN_RELEASE_READY"
+    ? "Main RC siap: lakukan final visual smoke test, commit, lalu siapkan merge ke main."
+    : mainReleaseCandidateStatus === "MAIN_RELEASE_CONTROL"
+      ? "Mode control: tahan merge sampai final checklist, closure gap, dan governance gate benar-benar bersih."
+      : mainReleaseCandidateStatus === "MAIN_RELEASE_RECOVERY"
+        ? "Mode recovery: main release belum aman; selesaikan recovery wallet/net worth/cashflow terlebih dahulu."
+        : "Mode locked: release candidate terkunci sampai command, closure, governance, dan akses summary clear.";
+
+  return {
+    engine: "Predictive Main Release Candidate Engine",
+    version: "7.4.6",
+    mainReleaseCandidateStatus,
+    mainReleaseCandidateLabel,
+    mainReleaseCandidateMode,
+    mainReleaseCandidateScore,
+    mainReleaseCandidateColor,
+    mainReleaseCandidateBg,
+    mainReleaseCandidateNotice,
+    mainReleaseCandidateMemo,
+    mainReleaseCandidateRows,
+    mainReleaseCandidateLocks,
+    blockers,
+    blockerCount: blockers.length,
+    mainReleaseGate,
+    releaseCandidateClear,
+    cashflowLayerReady,
+    budgetLayerReady,
+    allocationLayerReady,
+    scenarioLayerReady,
+    foundationLayerReady,
+    governanceReady,
+    dataSafe,
+    nextMainReleaseGate,
+    canAdvanceToReleaseCandidate,
+    cashflowClosureGapDaily,
+    closureBufferDaily,
+    safeReleaseAfterCashflowClosureDaily,
+    cashflowClosureReleaseWeekly,
+    cashflowClosureStatus,
+    cashflowClosureScore,
+    rebalancingStatus,
+    monitoringStatus,
+    executionStatus,
+    guardrailStatus,
+    commandStatus,
+    budgetClosureStatus,
+    budgetClosureScore,
+    allocationClosureStatus,
+    allocationClosureScore,
+    scenarioClosureStatus,
+    scenarioClosureScore,
+    phaseClosureStatus,
+    phaseClosureScore,
+    cfoDecision,
+    policyComplianceStatus,
+    policyMode,
+    gateDecision,
+    safeWallet,
+    safeNetWorth,
+    safeIncome,
+    safeExpense,
+    netMonthlyCashflow,
+    recoveryRequired,
+    growthLocked,
+    ok: mainReleaseCandidateStatus === "MAIN_RELEASE_READY" && mainReleaseCandidateScore >= 80 && releaseCandidateClear,
+  };
+}
+
+
 
 
 
@@ -11270,6 +11533,31 @@ function buildPredictiveCashflowClosureEngine({
         monthlyExpense,
       })
     : { cashflowClosureStatus: "CASHFLOW_CLOSURE_LOCKED", cashflowClosureLabel: "No Access", cashflowClosureMode: "LOCKED_CASHFLOW_CLOSURE", cashflowClosureScore: 0, cashflowClosureColor: "#94a3b8", cashflowClosureBg: "rgba(148,163,184,0.10)", cashflowClosureNotice: "Cashflow Closure 7.4.5: engine terkunci untuk role ini.", cashflowClosureMemo: "Role tidak memiliki akses Financial Summary.", cashflowClosureRows: [], cashflowClosureLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, nextMainReleaseGate: "LOCKED_STAY_7_4", canAdvanceToReleaseCandidate: false, cashInClosureTargetDaily: 0, cashOutClosureLimitDaily: 0, recoveryClosureTargetDaily: 0, holdClosureTargetDaily: 0, cashInClosureGapDaily: 0, cashOutClosureBreachDaily: 0, closureBufferDaily: 0, rawSafeReleaseAfterCashflowClosureDaily: 0, safeReleaseAfterCashflowClosureDaily: 0, cashflowClosureGapDaily: 0, cashflowClosureGapWeekly: 0, cashflowClosureGapMonthly: 0, cashflowClosureBufferWeekly: 0, cashflowClosureReleaseWeekly: 0, rebalanceCashInBoostDaily: 0, rebalanceCashOutCutDaily: 0, rebalanceRecoveryDaily: 0, rebalanceHoldDaily: 0, safeReleaseAfterRebalanceDaily: 0, cashflowRebalancingGapDaily: 0, cashflowMonitoringGapDaily: 0, dailyCashInMonitorTarget: 0, dailyCashOutMonitorLimit: 0, dailyRecoveryMonitorTarget: 0, dailyHoldMonitorTarget: 0, dailySafeReleaseMonitor: 0, observedDailyCashInPace: 0, observedDailyCashOutPace: 0, recoveryRequired: false, growthLocked: true, safeWallet: 0, safeNetWorth: 0, safeIncome: 0, safeExpense: 0, netMonthlyCashflow: 0, rebalancingStatus: "CASHFLOW_REBALANCE_LOCKED", rebalancingMode: "LOCKED_CASHFLOW_REBALANCING", rebalancingScore: 0, monitoringStatus: "CASHFLOW_MONITOR_LOCKED", executionStatus: "CASHFLOW_EXECUTION_LOCKED", guardrailStatus: "CASHFLOW_ALERT_LOCKED", commandStatus: "CASHFLOW_COMMAND_LOCKED", budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", ok: false };
+
+
+
+  const financialPredictiveMainReleaseCandidateEngine = canViewFinancialSummaryNow
+    ? buildPredictiveMainReleaseCandidateEngine({
+        cashflowClosureEngine: financialPredictiveCashflowClosureEngine,
+        cashflowRebalancingEngine: financialPredictiveCashflowRebalancingEngine,
+        cashflowMonitoringEngine: financialPredictiveCashflowMonitoringEngine,
+        cashflowExecutionEngine: financialPredictiveCashflowExecutionEngine,
+        cashflowGuardrailAlertEngine: financialPredictiveCashflowGuardrailAlertEngine,
+        cashflowCommandEngine: financialPredictiveCashflowCommandEngine,
+        budgetClosureEngine: financialPredictiveBudgetClosureEngine,
+        allocationClosureEngine: financialPredictiveAllocationClosureEngine,
+        scenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+        phaseClosureEngine: financialPredictivePhaseClosureEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { mainReleaseCandidateStatus: "MAIN_RELEASE_LOCKED", mainReleaseCandidateLabel: "No Access", mainReleaseCandidateMode: "LOCKED_RELEASE_CANDIDATE", mainReleaseCandidateScore: 0, mainReleaseCandidateColor: "#94a3b8", mainReleaseCandidateBg: "rgba(148,163,184,0.10)", mainReleaseCandidateNotice: "Main Release Candidate 7.4.6: engine terkunci untuk role ini.", mainReleaseCandidateMemo: "Role tidak memiliki akses Financial Summary.", mainReleaseCandidateRows: [], mainReleaseCandidateLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, mainReleaseGate: "LOCKED_BEFORE_MAIN", releaseCandidateClear: false, cashflowLayerReady: false, budgetLayerReady: false, allocationLayerReady: false, scenarioLayerReady: false, foundationLayerReady: false, governanceReady: false, dataSafe: false, nextMainReleaseGate: "LOCKED_STAY_7_4", canAdvanceToReleaseCandidate: false, cashflowClosureGapDaily: 0, closureBufferDaily: 0, safeReleaseAfterCashflowClosureDaily: 0, cashflowClosureReleaseWeekly: 0, cashflowClosureStatus: "CASHFLOW_CLOSURE_LOCKED", cashflowClosureScore: 0, rebalancingStatus: "CASHFLOW_REBALANCE_LOCKED", monitoringStatus: "CASHFLOW_MONITOR_LOCKED", executionStatus: "CASHFLOW_EXECUTION_LOCKED", guardrailStatus: "CASHFLOW_ALERT_LOCKED", commandStatus: "CASHFLOW_COMMAND_LOCKED", budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", budgetClosureScore: 0, allocationClosureStatus: "ALLOCATION_LOCKED", allocationClosureScore: 0, scenarioClosureStatus: "SCENARIO_LOCKED", scenarioClosureScore: 0, phaseClosureStatus: "PHASE_LOCKED", phaseClosureScore: 0, cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", safeWallet: 0, safeNetWorth: 0, safeIncome: 0, safeExpense: 0, netMonthlyCashflow: 0, recoveryRequired: false, growthLocked: true, ok: false };
 
 
     const childTotals = ["aroon","arunika","arkaja"].map(child => {
@@ -13794,6 +14082,7 @@ function buildPredictiveCashflowClosureEngine({
       { key: "predictiveCashflowMonitoringEngine", label: "Predictive Cashflow Monitoring Engine", count: financialPredictiveCashflowMonitoringEngine ? 1 : 0, critical: false },
       { key: "predictiveCashflowRebalancingEngine", label: "Predictive Cashflow Rebalancing Engine", count: financialPredictiveCashflowRebalancingEngine ? 1 : 0, critical: false },
       { key: "predictiveCashflowClosureEngine", label: "Predictive Cashflow Closure Engine", count: financialPredictiveCashflowClosureEngine ? 1 : 0, critical: false },
+      { key: "predictiveMainReleaseCandidateEngine", label: "Predictive Main Release Candidate Engine", count: financialPredictiveMainReleaseCandidateEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -13807,7 +14096,7 @@ function buildPredictiveCashflowClosureEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.4.5: Predictive Cashflow Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, cashflow guardrail alert, cashflow execution, cashflow monitoring, cashflow rebalancing, cashflow closure, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.4.6: Predictive Main Release Candidate Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, cashflow guardrail alert, cashflow execution, cashflow monitoring, cashflow rebalancing, cashflow closure, main release candidate, dan net worth baseline."
       ]
     };
   }
@@ -13817,7 +14106,7 @@ function buildPredictiveCashflowClosureEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-cashflow-closure-engine-7-4-5",
+      version: APP_VERSION + " predictive-main-release-candidate-engine-7-4-6",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -13879,6 +14168,7 @@ function buildPredictiveCashflowClosureEngine({
       predictiveCashflowMonitoringEngine: financialPredictiveCashflowMonitoringEngine,
       predictiveCashflowRebalancingEngine: financialPredictiveCashflowRebalancingEngine,
       predictiveCashflowClosureEngine: financialPredictiveCashflowClosureEngine,
+      predictiveMainReleaseCandidateEngine: financialPredictiveMainReleaseCandidateEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -17822,6 +18112,34 @@ function buildPredictiveCashflowClosureEngine({
                   <div style={{ marginTop: "7px", display: "grid", gap: "3px" }}>
                     <div style={{ fontSize: "10px", color: financialPredictiveCashflowClosureEngine.cashflowClosureColor, lineHeight: 1.45 }}>Memo: {financialPredictiveCashflowClosureEngine.cashflowClosureMemo}</div>
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Closure lock: {financialPredictiveCashflowClosureEngine.cashflowClosureLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
+
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+                    <div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Main Release Candidate 7.4.6</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateRows.slice(0, 6).map(row => (
+                      <div key={row.key} style={{ padding: "7px 8px", borderRadius: "10px", background: "rgba(15,23,42,0.28)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>{row.label}</div>
+                          <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.metric}</div>
+                        </div>
+                        <div style={{ marginTop: "3px", fontSize: "10px", color: "#cbd5e1", lineHeight: 1.4 }}>{row.action}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "7px", display: "grid", gap: "3px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateColor, lineHeight: 1.45 }}>Memo: {financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Main lock: {financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
 
