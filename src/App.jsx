@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.2.4";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.2.5";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.2.4";
-const FINANCIAL_ENGINE_NAME = "Predictive Allocation Rebalancing Engine";
+const FINANCIAL_ENGINE_VERSION = "7.2.5";
+const FINANCIAL_ENGINE_NAME = "Predictive Allocation Closure Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -7532,6 +7532,198 @@ function buildPredictiveAllocationRebalancingEngine({
 }
 
 
+function buildPredictiveAllocationClosureEngine({
+  rebalancingEngine = {},
+  monitoringEngine = {},
+  executionEngine = {},
+  guardrailEngine = {},
+  allocationEngine = {},
+  scenarioClosureEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  cfoEngine = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const rebalanceStatus = String(rebalancingEngine?.rebalanceStatus || "REBALANCE_LOCKED").toUpperCase();
+  const rebalanceMode = String(rebalancingEngine?.rebalanceMode || "LOCKED_REBALANCE").toUpperCase();
+  const monitoringStatus = String(monitoringEngine?.monitoringStatus || rebalancingEngine?.monitoringStatus || "MONITOR_LOCKED").toUpperCase();
+  const executionStatus = String(executionEngine?.executionStatus || rebalancingEngine?.executionStatus || "EXECUTION_LOCKED").toUpperCase();
+  const guardrailStatus = String(guardrailEngine?.guardrailStatus || rebalancingEngine?.guardrailStatus || "GUARDRAIL_LOCKED").toUpperCase();
+  const allocationStatus = String(allocationEngine?.allocationStatus || rebalancingEngine?.allocationStatus || "ALLOCATION_LOCKED").toUpperCase();
+  const scenarioClosureStatus = String(scenarioClosureEngine?.scenarioClosureStatus || rebalancingEngine?.scenarioClosureStatus || "SCENARIO_LOCKED").toUpperCase();
+  const complianceStatus = String(complianceEngine?.complianceStatus || rebalancingEngine?.complianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || rebalancingEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || rebalancingEngine?.gateDecision || "LOCKED").toUpperCase();
+  const cfoDecision = String(cfoEngine?.cfoDecision || "CFO_LOCKED").toUpperCase();
+  const rebalanceScore = Math.max(0, Math.min(100, asEngineNumber(rebalancingEngine?.rebalanceScore)));
+  const monitoringScore = Math.max(0, Math.min(100, asEngineNumber(monitoringEngine?.monitoringScore)));
+  const executionScore = Math.max(0, Math.min(100, asEngineNumber(executionEngine?.executionScore)));
+  const guardrailScore = Math.max(0, Math.min(100, asEngineNumber(guardrailEngine?.guardrailScore)));
+  const allocationScore = Math.max(0, Math.min(100, asEngineNumber(allocationEngine?.allocationScore)));
+  const rebalanceGap = Math.max(0, asEngineNumber(rebalancingEngine?.rebalanceGap));
+  const dailyRebalanceGap = Math.max(0, asEngineNumber(rebalancingEngine?.dailyRebalanceGap));
+  const recoverToFloor = Math.max(0, asEngineNumber(rebalancingEngine?.recoverToFloor));
+  const protectGoal = Math.max(0, asEngineNumber(rebalancingEngine?.protectGoal));
+  const reserveTopUp = Math.max(0, asEngineNumber(rebalancingEngine?.reserveTopUp));
+  const releaseAdjustment = Math.max(0, asEngineNumber(rebalancingEngine?.releaseAdjustment));
+  const growthRebalance = Math.max(0, asEngineNumber(rebalancingEngine?.growthRebalance));
+  const holdCash = Math.max(0, asEngineNumber(rebalancingEngine?.holdCash), asEngineNumber(executionEngine?.holdCash));
+  const requiredMonthlyAllocationBuffer = Math.max(0, asEngineNumber(rebalancingEngine?.requiredMonthlyAllocationBuffer), asEngineNumber(allocationEngine?.requiredMonthlyAllocationBuffer));
+  const recoveryRequired = !!rebalancingEngine?.recoveryRequired || !!monitoringEngine?.recoveryRequired || !!allocationEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || gateDecision === "RECOVERY";
+  const growthLocked = !!rebalancingEngine?.growthLocked || !!monitoringEngine?.growthLocked || !!allocationEngine?.growthLocked || policyMode === "RECOVERY" || gateDecision === "RECOVERY" || guardrailStatus !== "GUARDRAIL_CLEAR";
+  const closureGap = Math.max(rebalanceGap, recoverToFloor, netMonthlyCashflow < 0 ? Math.abs(netMonthlyCashflow) : 0, requiredMonthlyAllocationBuffer > releaseAdjustment + holdCash ? requiredMonthlyAllocationBuffer - releaseAdjustment - holdCash : 0);
+  const dailyClosureGap = Math.ceil(closureGap / 30);
+  const monthlyClosureBuffer = Math.max(0, Math.ceil(Math.max(requiredMonthlyAllocationBuffer, protectGoal + reserveTopUp + recoverToFloor)));
+  const dailyClosureBuffer = Math.ceil(monthlyClosureBuffer / 30);
+  const safeToRelease = Math.max(0, releaseAdjustment - closureGap);
+  const nextAllocationTrack = recoveryRequired || closureGap > 0 ? "Recovery before release" : growthLocked ? "Controlled allocation review" : "Ready for allocation 7.3";
+  const blockers = [];
+  if (safeWallet < 0) blockers.push("wallet_negatif");
+  if (safeNetWorth < 0) blockers.push("net_worth_negatif");
+  if (netMonthlyCashflow < 0) blockers.push("cashflow_negatif");
+  if (rebalanceStatus === "REBALANCE_LOCKED") blockers.push("rebalance_locked");
+  if (rebalanceStatus === "REBALANCE_REQUIRED") blockers.push("rebalance_required");
+  if (monitoringStatus === "MONITOR_LOCKED") blockers.push("monitor_locked");
+  if (executionStatus === "EXECUTION_LOCKED") blockers.push("execution_locked");
+  if (guardrailStatus === "GUARDRAIL_LOCKED") blockers.push("guardrail_locked");
+  if (allocationStatus === "ALLOCATION_LOCKED") blockers.push("allocation_locked");
+  if (scenarioClosureStatus === "SCENARIO_LOCKED") blockers.push("scenario_locked");
+  if (["LOCKED", "BREACH"].includes(complianceStatus)) blockers.push("compliance_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(policyMode)) blockers.push("policy_not_clear");
+  if (["LOCKED", "RECOVERY"].includes(gateDecision)) blockers.push("gate_not_clear");
+  if (["CFO_LOCKED", "CFO_RECOVERY"].includes(cfoDecision)) blockers.push("cfo_not_clear");
+  if (closureGap > 0) blockers.push("closure_gap");
+  const closurePenalty =
+    (safeWallet < 0 ? 18 : 0) +
+    (safeNetWorth < 0 ? 16 : 0) +
+    (netMonthlyCashflow < 0 ? 14 : 0) +
+    (closureGap > 0 ? 14 : 0) +
+    (rebalanceStatus === "REBALANCE_LOCKED" ? 24 : rebalanceStatus === "REBALANCE_REQUIRED" ? 16 : rebalanceStatus === "REBALANCE_WATCH" ? 8 : 0) +
+    (monitoringStatus === "MONITOR_LOCKED" ? 12 : monitoringStatus === "MONITOR_BREACH" ? 8 : monitoringStatus === "MONITOR_WATCH" ? 4 : 0) +
+    (executionStatus === "EXECUTION_LOCKED" ? 12 : executionStatus === "EXECUTION_RECOVERY" ? 8 : 0) +
+    (["LOCKED", "BREACH"].includes(complianceStatus) ? 10 : complianceStatus === "WATCH" ? 4 : 0) +
+    (growthLocked ? 4 : 0);
+  const closureCap = Math.min(
+    safeWallet < 0 ? 36 : 100,
+    safeNetWorth < 0 ? 40 : 100,
+    rebalanceStatus === "REBALANCE_LOCKED" ? 28 : rebalanceStatus === "REBALANCE_REQUIRED" ? 56 : rebalanceStatus === "REBALANCE_WATCH" ? 76 : 100,
+    monitoringStatus === "MONITOR_LOCKED" ? 34 : monitoringStatus === "MONITOR_BREACH" ? 60 : 100,
+    executionStatus === "EXECUTION_LOCKED" ? 36 : executionStatus === "EXECUTION_RECOVERY" ? 64 : 100,
+    closureGap > 0 ? 70 : 100,
+    recoveryRequired ? 64 : 100
+  );
+  const closureBase = Math.round((rebalanceScore * 0.42) + (monitoringScore * 0.20) + (executionScore * 0.16) + (guardrailScore * 0.12) + (allocationScore * 0.10));
+  const closureScore = Math.max(0, Math.min(closureCap, closureBase - closurePenalty + 22));
+  let closureStatus = "ALLOCATION_READY";
+  let closureLabel = "Allocation Ready";
+  let closureMode = "GROWTH_ALLOCATION_CLOSE";
+  if (rebalanceStatus === "REBALANCE_LOCKED" || monitoringStatus === "MONITOR_LOCKED" || executionStatus === "EXECUTION_LOCKED" || guardrailStatus === "GUARDRAIL_LOCKED" || allocationStatus === "ALLOCATION_LOCKED" || complianceStatus === "LOCKED" || gateDecision === "LOCKED") {
+    closureStatus = "ALLOCATION_LOCKED";
+    closureLabel = "Allocation Locked";
+    closureMode = "LOCKED_ALLOCATION_CLOSE";
+  } else if (recoveryRequired || rebalanceStatus === "REBALANCE_REQUIRED" || closureGap > 0 || closureScore < 50) {
+    closureStatus = "ALLOCATION_RECOVERY";
+    closureLabel = "Allocation Recovery";
+    closureMode = "RECOVERY_ALLOCATION_CLOSE";
+  } else if (growthLocked || rebalanceStatus === "REBALANCE_WATCH" || monitoringStatus === "MONITOR_WATCH" || closureScore < 76) {
+    closureStatus = "ALLOCATION_CONTROL";
+    closureLabel = "Allocation Control";
+    closureMode = "CONTROL_ALLOCATION_CLOSE";
+  }
+  const closureColor = closureStatus === "ALLOCATION_READY" ? "#86efac" : closureStatus === "ALLOCATION_CONTROL" ? "#fde68a" : closureStatus === "ALLOCATION_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const closureBg = closureStatus === "ALLOCATION_READY" ? "rgba(16,185,129,0.10)" : closureStatus === "ALLOCATION_CONTROL" ? "rgba(245,158,11,0.11)" : closureStatus === "ALLOCATION_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const closureRows = [
+    {
+      key: "closure-decision",
+      label: "Allocation closure",
+      color: closureColor,
+      metric: closureStatus.replace("ALLOCATION_", ""),
+      action: closureStatus === "ALLOCATION_READY" ? "Allocation layer siap ditutup dan dibawa ke track 7.3." : closureStatus === "ALLOCATION_CONTROL" ? "Allocation boleh lanjut terbatas dengan kontrol dan review." : closureStatus === "ALLOCATION_RECOVERY" ? "Tutup gap recovery sebelum release/growth tambahan." : "Allocation layer terkunci sampai blocker utama selesai.",
+    },
+    {
+      key: "next-allocation-track",
+      label: "Next allocation track",
+      color: closureStatus === "ALLOCATION_READY" ? "#86efac" : "#c7d2fe",
+      metric: nextAllocationTrack,
+      action: closureStatus === "ALLOCATION_READY" ? "Siapkan next layer tanpa menambah modul baru yang belum perlu." : "Pertahankan fokus pada recovery/control sebelum ekspansi allocation.",
+    },
+    {
+      key: "closure-buffer",
+      label: "Monthly closure buffer",
+      color: monthlyClosureBuffer > 0 ? "#fde68a" : "#94a3b8",
+      metric: `${formatRupiah(monthlyClosureBuffer)}/bln`,
+      action: monthlyClosureBuffer > 0 ? `Buffer harian sekitar ${formatRupiah(dailyClosureBuffer)} perlu dijaga.` : "Belum ada buffer tambahan dari closure engine.",
+    },
+    {
+      key: "closure-gap",
+      label: "Closure gap",
+      color: closureGap > 0 ? "#fecaca" : "#86efac",
+      metric: closureGap > 0 ? `${formatRupiah(closureGap)}/bln` : "Clear",
+      action: closureGap > 0 ? `Tutup gap sekitar ${formatRupiah(dailyClosureGap)}/hari sebelum allocation close.` : "Tidak ada gap utama untuk menutup allocation layer.",
+    },
+    {
+      key: "safe-release",
+      label: "Safe release",
+      color: safeToRelease > 0 && closureStatus === "ALLOCATION_READY" ? "#86efac" : "#94a3b8",
+      metric: formatRupiah(safeToRelease),
+      action: safeToRelease > 0 && closureStatus === "ALLOCATION_READY" ? "Release cash aman setelah buffer, recovery, reserve, dan goal terlindungi." : "Release cash tetap ditahan sampai closure clear.",
+    },
+  ];
+  const closureLocks = [];
+  if (closureStatus === "ALLOCATION_LOCKED") closureLocks.push("Allocation closure locked: rebalance/monitor/execution/guardrail/compliance/gate belum clear.");
+  if (closureStatus === "ALLOCATION_RECOVERY") closureLocks.push("Allocation closure recovery: selesaikan gap recovery sebelum next allocation layer.");
+  if (closureStatus === "ALLOCATION_CONTROL") closureLocks.push("Allocation closure control: lanjut terbatas dengan buffer dan review ketat.");
+  if (closureGap > 0) closureLocks.push(`Closure gap ${formatRupiah(closureGap)}/bulan · ${formatRupiah(dailyClosureGap)}/hari.`);
+  if (!closureLocks.length) closureLocks.push("Allocation closure ready: phase 7.2 siap ditutup sebagai allocation layer.");
+  const closureMemo = `${closureLabel}: ${closureMode} · next ${nextAllocationTrack} · gap ${formatRupiah(closureGap)}/bulan.`;
+  const closureNotice = `Allocation Closure 7.2.5: ${closureMode} · ${closureStatus} · score ${closureScore}/100`;
+  return {
+    closureStatus,
+    closureLabel,
+    closureMode,
+    closureScore,
+    closureColor,
+    closureBg,
+    closureNotice,
+    closureMemo,
+    closureRows,
+    closureLocks,
+    blockers,
+    blockerCount: blockers.length,
+    closureGap,
+    dailyClosureGap,
+    monthlyClosureBuffer,
+    dailyClosureBuffer,
+    safeToRelease,
+    nextAllocationTrack,
+    rebalanceStatus,
+    rebalanceMode,
+    rebalanceScore,
+    monitoringStatus,
+    executionStatus,
+    guardrailStatus,
+    allocationStatus,
+    scenarioClosureStatus,
+    complianceStatus,
+    policyMode,
+    gateDecision,
+    cfoDecision,
+    recoveryRequired,
+    growthLocked,
+    ok: closureStatus === "ALLOCATION_READY" && closureScore >= 76 && closureGap === 0 && !recoveryRequired,
+  };
+}
+
+
 
 
 
@@ -7570,6 +7762,27 @@ function buildPredictiveAllocationRebalancingEngine({
         monthlyExpense,
       })
     : { rebalanceStatus: "REBALANCE_LOCKED", rebalanceLabel: "No Access", rebalanceMode: "LOCKED_REBALANCE", rebalanceScore: 0, rebalanceColor: "#94a3b8", rebalanceBg: "rgba(148,163,184,0.10)", rebalanceNotice: "Allocation Rebalancing 7.2.4: engine terkunci untuk role ini.", rebalanceMemo: "Role tidak memiliki akses Financial Summary.", rebalanceRows: [], rebalanceLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, rebalanceGap: 0, dailyRebalanceGap: 0, recoverToFloor: 0, protectGoal: 0, reserveTopUp: 0, releaseAdjustment: 0, growthRebalance: 0, dailyReleaseTarget: 0, weeklyReleaseTarget: 0, monthlyMonitoringGap: 0, releaseCashNow: 0, holdCash: 0, recoveryExecution: 0, goalExecution: 0, reserveExecution: 0, growthExecution: 0, requiredMonthlyAllocationBuffer: 0, netMonthlyCashflow: 0, monitoringStatus: "MONITOR_LOCKED", monitoringMode: "LOCKED_MONITORING", executionStatus: "EXECUTION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
+
+
+
+  const financialPredictiveAllocationClosureEngine = canViewFinancialSummaryNow
+    ? buildPredictiveAllocationClosureEngine({
+        rebalancingEngine: financialPredictiveAllocationRebalancingEngine,
+        monitoringEngine: financialPredictiveAllocationMonitoringEngine,
+        executionEngine: financialPredictiveAllocationExecutionEngine,
+        guardrailEngine: financialPredictiveAllocationGuardrailEngine,
+        allocationEngine: financialPredictiveAllocationPlanningEngine,
+        scenarioClosureEngine: financialPredictiveScenarioClosureEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        cfoEngine: financialPredictiveCfoAdvisoryEngine,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : { closureStatus: "ALLOCATION_LOCKED", closureLabel: "No Access", closureMode: "LOCKED_ALLOCATION_CLOSE", closureScore: 0, closureColor: "#94a3b8", closureBg: "rgba(148,163,184,0.10)", closureNotice: "Allocation Closure 7.2.5: engine terkunci untuk role ini.", closureMemo: "Role tidak memiliki akses Financial Summary.", closureRows: [], closureLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, closureGap: 0, dailyClosureGap: 0, monthlyClosureBuffer: 0, dailyClosureBuffer: 0, safeToRelease: 0, nextAllocationTrack: "Locked", rebalanceStatus: "REBALANCE_LOCKED", rebalanceMode: "LOCKED_REBALANCE", rebalanceScore: 0, monitoringStatus: "MONITOR_LOCKED", executionStatus: "EXECUTION_LOCKED", guardrailStatus: "GUARDRAIL_LOCKED", allocationStatus: "ALLOCATION_LOCKED", scenarioClosureStatus: "SCENARIO_LOCKED", complianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", cfoDecision: "CFO_LOCKED", recoveryRequired: false, growthLocked: true, ok: false };
 
     const childTotals = ["aroon","arunika","arkaja"].map(child => {
     const goals = savingsGoals.filter(g => g.category === child);
@@ -10079,6 +10292,7 @@ function buildPredictiveAllocationRebalancingEngine({
       { key: "predictiveAllocationExecutionEngine", label: "Predictive Allocation Execution Engine", count: financialPredictiveAllocationExecutionEngine ? 1 : 0, critical: false },
       { key: "predictiveAllocationMonitoringEngine", label: "Predictive Allocation Monitoring Engine", count: financialPredictiveAllocationMonitoringEngine ? 1 : 0, critical: false },
       { key: "predictiveAllocationRebalancingEngine", label: "Predictive Allocation Rebalancing Engine", count: financialPredictiveAllocationRebalancingEngine ? 1 : 0, critical: false },
+      { key: "predictiveAllocationClosureEngine", label: "Predictive Allocation Closure Engine", count: financialPredictiveAllocationClosureEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -10092,7 +10306,7 @@ function buildPredictiveAllocationRebalancingEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.2.4: Predictive Allocation Rebalancing Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.2.5: Predictive Allocation Closure Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, dan net worth baseline."
       ]
     };
   }
@@ -10102,7 +10316,7 @@ function buildPredictiveAllocationRebalancingEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-allocation-rebalancing-engine-7-2-4",
+      version: APP_VERSION + " predictive-allocation-closure-engine-7-2-5",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -10150,6 +10364,7 @@ function buildPredictiveAllocationRebalancingEngine({
       predictiveAllocationExecutionEngine: financialPredictiveAllocationExecutionEngine,
       predictiveAllocationMonitoringEngine: financialPredictiveAllocationMonitoringEngine,
       predictiveAllocationRebalancingEngine: financialPredictiveAllocationRebalancingEngine,
+      predictiveAllocationClosureEngine: financialPredictiveAllocationClosureEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -13687,6 +13902,34 @@ function buildPredictiveAllocationRebalancingEngine({
                   <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
                     <div style={{ fontSize: "10px", color: financialPredictiveAllocationRebalancingEngine.rebalanceColor, lineHeight: 1.45 }}>Memo: {financialPredictiveAllocationRebalancingEngine.rebalanceMemo}</div>
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Rebalance lock: {financialPredictiveAllocationRebalancingEngine.rebalanceLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialPredictiveAllocationClosureEngine.closureBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialPredictiveAllocationClosureEngine.closureColor, fontWeight: 900, textTransform: "uppercase" }}>Predictive Allocation Closure 7.2.5</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialPredictiveAllocationClosureEngine.closureNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialPredictiveAllocationClosureEngine.closureColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialPredictiveAllocationClosureEngine.closureScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialPredictiveAllocationClosureEngine.closureRows.slice(0, 5).map(row => (
+                      <div key={row.key} style={{ padding: "8px", borderRadius: "11px", background: "rgba(15,23,42,0.35)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "flex-start" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.label}</div>
+                            <div style={{ marginTop: "2px", fontSize: "9px", color: "#94a3b8", lineHeight: 1.35 }}>{row.action}</div>
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right", fontSize: "9px", color: row.color, fontWeight: 900 }}>{row.metric}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "5px" }}>
+                    <div style={{ fontSize: "10px", color: financialPredictiveAllocationClosureEngine.closureColor, lineHeight: 1.45 }}>Memo: {financialPredictiveAllocationClosureEngine.closureMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Closure lock: {financialPredictiveAllocationClosureEngine.closureLocks.slice(0, 2).join(" · ")}</div>
                   </div>
                 </div>
 
