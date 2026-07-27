@@ -24,7 +24,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000; // 12 jam tetap login setelah refresh
 const SESSION_KEY = "finplan_session_until";
 const PIN_SALT = "finplan_adp_2026";
 const PIN_DIGITS = 6;
-const APP_VERSION = "FinPlan v1.1.0 phase 7.4.6";
+const APP_VERSION = "FinPlan v1.1.0 phase 7.4.8";
 
 const FINANCIAL_MOVEMENT_TYPES = [
   { id: "income", label: "Pemasukan", effect: "wallet_increase", netWorth: "increase" },
@@ -41,8 +41,8 @@ const FINANCIAL_MOVEMENT_TYPES = [
   { id: "fee_interest", label: "Biaya / Bunga", effect: "wallet_decrease", netWorth: "decrease" },
 ];
 
-const FINANCIAL_ENGINE_VERSION = "7.4.6";
-const FINANCIAL_ENGINE_NAME = "Predictive Main Release Candidate Engine";
+const FINANCIAL_ENGINE_VERSION = "7.4.8";
+const FINANCIAL_ENGINE_NAME = "Main Release Seal Engine";
 const FINANCIAL_ENGINE_STATUS_OK = "Engine Guard OK";
 
 const LEDGER_FINANCIAL_TREATMENT = {
@@ -6218,6 +6218,8 @@ export default function App() {
     });
   const totalIncome = filteredPeriodTxns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const totalExpense = filteredPeriodTxns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
+  const monthlyIncome = totalIncome;
+  const monthlyExpense = totalExpense;
   const balance = totalIncome - totalExpense;
   const visibleIncome = displayTxns.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount || 0), 0);
   const visibleExpense = displayTxns.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount || 0), 0);
@@ -11325,6 +11327,203 @@ function buildPredictiveMainReleaseCandidateEngine({
   };
 }
 
+function buildMainReleaseSealEngine({
+  mainReleaseCandidateEngine = {},
+  cashflowClosureEngine = {},
+  complianceEngine = {},
+  governanceEngine = {},
+  gateEngine = {},
+  ledgerValidation = {},
+  auditTrailGuard = {},
+  finalLockGuard = {},
+  closureGuard = {},
+  sealGuard = {},
+  releaseReadinessGuard = {},
+  walletTotal = 0,
+  netWorth = 0,
+  monthlyIncome = 0,
+  monthlyExpense = 0,
+} = {}) {
+  const safeWallet = asEngineNumber(walletTotal);
+  const safeNetWorth = asEngineNumber(netWorth);
+  const safeIncome = Math.max(0, asEngineNumber(monthlyIncome));
+  const safeExpense = Math.max(0, asEngineNumber(monthlyExpense));
+  const netMonthlyCashflow = safeIncome - safeExpense;
+  const candidateStatus = String(mainReleaseCandidateEngine?.mainReleaseCandidateStatus || "MAIN_RELEASE_LOCKED").toUpperCase();
+  const candidateScore = Math.max(0, Math.min(100, asEngineNumber(mainReleaseCandidateEngine?.mainReleaseCandidateScore)));
+  const candidateGate = String(mainReleaseCandidateEngine?.mainReleaseGate || "LOCKED_BEFORE_MAIN").toUpperCase();
+  const cashflowClosureStatus = String(cashflowClosureEngine?.cashflowClosureStatus || mainReleaseCandidateEngine?.cashflowClosureStatus || "CASHFLOW_CLOSURE_LOCKED").toUpperCase();
+  const complianceStatus = String(complianceEngine?.complianceStatus || mainReleaseCandidateEngine?.policyComplianceStatus || "LOCKED").toUpperCase();
+  const policyMode = String(governanceEngine?.policyMode || mainReleaseCandidateEngine?.policyMode || "LOCKED").toUpperCase();
+  const gateDecision = String(gateEngine?.gateDecision || mainReleaseCandidateEngine?.gateDecision || "LOCKED").toUpperCase();
+  const candidateClear = !!mainReleaseCandidateEngine?.releaseCandidateClear && candidateStatus === "MAIN_RELEASE_READY";
+  const governanceReady = !!mainReleaseCandidateEngine?.governanceReady && complianceStatus === "COMPLIANT" && !["LOCKED", "RECOVERY"].includes(policyMode) && !["LOCKED", "RECOVERY"].includes(gateDecision);
+  const dataSafe = !!mainReleaseCandidateEngine?.dataSafe && safeWallet >= 0 && safeNetWorth >= 0 && netMonthlyCashflow >= 0;
+  const ledgerIssueCount = Math.max(0, asEngineNumber(ledgerValidation?.issueCount));
+  const auditIssueCount = Math.max(0, asEngineNumber(auditTrailGuard?.issueCount));
+  const finalLockIssueCount = Math.max(0, asEngineNumber(finalLockGuard?.issueCount));
+  const closureIssueCount = Math.max(0, asEngineNumber(closureGuard?.issueCount));
+  const sealGuardIssueCount = Math.max(0, asEngineNumber(sealGuard?.issueCount));
+  const readinessIssueCount = Math.max(0, asEngineNumber(releaseReadinessGuard?.issueCount));
+  const integrityIssueCount = ledgerIssueCount + auditIssueCount + finalLockIssueCount + closureIssueCount + sealGuardIssueCount + readinessIssueCount;
+  const guardCascadeClear = !finalLockGuard?.hardLock && !closureGuard?.hardClosure && !sealGuard?.hardSeal && !releaseReadinessGuard?.releaseBlocked;
+  const closureClear = cashflowClosureStatus === "CASHFLOW_CLOSURE_READY" && !!closureGuard?.closureReady && !!sealGuard?.sealReady;
+  const readinessClear = !!releaseReadinessGuard?.releaseReady && !releaseReadinessGuard?.releaseReview;
+  const recoveryRequired = !!mainReleaseCandidateEngine?.recoveryRequired || safeWallet < 0 || safeNetWorth < 0 || netMonthlyCashflow < 0;
+  const sealClear = candidateClear && candidateScore >= 80 && candidateGate === "MERGE_TO_MAIN_READY" && governanceReady && dataSafe && guardCascadeClear && closureClear && readinessClear && integrityIssueCount === 0 && !recoveryRequired;
+
+  const blockers = [];
+  if (!candidateClear) blockers.push("release_candidate_not_clear");
+  if (candidateScore < 80) blockers.push("release_candidate_score_below_80");
+  if (candidateGate !== "MERGE_TO_MAIN_READY") blockers.push("main_gate_not_ready");
+  if (!governanceReady) blockers.push("governance_not_clear");
+  if (!dataSafe) blockers.push("financial_data_not_safe");
+  if (!closureClear) blockers.push("closure_not_sealed");
+  if (!guardCascadeClear) blockers.push("guard_cascade_open");
+  if (!readinessClear) blockers.push("release_readiness_not_clear");
+  if (ledgerIssueCount > 0) blockers.push("ledger_validation_open");
+  if (auditIssueCount > 0) blockers.push("audit_trail_open");
+  if (finalLockIssueCount > 0) blockers.push("final_lock_open");
+  if (closureIssueCount > 0) blockers.push("closure_guard_open");
+  if (sealGuardIssueCount > 0) blockers.push("seal_guard_open");
+  if (readinessIssueCount > 0) blockers.push("release_readiness_issues");
+  if (recoveryRequired) blockers.push("recovery_required");
+
+  const integrityPenalty = Math.min(36, integrityIssueCount * 4);
+  const safetyPenalty =
+    (!governanceReady ? 12 : 0) +
+    (!dataSafe ? 18 : 0) +
+    (!closureClear ? 12 : 0) +
+    (!guardCascadeClear ? 14 : 0) +
+    (!readinessClear ? 10 : 0) +
+    (recoveryRequired ? 20 : 0);
+  const mainReleaseSealScore = Math.max(0, Math.min(100, Math.round(candidateScore * 0.62 + (governanceReady ? 12 : 0) + (dataSafe ? 10 : 0) + (closureClear ? 8 : 0) + (readinessClear ? 8 : 0) - integrityPenalty - safetyPenalty)));
+
+  let mainReleaseSealStatus = "MAIN_RELEASE_SEALED";
+  let mainReleaseSealLabel = "Main Release Sealed";
+  let mainReleaseSealMode = "SEALED_RELEASE_BASELINE";
+  if (candidateStatus === "MAIN_RELEASE_LOCKED" || gateDecision === "LOCKED") {
+    mainReleaseSealStatus = "MAIN_RELEASE_SEAL_LOCKED";
+    mainReleaseSealLabel = "Main Release Seal Locked";
+    mainReleaseSealMode = "LOCKED_RELEASE_SEAL";
+  } else if (recoveryRequired || candidateStatus === "MAIN_RELEASE_RECOVERY" || mainReleaseSealScore < 50) {
+    mainReleaseSealStatus = "MAIN_RELEASE_SEAL_RECOVERY";
+    mainReleaseSealLabel = "Main Release Seal Recovery";
+    mainReleaseSealMode = "RECOVERY_BEFORE_SEAL";
+  } else if (!sealClear || mainReleaseSealScore < 80) {
+    mainReleaseSealStatus = "MAIN_RELEASE_SEAL_REVIEW";
+    mainReleaseSealLabel = "Main Release Seal Review";
+    mainReleaseSealMode = "FINAL_REVIEW_BEFORE_SEAL";
+  }
+
+  const mainReleaseSealColor = mainReleaseSealStatus === "MAIN_RELEASE_SEALED" ? "#86efac" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_REVIEW" ? "#fde68a" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_RECOVERY" ? "#fecaca" : "#94a3b8";
+  const mainReleaseSealBg = mainReleaseSealStatus === "MAIN_RELEASE_SEALED" ? "rgba(16,185,129,0.10)" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_REVIEW" ? "rgba(245,158,11,0.11)" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_RECOVERY" ? "rgba(239,68,68,0.12)" : "rgba(148,163,184,0.10)";
+  const sealDecision = sealClear ? "SEALED_FOR_MAIN_RELEASE" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_REVIEW" ? "FINAL_REVIEW_REQUIRED" : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_RECOVERY" ? "RECOVERY_REQUIRED" : "SEAL_LOCKED";
+  const sealFingerprint = `FP-748-${Math.round(candidateScore).toString().padStart(3, "0")}-${Math.round(mainReleaseSealScore).toString().padStart(3, "0")}-${integrityIssueCount.toString().padStart(2, "0")}`;
+  const mainReleaseSealRows = [
+    {
+      key: "seal-decision",
+      label: "Seal decision",
+      color: mainReleaseSealColor,
+      metric: sealDecision.replaceAll("_", " "),
+      action: sealClear ? "Baseline financial engine 7.4.8 tersegel untuk main release." : "Tahan release sampai seluruh seal blocker ditutup.",
+    },
+    {
+      key: "candidate",
+      label: "Release candidate",
+      color: candidateClear ? "#86efac" : "#fde68a",
+      metric: `${candidateScore}/100`,
+      action: candidateClear ? "Main Release Candidate 7.4.6 tervalidasi sebagai upstream seal." : "Release candidate belum memenuhi gate seal.",
+    },
+    {
+      key: "governance",
+      label: "Governance",
+      color: governanceReady ? "#86efac" : "#fecaca",
+      metric: complianceStatus,
+      action: governanceReady ? "Compliance, policy, dan decision gate clear." : "Governance wajib clear sebelum seal diterbitkan.",
+    },
+    {
+      key: "integrity",
+      label: "Integrity cascade",
+      color: integrityIssueCount === 0 && guardCascadeClear ? "#86efac" : "#fecaca",
+      metric: `${integrityIssueCount} isu`,
+      action: integrityIssueCount === 0 && guardCascadeClear ? "Ledger, audit, final lock, closure, dan guard cascade clear." : "Tutup seluruh isu integrity dan guard cascade.",
+    },
+    {
+      key: "cash-safety",
+      label: "Financial safety",
+      color: dataSafe ? "#86efac" : "#fecaca",
+      metric: formatRupiah(netMonthlyCashflow),
+      action: dataSafe ? "Wallet, net worth, dan cashflow bulanan aman." : "Financial safety masih menahan seal.",
+    },
+    {
+      key: "fingerprint",
+      label: "Seal fingerprint",
+      color: mainReleaseSealColor,
+      metric: sealFingerprint,
+      action: "Fingerprint merangkum candidate score, seal score, dan jumlah isu integrity.",
+    },
+  ];
+  const mainReleaseSealLocks = blockers.length
+    ? blockers.slice(0, 8).map(item => `Lock: ${item.replaceAll("_", " ")}`)
+    : ["Main Release Seal clear: candidate, governance, safety, integrity, closure, dan readiness sudah tervalidasi."];
+  const mainReleaseSealNotice = `${mainReleaseSealLabel}. ${sealDecision.replaceAll("_", " ")} · Candidate ${candidateScore}/100 · Integrity ${integrityIssueCount} isu.`;
+  const mainReleaseSealMemo = mainReleaseSealStatus === "MAIN_RELEASE_SEALED"
+    ? "Seal aktif: baseline 7.4.8 siap dipakai sebagai Main Release Seal Engine."
+    : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_REVIEW"
+      ? "Mode review: selesaikan final blocker sebelum menerbitkan seal."
+      : mainReleaseSealStatus === "MAIN_RELEASE_SEAL_RECOVERY"
+        ? "Mode recovery: pulihkan wallet, net worth, cashflow, dan guard cascade sebelum seal."
+        : "Mode locked: akses atau main release gate belum membuka proses seal.";
+
+  return {
+    engine: "Main Release Seal Engine",
+    version: "7.4.8",
+    mainReleaseSealStatus,
+    mainReleaseSealLabel,
+    mainReleaseSealMode,
+    mainReleaseSealScore,
+    mainReleaseSealColor,
+    mainReleaseSealBg,
+    mainReleaseSealNotice,
+    mainReleaseSealMemo,
+    mainReleaseSealRows,
+    mainReleaseSealLocks,
+    sealDecision,
+    sealFingerprint,
+    sealClear,
+    candidateStatus,
+    candidateScore,
+    candidateGate,
+    candidateClear,
+    governanceReady,
+    dataSafe,
+    guardCascadeClear,
+    closureClear,
+    readinessClear,
+    integrityIssueCount,
+    ledgerIssueCount,
+    auditIssueCount,
+    finalLockIssueCount,
+    closureIssueCount,
+    sealGuardIssueCount,
+    readinessIssueCount,
+    complianceStatus,
+    policyMode,
+    gateDecision,
+    cashflowClosureStatus,
+    recoveryRequired,
+    blockers,
+    blockerCount: blockers.length,
+    safeWallet,
+    safeNetWorth,
+    safeIncome,
+    safeExpense,
+    netMonthlyCashflow,
+    ok: mainReleaseSealStatus === "MAIN_RELEASE_SEALED" && mainReleaseSealScore >= 80 && sealClear,
+  };
+}
+
 
 
 
@@ -11558,6 +11757,46 @@ function buildPredictiveMainReleaseCandidateEngine({
         monthlyExpense,
       })
     : { mainReleaseCandidateStatus: "MAIN_RELEASE_LOCKED", mainReleaseCandidateLabel: "No Access", mainReleaseCandidateMode: "LOCKED_RELEASE_CANDIDATE", mainReleaseCandidateScore: 0, mainReleaseCandidateColor: "#94a3b8", mainReleaseCandidateBg: "rgba(148,163,184,0.10)", mainReleaseCandidateNotice: "Main Release Candidate 7.4.6: engine terkunci untuk role ini.", mainReleaseCandidateMemo: "Role tidak memiliki akses Financial Summary.", mainReleaseCandidateRows: [], mainReleaseCandidateLocks: ["Role tidak memiliki akses Financial Summary."], blockers: ["role_locked"], blockerCount: 1, mainReleaseGate: "LOCKED_BEFORE_MAIN", releaseCandidateClear: false, cashflowLayerReady: false, budgetLayerReady: false, allocationLayerReady: false, scenarioLayerReady: false, foundationLayerReady: false, governanceReady: false, dataSafe: false, nextMainReleaseGate: "LOCKED_STAY_7_4", canAdvanceToReleaseCandidate: false, cashflowClosureGapDaily: 0, closureBufferDaily: 0, safeReleaseAfterCashflowClosureDaily: 0, cashflowClosureReleaseWeekly: 0, cashflowClosureStatus: "CASHFLOW_CLOSURE_LOCKED", cashflowClosureScore: 0, rebalancingStatus: "CASHFLOW_REBALANCE_LOCKED", monitoringStatus: "CASHFLOW_MONITOR_LOCKED", executionStatus: "CASHFLOW_EXECUTION_LOCKED", guardrailStatus: "CASHFLOW_ALERT_LOCKED", commandStatus: "CASHFLOW_COMMAND_LOCKED", budgetClosureStatus: "BUDGET_CLOSURE_LOCKED", budgetClosureScore: 0, allocationClosureStatus: "ALLOCATION_LOCKED", allocationClosureScore: 0, scenarioClosureStatus: "SCENARIO_LOCKED", scenarioClosureScore: 0, phaseClosureStatus: "PHASE_LOCKED", phaseClosureScore: 0, cfoDecision: "CFO_LOCKED", policyComplianceStatus: "LOCKED", policyMode: "LOCKED", gateDecision: "LOCKED", safeWallet: 0, safeNetWorth: 0, safeIncome: 0, safeExpense: 0, netMonthlyCashflow: 0, recoveryRequired: false, growthLocked: true, ok: false };
+
+  const financialMainReleaseSealEngine = canViewFinancialSummaryNow
+    ? buildMainReleaseSealEngine({
+        mainReleaseCandidateEngine: financialPredictiveMainReleaseCandidateEngine,
+        cashflowClosureEngine: financialPredictiveCashflowClosureEngine,
+        complianceEngine: financialPredictiveGovernanceComplianceEngine,
+        governanceEngine: financialPredictiveGovernancePolicyEngine,
+        gateEngine: financialPredictiveDecisionGateEngine,
+        ledgerValidation: financialLedgerValidation,
+        auditTrailGuard: financialAuditTrailGuard,
+        finalLockGuard: financialFinalLockGuard,
+        closureGuard: financialClosureGuard,
+        sealGuard: financialSealGuard,
+        releaseReadinessGuard: financialReleaseReadinessGuard,
+        walletTotal: financialWalletTotal,
+        netWorth: financialNetWorth,
+        monthlyIncome,
+        monthlyExpense,
+      })
+    : {
+        engine: "Main Release Seal Engine",
+        version: "7.4.8",
+        mainReleaseSealStatus: "MAIN_RELEASE_SEAL_LOCKED",
+        mainReleaseSealLabel: "No Access",
+        mainReleaseSealMode: "LOCKED_RELEASE_SEAL",
+        mainReleaseSealScore: 0,
+        mainReleaseSealColor: "#94a3b8",
+        mainReleaseSealBg: "rgba(148,163,184,0.10)",
+        mainReleaseSealNotice: "Main Release Seal 7.4.8: engine terkunci untuk role ini.",
+        mainReleaseSealMemo: "Role tidak memiliki akses Financial Summary.",
+        mainReleaseSealRows: [],
+        mainReleaseSealLocks: ["Role tidak memiliki akses Financial Summary."],
+        sealDecision: "SEAL_LOCKED",
+        sealFingerprint: "FP-748-000-000-00",
+        sealClear: false,
+        integrityIssueCount: 0,
+        blockers: ["role_locked"],
+        blockerCount: 1,
+        ok: false,
+      };
 
 
     const childTotals = ["aroon","arunika","arkaja"].map(child => {
@@ -14083,6 +14322,7 @@ function buildPredictiveMainReleaseCandidateEngine({
       { key: "predictiveCashflowRebalancingEngine", label: "Predictive Cashflow Rebalancing Engine", count: financialPredictiveCashflowRebalancingEngine ? 1 : 0, critical: false },
       { key: "predictiveCashflowClosureEngine", label: "Predictive Cashflow Closure Engine", count: financialPredictiveCashflowClosureEngine ? 1 : 0, critical: false },
       { key: "predictiveMainReleaseCandidateEngine", label: "Predictive Main Release Candidate Engine", count: financialPredictiveMainReleaseCandidateEngine ? 1 : 0, critical: false },
+      { key: "mainReleaseSealEngine", label: "Main Release Seal Engine", count: financialMainReleaseSealEngine ? 1 : 0, critical: false },
     ];
     const includedCount = collections.filter(c => c.count > 0 || ["savingsData", "savingsHoldings", "goalOverrides", "rolePermissions"].includes(c.key)).length;
     const criticalMissing = collections.filter(c => c.critical && c.count === 0 && !["gadaiList", "loanPayments", "goalUsageLog", "recycleBin", "activityLog", "investmentLogs", "walletTransfers", "customGoals", "goalOverrides", "savingsHoldings", "savingsData"].includes(c.key));
@@ -14096,7 +14336,7 @@ function buildPredictiveMainReleaseCandidateEngine({
       notes: [
         "Backup ini menyertakan transaksi, wallet, ledger, goals, usage log, investasi, loan, family, permission, activity log, recycle bin, dan transfer wallet yang sedang terbaca oleh aplikasi.",
         "Data security/PIN tidak diekspor penuh demi keamanan. Backup hanya menyertakan securityStatus tanpa PIN/password/hash.",
-        "Gunakan export ini sebagai snapshot audit Phase 7.4.6: Predictive Main Release Candidate Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, cashflow guardrail alert, cashflow execution, cashflow monitoring, cashflow rebalancing, cashflow closure, main release candidate, dan net worth baseline."
+        "Gunakan export ini sebagai snapshot audit Phase 7.4.8: Main Release Seal Engine, score health, forecast runway, execution control, command rows, decision gate, governance policy, compliance audit, CFO memo, operating cadence, phase closure, scenario simulation, stress test, cashflow projection, goal feasibility, decision recommendation, scenario closure, allocation planning, allocation guardrail, allocation execution, allocation monitoring, allocation rebalancing, allocation closure, budget control, budget alert, budget compliance, budget execution, budget monitoring, budget rebalancing, budget closure, cashflow command, cashflow guardrail alert, cashflow execution, cashflow monitoring, cashflow rebalancing, cashflow closure, main release candidate, main release seal, dan net worth baseline."
       ]
     };
   }
@@ -14106,7 +14346,7 @@ function buildPredictiveMainReleaseCandidateEngine({
     const backup = {
       exportedAt: new Date().toISOString(),
       app: "FinPlan ADP",
-      version: APP_VERSION + " predictive-main-release-candidate-engine-7-4-6",
+      version: APP_VERSION + " main-release-seal-engine-7-4-8",
       backupVersion: FINANCIAL_ENGINE_VERSION,
       backupType: "complete-finplan-snapshot",
       backupManifest: manifest,
@@ -14169,6 +14409,7 @@ function buildPredictiveMainReleaseCandidateEngine({
       predictiveCashflowRebalancingEngine: financialPredictiveCashflowRebalancingEngine,
       predictiveCashflowClosureEngine: financialPredictiveCashflowClosureEngine,
       predictiveMainReleaseCandidateEngine: financialPredictiveMainReleaseCandidateEngine,
+      mainReleaseSealEngine: financialMainReleaseSealEngine,
       securityStatus: {
         hasSecurityData: !!securityData,
         hasFamilyPassword: !!(securityData && (securityData.familyPasswordHash || securityData.familyPassword)),
@@ -18140,6 +18381,32 @@ function buildPredictiveMainReleaseCandidateEngine({
                   <div style={{ marginTop: "7px", display: "grid", gap: "3px" }}>
                     <div style={{ fontSize: "10px", color: financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateColor, lineHeight: 1.45 }}>Memo: {financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateMemo}</div>
                     <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Main lock: {financialPredictiveMainReleaseCandidateEngine.mainReleaseCandidateLocks.slice(0, 2).join(" · ")}</div>
+                  </div>
+                </div>
+
+                <div style={{ marginTop: "9px", padding: "10px", borderRadius: "14px", background: financialMainReleaseSealEngine.mainReleaseSealBg, border: "1px solid rgba(255,255,255,0.07)" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px" }}>
+                    <div>
+                      <div style={{ fontSize: "9px", letterSpacing: "1.6px", color: financialMainReleaseSealEngine.mainReleaseSealColor, fontWeight: 900, textTransform: "uppercase" }}>Main Release Seal Engine 7.4.8</div>
+                      <div style={{ marginTop: "4px", fontSize: "11px", color: "#cbd5e1", lineHeight: 1.45 }}>{financialMainReleaseSealEngine.mainReleaseSealNotice}</div>
+                    </div>
+                    <div style={{ padding: "6px 8px", borderRadius: "999px", background: "rgba(15,23,42,0.42)", color: financialMainReleaseSealEngine.mainReleaseSealColor, fontSize: "10px", fontWeight: 900, whiteSpace: "nowrap" }}>{financialMainReleaseSealEngine.mainReleaseSealScore}/100</div>
+                  </div>
+                  <div style={{ marginTop: "8px", display: "grid", gap: "6px" }}>
+                    {financialMainReleaseSealEngine.mainReleaseSealRows.slice(0, 6).map(row => (
+                      <div key={row.key} style={{ padding: "7px 8px", borderRadius: "10px", background: "rgba(15,23,42,0.28)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", alignItems: "center" }}>
+                          <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: 800 }}>{row.label}</div>
+                          <div style={{ fontSize: "10px", color: row.color, fontWeight: 900 }}>{row.metric}</div>
+                        </div>
+                        <div style={{ marginTop: "3px", fontSize: "10px", color: "#cbd5e1", lineHeight: 1.4 }}>{row.action}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: "7px", display: "grid", gap: "3px" }}>
+                    <div style={{ fontSize: "10px", color: financialMainReleaseSealEngine.mainReleaseSealColor, lineHeight: 1.45 }}>Memo: {financialMainReleaseSealEngine.mainReleaseSealMemo}</div>
+                    <div style={{ fontSize: "10px", color: "#c7d2fe", lineHeight: 1.45 }}>Seal lock: {financialMainReleaseSealEngine.mainReleaseSealLocks.slice(0, 2).join(" · ")}</div>
+                    <div style={{ fontSize: "9px", color: "#94a3b8", lineHeight: 1.4 }}>Fingerprint: {financialMainReleaseSealEngine.sealFingerprint}</div>
                   </div>
                 </div>
 
