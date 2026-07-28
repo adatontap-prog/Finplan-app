@@ -14861,7 +14861,7 @@ function buildMainReleaseSealEngine({
           </div>
 
           <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-            FinPlan v1.1.0 phase 7.2.0. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan predictive allocation planning engine 7.2.0.
+            {APP_VERSION}. {FINANCIAL_ENGINE_NAME} {FINANCIAL_ENGINE_VERSION} aktif: backup JSON membawa transaksi, wallet, ledger, goals, portfolio, loan, family, permission, activity log, recycle bin, manifest audit, metadata guard engine, dan main release seal engine.
           </div>
         </div>
       </div>
@@ -15215,7 +15215,7 @@ function buildMainReleaseSealEngine({
           </div>
 
           <div style={{ padding: "12px", borderRadius: "16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.18)", color: "#fde68a", fontSize: "11px", lineHeight: 1.55, fontWeight: 800, marginBottom: "14px" }}>
-            Backup phase 7.0.0 membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
+            Backup phase {FINANCIAL_ENGINE_VERSION} membawa manifest lengkap: {backupManifest.includedCount}/{backupManifest.totalCollections} grup data terbaca · completeness {backupCompletenessScore}%. Recycle expired: {expiredRecycle.length} item. Gunakan tombol Reverse hanya untuk ledger orphan/test yang sudah kamu verifikasi.
           </div>
 
           <div style={{ padding: "13px", borderRadius: "18px", background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.20)", marginBottom: "14px" }}>
@@ -15380,7 +15380,7 @@ function buildMainReleaseSealEngine({
               </div>
 
               <div style={{ marginTop: "16px", padding: "14px", borderRadius: "16px", background: "rgba(255,255,255,0.04)", color: "#aaa", fontSize: "12px", lineHeight: 1.6 }}>
-                FinPlan v1.1.0 phase 7.2.0. Predictive Scenario Closure Engine 7.1.5 aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan predictive allocation planning engine 7.2.0.
+                {APP_VERSION}. {FINANCIAL_ENGINE_NAME} {FINANCIAL_ENGINE_VERSION} aktif: backup JSON membawa manifest lengkap, log penting, metadata guard anti double count, dan main release seal engine.
               </div>
             </div>
           </div>
